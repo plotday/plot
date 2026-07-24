@@ -65,7 +65,6 @@ import {
   pollFn as remindersPollFn,
   processSyncChunkFn as remindersProcessSyncChunkFn,
   REMINDERS_POLL_INTERVAL_MS,
-  type PendingResource,
   type RemindersHost,
   type SyncBatchResult as RemindersSyncBatchResult,
 } from "./reminders/sync";
@@ -1007,13 +1006,13 @@ export class Apple extends Connector<Apple> {
   /** Continuation for a chunked backfill/rescan — see reminders/sync.ts's SyncBatchResult. */
   async remindersSyncBatch(
     listId: string,
-    remaining: PendingResource[],
+    offset: number,
     initialSync: boolean
   ): Promise<void> {
     const result = await remindersProcessSyncChunkFn(
       this.buildRemindersHost(),
       listId,
-      remaining,
+      offset,
       initialSync
     );
     await this.continueRemindersSync(listId, result, initialSync);
@@ -1028,7 +1027,7 @@ export class Apple extends Connector<Apple> {
       const cb = await this.callback(
         this.remindersSyncBatch,
         listId,
-        result.next.remaining,
+        result.next.offset,
         initialSync
       );
       await this.runTask(cb);

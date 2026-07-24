@@ -62,6 +62,7 @@ export async function onCreateLinkFn(
     channelId: draft.channelId,
     meta: {
       todoUid: uid,
+      todoHref: href,
       listId: draft.channelId,
       syncProvider: "apple-reminders",
       channelId: draft.channelId,
@@ -104,6 +105,14 @@ function setTodoStatus(icsData: string, done: boolean): string {
  * mirrors the pattern `caldav.ts` already documents for calendar event
  * writes.
  *
+ * Targets `link.meta.todoHref` — the real CalDAV resource href persisted by
+ * `transformTodo`/`onCreateLinkFn` — when present, falling back to the
+ * `<uid>.ics` reconstruction only for links saved before this field existed.
+ * The reconstruction is provably correct for a reminder created via Plot
+ * (`onCreateLinkFn` PUTs to exactly that href) but is an unverified
+ * assumption for anything synced in from Apple's own app, whose resource
+ * paths are server-assigned and not guaranteed to follow that convention.
+ *
  * `updateEventICS`'s boolean return is checked on BOTH the initial attempt
  * and the retry: it only THROWS for a 412 (handled below as the retry
  * trigger), but resolves to `false` for any other non-2xx response (a
@@ -122,7 +131,7 @@ export async function onLinkUpdatedFn(host: RemindersHost, link: Link): Promise<
   if (!uid || !listId) return;
 
   const rawListHref = parse(listId).rawId;
-  const href = `${rawListHref}${uid}.ics`;
+  const href = (link.meta?.todoHref as string | undefined) ?? `${rawListHref}${uid}.ics`;
 
   const current = await host.caldav.fetchEventICS(href);
   if (!current) return; // Deleted upstream — nothing to write back.

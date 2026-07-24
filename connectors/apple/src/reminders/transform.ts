@@ -39,6 +39,7 @@ function createdDate(created: string | null): Date | undefined {
  */
 export function transformTodo(
   todo: ICSTodo,
+  resourceHref: string,
   listId: string,
   initialSync: boolean,
   subtasks: ICSTodo[],
@@ -91,6 +92,7 @@ export function transformTodo(
     channelId: listId,
     meta: {
       todoUid: todo.uid,
+      todoHref: resourceHref,
       listId,
       syncProvider: "apple-reminders",
       channelId: listId,

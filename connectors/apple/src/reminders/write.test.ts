@@ -91,6 +91,14 @@ describe("onCreateLinkFn", () => {
     const link = await onCreateLinkFn(host, { ...DRAFT, noteContent: null });
     expect(link).not.toHaveProperty("originatingNote");
   });
+
+  it("sets meta.todoHref to the exact href it PUT to", async () => {
+    const host = makeHost();
+    const link = await onCreateLinkFn(host, DRAFT);
+
+    const [href] = (host.caldav.updateEventICS as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(link?.meta?.todoHref).toBe(href);
+  });
 });
 
 const BASE_LINK = {
@@ -201,5 +209,32 @@ describe("onLinkUpdatedFn", () => {
 
     await expect(onLinkUpdatedFn(host, BASE_LINK)).rejects.toThrow();
     expect(updateEventICS).toHaveBeenCalledTimes(2);
+  });
+
+  it("targets meta.todoHref over UID-based reconstruction when the two differ", async () => {
+    // This is the test that would have caught the original gap: a reminder
+    // synced in from Apple's own app has a server-assigned href that is NOT
+    // guaranteed to be `<uid>.ics` under the list — only meta.todoHref (set
+    // by transformTodo from the real CalDAV response) can be trusted.
+    const realHref = "/289842362/tasks/home/server-assigned-real-path.ics";
+    const reconstructedHref = "/289842362/tasks/home/abc-123.ics";
+    const host = makeHost({
+      fetchEventICS: vi.fn().mockResolvedValue({
+        icsData:
+          "BEGIN:VCALENDAR\r\nBEGIN:VTODO\r\nUID:abc-123\r\nSTATUS:NEEDS-ACTION\r\nEND:VTODO\r\nEND:VCALENDAR",
+        etag: "etag-1",
+      }),
+    });
+    const link = {
+      ...BASE_LINK,
+      meta: { ...BASE_LINK.meta, todoHref: realHref },
+    } as unknown as Link;
+
+    await onLinkUpdatedFn(host, link);
+
+    expect(host.caldav.fetchEventICS).toHaveBeenCalledWith(realHref);
+    const [href] = (host.caldav.updateEventICS as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(href).toBe(realHref);
+    expect(href).not.toBe(reconstructedHref);
   });
 });

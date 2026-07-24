@@ -33,7 +33,7 @@ describe("remindersSource", () => {
 describe("transformTodo", () => {
   it("maps an open reminder with a DUE date to an open todo", () => {
     const todo = makeTodo({ due: { value: "20260901", params: { VALUE: "DATE" } } });
-    const link = transformTodo(todo, "/tasks/home/", false, [], ACTOR_ID);
+    const link = transformTodo(todo, "/tasks/home/abc-123.ics", "/tasks/home/", false, [], ACTOR_ID);
 
     expect(link).toMatchObject({
       source: "icloud-reminders:reminder:abc-123",
@@ -50,7 +50,7 @@ describe("transformTodo", () => {
 
   it("maps a COMPLETED reminder to done, with no todo/todoDate", () => {
     const todo = makeTodo({ status: "COMPLETED" });
-    const link = transformTodo(todo, "/tasks/home/", false, [], ACTOR_ID);
+    const link = transformTodo(todo, "/tasks/home/abc-123.ics", "/tasks/home/", false, [], ACTOR_ID);
 
     expect(link?.status).toBe("done");
     expect(link).not.toHaveProperty("todo");
@@ -59,13 +59,22 @@ describe("transformTodo", () => {
 
   it("returns null for a CANCELLED reminder (callers archive instead of upserting)", () => {
     const todo = makeTodo({ status: "CANCELLED" });
-    expect(transformTodo(todo, "/tasks/home/", false, [], ACTOR_ID)).toBeNull();
+    expect(
+      transformTodo(todo, "/tasks/home/abc-123.ics", "/tasks/home/", false, [], ACTOR_ID)
+    ).toBeNull();
   });
 
   it("sets unread:false and archived:false only on initial sync", () => {
     const todo = makeTodo();
-    const initial = transformTodo(todo, "/tasks/home/", true, [], ACTOR_ID);
-    const incremental = transformTodo(todo, "/tasks/home/", false, [], ACTOR_ID);
+    const initial = transformTodo(todo, "/tasks/home/abc-123.ics", "/tasks/home/", true, [], ACTOR_ID);
+    const incremental = transformTodo(
+      todo,
+      "/tasks/home/abc-123.ics",
+      "/tasks/home/",
+      false,
+      [],
+      ACTOR_ID
+    );
 
     expect(initial).toMatchObject({ unread: false, archived: false });
     expect(incremental).not.toHaveProperty("unread");
@@ -74,7 +83,7 @@ describe("transformTodo", () => {
 
   it("attaches a description note authored by the connection owner", () => {
     const todo = makeTodo({ description: "2% milk" });
-    const link = transformTodo(todo, "/tasks/home/", false, [], ACTOR_ID);
+    const link = transformTodo(todo, "/tasks/home/abc-123.ics", "/tasks/home/", false, [], ACTOR_ID);
 
     expect(link?.notes).toEqual([
       { key: "description", content: "2% milk", contentType: "text", author: { id: ACTOR_ID } },
@@ -91,7 +100,14 @@ describe("transformTodo", () => {
       status: "COMPLETED",
     });
 
-    const link = transformTodo(parent, "/tasks/home/", false, [openSub, doneSub], ACTOR_ID);
+    const link = transformTodo(
+      parent,
+      "/tasks/home/abc-123.ics",
+      "/tasks/home/",
+      false,
+      [openSub, doneSub],
+      ACTOR_ID
+    );
 
     expect(link?.notes).toEqual([
       {
@@ -104,10 +120,18 @@ describe("transformTodo", () => {
     ]);
   });
 
-  it("stores todoUid/listId/syncProvider in meta for write-back lookup", () => {
-    const link = transformTodo(makeTodo(), "/tasks/home/", false, [], ACTOR_ID);
+  it("stores todoUid/todoHref/listId/syncProvider in meta for write-back lookup", () => {
+    const link = transformTodo(
+      makeTodo(),
+      "/tasks/home/abc-123.ics",
+      "/tasks/home/",
+      false,
+      [],
+      ACTOR_ID
+    );
     expect(link?.meta).toEqual({
       todoUid: "abc-123",
+      todoHref: "/tasks/home/abc-123.ics",
       listId: "/tasks/home/",
       syncProvider: "apple-reminders",
       channelId: "/tasks/home/",
@@ -115,7 +139,14 @@ describe("transformTodo", () => {
   });
 
   it("omits todoDate when there is no DUE date", () => {
-    const link = transformTodo(makeTodo({ due: null }), "/tasks/home/", false, [], ACTOR_ID);
+    const link = transformTodo(
+      makeTodo({ due: null }),
+      "/tasks/home/abc-123.ics",
+      "/tasks/home/",
+      false,
+      [],
+      ACTOR_ID
+    );
     expect(link?.todo).toBe(true);
     expect(link).not.toHaveProperty("todoDate");
   });

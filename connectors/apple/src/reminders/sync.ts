@@ -113,7 +113,7 @@ export async function onChannelDisabledFn(
 // ctag-fallback full rescans.
 // ---------------------------------------------------------------------------
 
-export type PendingResource = { href: string; etag: string; todo: ICSTodo };
+type PendingResource = { href: string; etag: string; todo: ICSTodo };
 
 function parseResources(resources: CalDAVResource[]): PendingResource[] {
   const pending: PendingResource[] = [];
@@ -125,7 +125,7 @@ function parseResources(resources: CalDAVResource[]): PendingResource[] {
 }
 
 export type SyncBatchResult =
-  | { next: { listId: string; remaining: PendingResource[] } }
+  | { next: { listId: string; offset: number } }
   | { done: true };
 
 /**
@@ -149,24 +149,32 @@ export async function fullSyncFn(
     ctag,
     hrefUid: {},
   } satisfies RemindersListState);
-  return processSyncChunkFn(host, listId, pending, initialSync);
+  await host.set(`pending:${listId}`, pending);
+  return processSyncChunkFn(host, listId, 0, initialSync);
 }
 
 /**
- * Save one chunk of already-fetched-and-parsed todos, splitting parents from
+ * Save one chunk of already-fetched-and-parsed todos (read back from the
+ * `pending:<listId>` store entry `fullSyncFn` seeds), splitting parents from
  * subtasks WITHIN THIS CHUNK ONLY (mirrors Google Tasks' `saveTaskPageFn`
  * same-batch-only nesting limitation) — a subtask whose parent isn't in this
  * chunk is saved standalone. `initialSync` controls unread/archived on new
  * links; pass `false` for a ctag-fallback rescan of an already-synced list.
+ *
+ * The full pending list is threaded via the store (keyed by `listId`) rather
+ * than as a callback/task argument so a large list's remainder never rides a
+ * callback payload — only the numeric `offset` does, mirroring Calendar's
+ * `sync_state_<id>` + `batchNumber` continuation shape.
  */
 export async function processSyncChunkFn(
   host: RemindersHost,
   listId: string,
-  pending: PendingResource[],
+  offset: number,
   initialSync: boolean
 ): Promise<SyncBatchResult> {
-  const chunk = pending.slice(0, REMINDERS_CHUNK_SIZE);
-  const rest = pending.slice(REMINDERS_CHUNK_SIZE);
+  const allPending = (await host.get<PendingResource[]>(`pending:${listId}`)) ?? [];
+  const chunk = allPending.slice(offset, offset + REMINDERS_CHUNK_SIZE);
+  const nextOffset = offset + REMINDERS_CHUNK_SIZE;
 
   const parents: PendingResource[] = [];
   const subtasksByParent = new Map<string, ICSTodo[]>();
@@ -189,7 +197,7 @@ export async function processSyncChunkFn(
 
   for (const { href, todo } of parents) {
     const subtasks = subtasksByParent.get(todo.uid) ?? [];
-    await saveOrArchiveTodo(host, listId, todo, initialSync, subtasks, authActorId);
+    await saveOrArchiveTodo(host, listId, href, todo, initialSync, subtasks, authActorId);
     state.hrefUid[href] = todo.uid;
   }
 
@@ -198,15 +206,16 @@ export async function processSyncChunkFn(
     for (const subtask of subtasks) {
       const resource = chunk.find((p) => p.todo.uid === subtask.uid);
       if (!resource) continue;
-      await saveOrArchiveTodo(host, listId, subtask, initialSync, [], authActorId);
+      await saveOrArchiveTodo(host, listId, resource.href, subtask, initialSync, [], authActorId);
       state.hrefUid[resource.href] = subtask.uid;
     }
   }
 
   await host.set(`list:${listId}`, state);
 
-  if (rest.length > 0) return { next: { listId, remaining: rest } };
+  if (nextOffset < allPending.length) return { next: { listId, offset: nextOffset } };
 
+  await host.clear(`pending:${listId}`);
   if (initialSync) await host.tools.integrations.channelSyncCompleted(listId);
   return { done: true };
 }
@@ -214,12 +223,13 @@ export async function processSyncChunkFn(
 async function saveOrArchiveTodo(
   host: RemindersHost,
   listId: string,
+  resourceHref: string,
   todo: ICSTodo,
   initialSync: boolean,
   subtasks: ICSTodo[],
   authActorId: ActorId | null
 ): Promise<void> {
-  const link = transformTodo(todo, listId, initialSync, subtasks, authActorId);
+  const link = transformTodo(todo, resourceHref, listId, initialSync, subtasks, authActorId);
   if (link) {
     await host.tools.integrations.saveLink(link);
   } else {
@@ -347,7 +357,7 @@ async function applyDelta(
     const authActorId = (await host.get<ActorId>("auth_actor_id")) ?? null;
 
     for (const { href, todo } of pending) {
-      await saveOrArchiveTodo(host, listId, todo, false, [], authActorId);
+      await saveOrArchiveTodo(host, listId, href, todo, false, [], authActorId);
       nextState.hrefUid[href] = todo.uid;
     }
   }

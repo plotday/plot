@@ -198,20 +198,44 @@ describe("fullSyncFn / processSyncChunkFn", () => {
       etag: `e${i}`,
       icsData: makeIcs(`t${i}`),
     }));
-    const { host, integrations } = makeHost({
+    const { host, integrations, store } = makeHost({
       caldav: { ...baseHostParts().caldav, fetchTodos: vi.fn().mockResolvedValue(resources) },
     });
 
     const first = await fullSyncFn(host, "/tasks/home/", true);
-    expect(first).toMatchObject({ next: { listId: "/tasks/home/" } });
+    expect(first).toMatchObject({ next: { listId: "/tasks/home/", offset: 50 } });
     expect(integrations.saveLink).toHaveBeenCalledTimes(50);
     expect(integrations.channelSyncCompleted).not.toHaveBeenCalled();
+    // The full pending list stays in the store between chunks — never as a
+    // callback/task argument (see reminders/sync.ts's SyncBatchResult doc).
+    expect(store.has("pending:/tasks/home/")).toBe(true);
 
     if (!("next" in first)) throw new Error("expected next");
-    const second = await processSyncChunkFn(host, "/tasks/home/", first.next.remaining, true);
+    const second = await processSyncChunkFn(host, "/tasks/home/", first.next.offset, true);
     expect(second).toEqual({ done: true });
     expect(integrations.saveLink).toHaveBeenCalledTimes(60);
     expect(integrations.channelSyncCompleted).toHaveBeenCalledWith("/tasks/home/");
+    // Fully drained: the pending list is cleared, not left orphaned.
+    expect(store.has("pending:/tasks/home/")).toBe(false);
+  });
+
+  it("persists the real CalDAV resource href in meta.todoHref, not a UID-based reconstruction", async () => {
+    const { host, integrations } = makeHost({
+      caldav: {
+        ...baseHostParts().caldav,
+        fetchTodos: vi.fn().mockResolvedValue([
+          { href: "/tasks/home/some-server-assigned-path.ics", etag: "e1", icsData: makeIcs("a") },
+        ]),
+      },
+    });
+
+    await fullSyncFn(host, "/tasks/home/", true);
+
+    const [savedLink] = integrations.saveLink.mock.calls[0];
+    expect(savedLink.meta.todoHref).toBe("/tasks/home/some-server-assigned-path.ics");
+    // The naive `<uid>.ics` reconstruction would have produced "a.ics" — the
+    // real href must win, not that guess.
+    expect(savedLink.meta.todoHref).not.toBe("/tasks/home/a.ics");
   });
 });
 
