@@ -31,6 +31,7 @@ import type {
   ActorId,
   CreateLinkResult,
   NewLinkWithNotes,
+  NewNote,
   Note,
   Thread,
 } from "@plotday/twister/plot";
@@ -51,6 +52,7 @@ import {
   classifyCalendarThread,
   collectAttachments,
   extractBody,
+  extractCalendarReplies,
   formatFromHeader,
   getHeader,
   isGmailRateLimitError,
@@ -66,6 +68,7 @@ import {
   type ClassifiedSendError,
   classifySendError,
 } from "./gmail-send-errors";
+import { composeRsvpNote, shouldMarkUnread } from "./rsvp-note";
 
 // ---------------------------------------------------------------------------
 // Persisted state shapes (shared with the connector)
@@ -290,6 +293,12 @@ export interface GmailSyncHost {
       ): Promise<{ token: string; scopes: string[] } | null>;
       /** Persist a link (upsert by source). Returns the saved thread id (or null if filtered). */
       saveLink(link: NewLinkWithNotes): Promise<string | null>;
+      /**
+       * Attach a note to an EXISTING thread addressed by `{ source }` or
+       * `{ id }`. Creates no thread-level link. Returns the note id, or null
+       * when the target thread could not be resolved.
+       */
+      saveNote(note: NewNote): Promise<string | null>;
       /** Signal that the initial backfill for a channel has finished. */
       channelSyncCompleted(channelId: string): Promise<void>;
       /** Set a thread's to-do (starred) state from the connector's own write. */
@@ -1491,6 +1500,43 @@ async function saveTransformedThread(
       filtered.push(note);
     }
     plotThread.notes = filtered;
+
+    // Attendee responses ("Declined: <event> @ <when>") belong on the event,
+    // not in a thread of their own: Google's notification body is one useful
+    // sentence followed by the whole event repeated. Fold each reply onto the
+    // event thread and drop its note here. A conversation that was nothing but
+    // responses is left with no notes and falls out at the guard below, so no
+    // email link is ever created for it. A conversation that also carries real
+    // correspondence keeps its thread, minus the folded messages.
+    const replies = extractCalendarReplies(thread.messages ?? []);
+    if (replies.length > 0) {
+      const foldedMessageIds = new Set<string>();
+      for (const reply of replies) {
+        // A miss means the calendar event has not synced yet (saveNote returns
+        // null when no thread carries `icaluid:<uid>`). Leave the note in place
+        // so the response still lands somewhere rather than vanishing. Expected,
+        // so not reported as an error.
+        const noteId = await host.tools.integrations.saveNote({
+          thread: { source: `icaluid:${reply.uid}` },
+          key: reply.messageId,
+          content: composeRsvpNote(reply),
+          contentType: "markdown",
+          created: reply.sourceCreatedAt,
+          author: {
+            email: reply.attendeeEmail,
+            ...(reply.attendeeName ? { name: reply.attendeeName } : {}),
+          },
+          ...(shouldMarkUnread(reply, initialSync) ? { unread: true } : {}),
+        });
+        if (noteId) foldedMessageIds.add(reply.messageId);
+      }
+      if (foldedMessageIds.size > 0) {
+        plotThread.notes = plotThread.notes.filter((note) => {
+          const noteKey = "key" in note ? (note as { key: string }).key : null;
+          return !noteKey || !foldedMessageIds.has(noteKey);
+        });
+      }
+    }
 
     if (plotThread.notes.length === 0) return;
 
