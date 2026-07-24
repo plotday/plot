@@ -15,6 +15,8 @@
     { "input": "Kris.Braun@Acme.com", "canonical": "kris.braun@acme.com", "base": "kris.braun@acme.com", "note": "NON-gmail: dots preserved, lowercase only" },
     { "input": "not-an-email", "canonical": "not-an-email", "base": "not-an-email", "note": "no @: lowercased, returned as-is" },
     { "input": "+tagonly@gmail.com", "canonical": "+tagonly@gmail.com", "base": "+tagonly@gmail.com", "note": "empty base local part: fall back, never emit bare @gmail.com" },
-    { "input": ".@gmail.com", "canonical": ".@gmail.com", "base": ".@gmail.com", "note": "empty canonical local part: fall back" }
+    { "input": ".@gmail.com", "canonical": ".@gmail.com", "base": ".@gmail.com", "note": "empty canonical local part: fall back" },
+    { "input": "\tkris.braun@gmail.com\n", "canonical": "krisbraun@gmail.com", "base": "krisbraun@gmail.com", "note": "tab/newline padding is trimmed like any other whitespace, so Gmail folding still applies" },
+    { "input": "..+tag@gmail.com", "canonical": "+tag@gmail.com", "base": "..+tag@gmail.com", "note": "base falls back to the ORIGINAL local part (tag included) when the untagged part is empty" }
   ]
 }
