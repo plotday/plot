@@ -1150,7 +1150,8 @@ describe("Apple mail sync — connection-level scheduling", () => {
       await Apple.prototype.mailPoll.call(self);
       const after = Date.now();
 
-      const [, , floorArg] = vi.mocked(mailSync).mock.calls.at(-1)!;
+      const calls = vi.mocked(mailSync).mock.calls;
+      const [, , floorArg] = calls[calls.length - 1];
       const floorMs = new Date(floorArg as string).getTime();
       // Bounded by [before, after] minus exactly 7 days — proves the default
       // really is ~7 days, not merely "some string" (a mutation to a

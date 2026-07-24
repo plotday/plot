@@ -108,6 +108,29 @@ export type ImapMessage = {
   inReplyTo?: string;
   /** References header (for threading) */
   references?: string[];
+  /** List-Id header (mailing-list identifier), when present. */
+  listId?: string;
+  /** List-Unsubscribe header, when present. */
+  listUnsubscribe?: string;
+  /** Precedence header (e.g. "bulk", "list", "auto_reply"), when present. */
+  precedence?: string;
+  /** Auto-Submitted header (e.g. "auto-generated"), when present. */
+  autoSubmitted?: string;
+  /** Return-Path header; "<>" typically marks a bounce/auto sender. */
+  returnPath?: string;
+  /** Importance header (e.g. "high"), when present. */
+  importance?: string;
+  /** X-Priority header (legacy priority signal), when present. */
+  xPriority?: string;
+  /**
+   * Raw `Authentication-Results` header values, one per hop that added one —
+   * a message can carry several as it passes through multiple mail
+   * exchangers. Select the value stamped by your own trusted receiving MTA
+   * (by authserv-id) before relying on it for anything security-sensitive
+   * (e.g. DMARC verification) — never trust an arbitrary/unfiltered entry,
+   * which a sender could forge.
+   */
+  authenticationResults?: string[];
   /** Plain text body (when requested) */
   bodyText?: string;
   /** HTML body (when requested) */

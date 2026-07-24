@@ -935,3 +935,62 @@ describe("transformMessages — Sent-only roots", () => {
     expect(link.title).toBe("Re: something older than the window");
   });
 });
+
+describe("transformMessages — facets", () => {
+  it("sets link.facets from the thread's originating (earliest) message", () => {
+    const originator = msg({ listId: "<news.example.com>", bodyText: "x".repeat(2000) });
+    const link = transform([originator])[0];
+    expect(link.facets).toEqual({
+      format: "reading",
+      automation: "automated",
+      reach: "list",
+    });
+  });
+
+  it("classifies from the ORIGINATOR even when a later reply in the thread looks different", () => {
+    const originator = msg({
+      messageId: "<root@example.com>",
+      listId: "<news.example.com>",
+      bodyText: "x".repeat(2000),
+      date: new Date("2026-07-15T09:00:00Z"),
+    });
+    const reply = msg({
+      uid: 2,
+      messageId: "<reply@example.com>",
+      references: ["<root@example.com>"],
+      from: [{ address: "kris@icloud.com", name: "Kris" }],
+      inReplyTo: "<root@example.com>",
+      bodyText: "sounds good",
+      date: new Date("2026-07-15T10:00:00Z"),
+    });
+    const link = transform([originator, reply])[0];
+    // Still classified off the newsletter-shaped originator, not the short
+    // human reply — matches Gmail/Outlook's "parent message" convention.
+    expect(link.facets?.reach).toBe("list");
+  });
+
+  it("attaches an extracted CTA to the originating note and overrides facets.format with cta.kind", () => {
+    const originator = msg({
+      from: [{ address: "security@example.com", name: "Example Security" }],
+      subject: "Your verification code",
+      bodyText: "Your one-time code is 482913. It expires in 10 minutes.",
+    });
+    const link = transform([originator])[0];
+    expect(link.facets?.format).toBe("otp");
+    const note = link.notes?.[0];
+    expect(note?.cta).toEqual({
+      kind: "otp",
+      // serviceName() strips SERVICE_NOISE words like "Security" from the
+      // From display name — see @plotday/email-classifier/extract-cta.ts.
+      service: "Example",
+      code: "482913",
+      url: null,
+    });
+  });
+
+  it("leaves cta unset on the note when no CTA is detected", () => {
+    const originator = msg({ bodyText: "just saying hi" });
+    const link = transform([originator])[0];
+    expect(link.notes?.[0].cta).toBeFalsy();
+  });
+});

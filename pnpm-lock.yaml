@@ -39,6 +39,9 @@ importers:
 
   connectors/apple:
     dependencies:
+      '@plotday/email-classifier':
+        specifier: workspace:^
+        version: link:../../libs/email-classifier
       '@plotday/twister':
         specifier: workspace:^
         version: link:../../twister
