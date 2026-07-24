@@ -420,6 +420,14 @@ export class Apple extends Connector<Apple> {
       set: async <T>(key: string, value: T) => {
         await this.set(mailKey(key), value as unknown as Serializable);
       },
+      setMany: async <T>(entries: [key: string, value: T][]) => {
+        await this.setMany(
+          entries.map(([key, value]): [string, Serializable] => [
+            mailKey(key),
+            value as unknown as Serializable,
+          ])
+        );
+      },
       get: async <T>(key: string): Promise<T | undefined> => {
         const value = await this.get<Serializable>(mailKey(key));
         return (value as T | null) ?? undefined;
@@ -506,9 +514,11 @@ export class Apple extends Connector<Apple> {
    * initial backfill as a task so the HTTP response returns quickly.
    *
    * Always queues `mailInitialSyncTask`, even on re-dispatch (auto-enable /
-   * recovery): `mailInitialSync`/`runInitialBackfill` upsert by `source`, so
-   * re-running is a safe, idempotent no-op catch-up rather than something
-   * that needs to be skipped.
+   * recovery): `mailSync` upserts by `source`, so re-running it is a safe,
+   * idempotent catch-up rather than something that needs to be skipped. A
+   * widened history floor is picked up by the same pass — `mailSync` compares
+   * the granted floor against how far back each mailbox has actually been
+   * read and widens the whole pass when it moved earlier.
    */
   private async onMailChannelEnabled(channel: Channel, context?: SyncContext): Promise<void> {
     if (context?.syncHistoryMin) {
@@ -758,15 +768,14 @@ export class Apple extends Connector<Apple> {
     // Sweep the legacy calendar-bundle classification cache
     // (`mail:bundle:<rootId>`). The decision now lives on the per-root
     // `mail:thread:<rootId>` document alongside the thread's home channel, so
-    // this sweep only clears leftovers from before that move — the
-    // `mail:thread:` sweep belongs with the rest of the disable teardown.
-    // Never
-    // expires on its own and would otherwise persist across a disable/
-    // re-enable cycle — a fresh re-enable's backfill must re-classify from
-    // scratch, not inherit a decision cached before the gap (e.g. a
-    // calendar event that has since synced). Not channel-scoped, like the
-    // sweeps above (single mail channel in v1), so all `mail:bundle:*` are
-    // ours.
+    // this sweep only clears leftovers from before that move — sweeping
+    // `mail:thread:` belongs with the rest of the disable teardown and is not
+    // wired up yet. Neither cache expires on its own, and either would
+    // otherwise persist across a disable/re-enable cycle — a fresh
+    // re-enable's backfill must re-classify from scratch, not inherit a
+    // decision cached before the gap (e.g. a calendar event that has since
+    // synced). Not channel-scoped, like the sweeps above (single mail channel
+    // in v1), so all `mail:bundle:*` are ours.
     const bundleKeys = await this.tools.store.list("mail:bundle:");
     for (const key of bundleKeys) {
       await this.clear(key);

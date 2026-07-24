@@ -19,7 +19,16 @@ export type MailboxCursor = {
    * as 0 there.
    */
   lastUid: number;
-  /** ISO floor this mailbox was first backfilled from. */
+  /**
+   * ISO floor this mailbox has actually been READ from (not merely the floor
+   * that was in force when the cursor was created). `mailSync` compares it
+   * against the pass's floor: if the floor has moved EARLIER — the connection
+   * was granted a wider history window, e.g. on a plan upgrade — the whole
+   * pass widens to that floor so the newly-granted history is fetched, and
+   * this value advances to match. Without that comparison a mailbox that
+   * already has a cursor would stay on the 30-day recent window forever and
+   * the extra history would never arrive.
+   */
   syncHistoryMin?: string;
   /**
    * This mailbox's HIGHESTMODSEQ (RFC 7162 CONDSTORE) as of the last
@@ -72,6 +81,14 @@ export interface MailHost {
   appleId: string;
   appPassword: string;
   set<T>(key: string, value: T): Promise<void>;
+  /**
+   * Persist many key/value pairs in ONE round-trip (see `Store.setMany`).
+   * Required for any per-item batch write: one merged sync pass can touch
+   * hundreds of thread roots, and a `set()` per root is a request each
+   * against the per-execution budget (as well as a partial-write hazard if
+   * the pass fails mid-loop).
+   */
+  setMany<T>(entries: [key: string, value: T][]): Promise<void>;
   get<T>(key: string): Promise<T | undefined>;
   clear(key: string): Promise<void>;
   channelSyncCompleted(channelId: string): Promise<void>;

@@ -54,8 +54,13 @@ export type ThreadMeta = {
    * the merged batch is window-dependent, so a derived value transitions as
    * old messages age out of the rescan window, rewriting `link.channel_id`
    * and changing what disable-time archiving matches.
+   *
+   * Optional so a home channel can be CLEARED (e.g. when its folder is
+   * disabled) without discarding the root's `bundle` decision — the document's
+   * presence is what marks the root "already known to Plot", and `mailSync`
+   * re-resolves an absent channel from this pass's messages.
    */
-  channelId: string;
+  channelId?: string;
   /**
    * Persisted calendar-bundle classification. Absent = never evaluated;
    * `{ classified: null }` = evaluated, does not bundle. Wrapped in an object
@@ -391,7 +396,7 @@ export async function mailSync(
     const floor = resolveSinceFloor(historyMin);
     const recentSince = new Date(Math.max(floor.getTime(), Date.now() - RECENT_WINDOW_MS));
     const pendingFullRescan = stored?.pendingFullRescan === true;
-    const boxes: Record<string, MailboxCursor> = { ...(stored?.boxes ?? {}) };
+    const storedBoxes: Record<string, MailboxCursor> = stored?.boxes ?? {};
 
     // Sent is read on EVERY merged pass, not just when INBOX happens to be
     // enabled, so the owner's own replies keep landing on their threads no
@@ -405,17 +410,52 @@ export async function mailSync(
     const plans: BoxPlan[] = [];
     for (const mailbox of [...ordered.map((c) => c.mailbox), ...(sentBox ? [sentBox] : [])]) {
       const status = await host.imap.selectMailbox(session, mailbox);
-      const stale = boxes[mailbox];
-      const usable = stale !== undefined && stale.uidValidity === status.uidValidity;
+      const storedCursor = storedBoxes[mailbox];
+      const usable =
+        storedCursor !== undefined && storedCursor.uidValidity === status.uidValidity;
       plans.push({
         mailbox,
         isSent: mailbox === sentBox,
         status,
-        cursor: usable ? stale : undefined,
+        cursor: usable ? storedCursor : undefined,
         backfill: !usable,
-        firstBackfill: stale === undefined,
+        firstBackfill: storedCursor === undefined,
       });
     }
+
+    // ---- The search window is a property of the PASS, never of one mailbox.
+    //
+    // Mixing windows across mailboxes reintroduces the very defect the merged
+    // pass exists to fix, by a different route: the gate stops a per-mailbox
+    // SKIP, but a per-mailbox WINDOW hands `transformMessages` an equally
+    // partial message set. Concretely, with a 365-day plan floor and a 30-day
+    // recent window, enabling Archive on a connection whose INBOX is already
+    // synced would search Archive over 365 days and INBOX over 30 — so a
+    // thread whose root landed in INBOX 60 days ago (below INBOX's `lastUid`)
+    // and whose later reply was filed into Archive 45 days ago is rebuilt from
+    // the Archive half alone: re-titled "Re: …" from the wrong originator, and
+    // marked read if that copy is \Seen while the missing root is not. Neither
+    // message falls in any later pass's 30-day window, so both are permanent.
+    // The same asymmetry drops the owner's Sent replies older than the recent
+    // window off every thread a newly-enabled folder backfills.
+    //
+    // So: if ANY mailbox in this pass is backfilling, or a full rescan is
+    // pending, or the granted history floor has widened since these mailboxes
+    // were last read (a plan upgrade — `MailboxCursor.syncHistoryMin`), then
+    // EVERY mailbox — Sent included — searches from `floor`. Otherwise every
+    // mailbox searches from `recentSince`. The cost is one wide pass per
+    // folder-enable / plan upgrade, which is exactly what `pendingFullRescan`
+    // already accepts.
+    const floorMs = floor.getTime();
+    const floorWidened = plans.some((p) => {
+      const readFrom = p.cursor?.syncHistoryMin;
+      if (readFrom === undefined) return false;
+      const readFromMs = new Date(readFrom).getTime();
+      return !Number.isNaN(readFromMs) && readFromMs > floorMs;
+    });
+    const wideWindow =
+      pendingFullRescan || floorWidened || plans.some((p) => p.backfill);
+    const since = wideWindow ? floor : recentSince;
 
     // The CONDSTORE gate (RFC 7162), generalized over every mailbox in the
     // pass. It is a single all-or-nothing decision: either every mailbox is
@@ -430,13 +470,17 @@ export async function mailSync(
       p.status.highestModSeq !== undefined &&
       p.cursor.lastModSeq !== undefined &&
       p.status.highestModSeq === p.cursor.lastModSeq;
-    const skipFetch = !pendingFullRescan && plans.every(unchanged);
+    // `wideWindow` also forces the fetch phase: a widened history floor (or a
+    // pending full rescan) must not be swallowed by an all-unchanged gate, or
+    // the history the user was just granted never arrives. A backfilling
+    // mailbox is never "unchanged" anyway, so that disjunct is belt-and-braces.
+    const skipFetch = !wideWindow && plans.every(unchanged);
 
     // ---- Fetch phase.
     const merged: MailMessage[] = [];
     /** Messages that are NEW this pass, mailbox-qualified (see `messageKey`). */
     const newMessages = new Set<string>();
-    const nextBoxes: Record<string, MailboxCursor> = { ...boxes };
+    const nextBoxes: Record<string, MailboxCursor> = { ...storedBoxes };
 
     if (!skipFetch) {
       for (const p of plans) {
@@ -450,30 +494,33 @@ export async function mailSync(
           // Sent is always window-shaped and NEVER contributes new-message
           // signal: mail the owner sent must not mark their own thread unread.
           // Its cursor exists only to carry uidValidity + lastModSeq for the
-          // gate. The full-floor window on a first pass (or after a
-          // UIDVALIDITY reset / a pending full rescan) is what puts the
-          // owner's historical replies on backfilled threads.
-          const since = p.backfill || pendingFullRescan ? floor : recentSince;
+          // gate. It uses the PASS's window like every other mailbox, so a
+          // wide pass (any folder backfilling, a widened floor, a pending full
+          // rescan) puts the owner's historical replies on the threads that
+          // pass rebuilds.
           windowUids = await host.imap.search(session, { since });
         } else if (p.backfill) {
-          // No usable cursor: read the whole history floor. Contributes no
-          // `newMessages`, so already-known roots keep their read state and
-          // never-seen roots fall into `initialRoots` below.
-          windowUids = await host.imap.search(session, { since: floor });
+          // No usable cursor: read the whole history floor (a backfilling
+          // mailbox is one of the things that MAKES the pass wide, so `since`
+          // is `floor` here). Contributes no `newMessages`, so already-known
+          // roots keep their read state and never-seen roots fall into
+          // `initialRoots` below.
+          windowUids = await host.imap.search(session, { since });
         } else {
           // Incremental. New mail is everything above the cursor, bounded by
           // the floor so a dormant account can't fetch the entire mailbox.
           const fromFloor = await host.imap.search(session, { since: floor });
           newUids = fromFloor.filter((u) => u > p.cursor!.lastUid);
-          if (pendingFullRescan) {
-            // A channel was disabled while others stayed enabled: widen this
-            // pass to the whole floor so threads archived by that disable but
-            // still living in a remaining folder are re-homed and re-upserted.
+          if (wideWindow) {
+            // Wide pass: fetch the whole floor rather than the recent window,
+            // so this mailbox's half of any thread another mailbox is
+            // backfilling (or re-homing, or newly granted history for) is
+            // present in the single `transformMessages` call.
             windowUids = fromFloor;
           } else {
             // Recent-window rescan to catch \Seen / \Flagged changes on
             // already-synced mail, also capped at the floor.
-            const recentUids = await host.imap.search(session, { since: recentSince });
+            const recentUids = await host.imap.search(session, { since });
             windowUids = Array.from(new Set([...newUids, ...recentUids]));
           }
         }
@@ -497,7 +544,14 @@ export async function mailSync(
           uidValidity: p.status.uidValidity,
           // Sent's lastUid is never consulted (it contributes no new mail).
           lastUid: p.isSent ? 0 : Math.max(maxUid, p.cursor?.lastUid ?? 0),
-          syncHistoryMin: p.cursor?.syncHistoryMin ?? floor.toISOString(),
+          // How far back this mailbox has actually been READ. A wide pass
+          // searched it from `floor`, so the coverage advances to the (never
+          // narrowing) floor; a recent-window pass leaves it where it was.
+          // This is what makes a later floor widening detectable.
+          syncHistoryMin: wideWindow
+            ? (widestFloor(p.cursor?.syncHistoryMin, floor.toISOString()) ??
+              floor.toISOString())
+            : (p.cursor?.syncHistoryMin ?? floor.toISOString()),
           // Seed/update every pass: undefined (no CONDSTORE) correctly forces
           // a full rescan next pass too.
           lastModSeq: p.status.highestModSeq,
@@ -536,7 +590,7 @@ export async function mailSync(
     for (const [root, msgs] of byRoot.entries()) {
       const prev = storedMeta.get(root);
       let channelId: string;
-      if (prev && enabledChannelIds.has(prev.channelId)) {
+      if (prev?.channelId !== undefined && enabledChannelIds.has(prev.channelId)) {
         // Stable: a thread never changes folders because its oldest message
         // aged out of this pass's window.
         channelId = prev.channelId;
@@ -593,8 +647,19 @@ export async function mailSync(
     // treats these roots as never-seen and re-runs the initial-sync
     // discipline, rather than inserting them with no `unread` key and
     // notifying for mail the user was never shown.
-    for (const root of changedMeta) {
-      await host.set(threadMetaKey(root), nextMeta.get(root)!);
+    //
+    // ONE `setMany`, never a `set` per root: a merged pass can touch hundreds
+    // of roots, and beyond the request budget a per-root loop can fail
+    // half-written — the un-written roots then look never-seen on the next
+    // pass and are re-emitted with `archived: false` (un-archiving threads the
+    // user archived) and `unread: false` (silencing genuinely unread ones).
+    if (changedMeta.size > 0) {
+      await host.setMany(
+        [...changedMeta].map((root): [string, ThreadMeta] => [
+          threadMetaKey(root),
+          nextMeta.get(root)!,
+        ])
+      );
     }
 
     const nextState: MailSyncState = {
@@ -603,6 +668,16 @@ export async function mailSync(
       ...(historyMin ? { syncHistoryMin: historyMin } : {}),
       // `pendingFullRescan` is consumed by this pass and cleared by omission.
     };
+    // CONSTRAINT: this is a read-modify-write of ONE connection-level document
+    // (read at the top of the pass, replaced wholesale here), so it is only
+    // safe while the connection can have at most one pass in flight — i.e. the
+    // sync lock must be held at CONNECTION level, not per channel. Under a
+    // per-channel lock two overlapping passes each write the whole document
+    // from their own snapshot: the later writer restores the other mailbox's
+    // pre-pass `lastUid`/`lastModSeq` (re-classifying already-ingested mail as
+    // new and re-marking threads unread), or writes a snapshot that predates a
+    // sibling's first cursor and drops it entirely, forcing a redundant
+    // full-history backfill and a second `channelSyncCompleted`.
     await host.set(STATE_KEY, nextState);
 
     // Clear the "syncing…" spinner for each channel whose mailbox completed

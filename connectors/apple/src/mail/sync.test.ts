@@ -78,6 +78,8 @@ function buildFakeHost(opts: {
   const fetchAttachmentCalls: FetchAttachmentCall[] = [];
   /** Every mailbox SELECTed, in order. */
   const selectCalls: string[] = [];
+  /** One entry per `setMany()` INVOCATION: the keys it wrote. */
+  const setManyCalls: string[][] = [];
   const syncCompleted: string[] = [];
   let selected = opts.mailboxes[0]?.name ?? "INBOX";
 
@@ -105,7 +107,22 @@ function buildFakeHost(opts: {
       criteria: ImapSearchCriteria
     ): Promise<number[]> => {
       searchCalls.push({ mailbox: selected, criteria });
-      return mailboxes.get(selected)?.searchUids ?? [];
+      const fixture = mailboxes.get(selected);
+      if (!fixture) return [];
+      // HONOUR `since`, like a real server: a search window that is too narrow
+      // must actually MISS the messages outside it. Without this the fake
+      // returned every uid regardless of window, so a pass that searched two
+      // mailboxes over two different windows still saw every message and
+      // window bugs were invisible unless a test asserted the raw `since`
+      // argument. A fixture uid with no message (or no date) is always
+      // returned — there is nothing to compare it against.
+      const since =
+        criteria.since === undefined ? undefined : new Date(criteria.since).getTime();
+      if (since === undefined) return fixture.searchUids;
+      return fixture.searchUids.filter((uid) => {
+        const date = fixture.messagesByUid.get(uid)?.date;
+        return date === undefined || date.getTime() >= since;
+      });
     },
     fetchMessages: async (
       _session: ImapSession,
@@ -157,6 +174,10 @@ function buildFakeHost(opts: {
     set: async <T>(key: string, value: T): Promise<void> => {
       stored.set(key, value);
     },
+    setMany: async <T>(entries: [key: string, value: T][]): Promise<void> => {
+      setManyCalls.push(entries.map(([key]) => key));
+      for (const [key, value] of entries) stored.set(key, value);
+    },
     get: async <T>(key: string): Promise<T | undefined> => stored.get(key) as T | undefined,
     clear: async (key: string): Promise<void> => {
       stored.delete(key);
@@ -177,12 +198,29 @@ function buildFakeHost(opts: {
     fetchCalls,
     fetchAttachmentCalls,
     selectCalls,
+    setManyCalls,
     syncCompleted,
     setThreadToDo,
   };
 }
 
-const RECENT_ISO = "2026-07-15T00:00:00Z";
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Fixture timestamps are anchored to NOW, never to fixed calendar dates. The
+ * pass's recent window is `now - 30d`, and the fake `search()` now HONOURS
+ * `since` (see `buildFakeHost`), so a fixed date would quietly drift out of
+ * that window as time passes and rot the suite instead of testing it.
+ */
+function daysAgo(days: number): Date {
+  return new Date(Date.now() - days * DAY_MS);
+}
+
+/** The plan history floor most fixtures run under — inside the 30-day window,
+ *  so `floor` and `recentSince` coincide and these tests exercise the merge
+ *  rather than the window. The window itself is exercised by the tests that
+ *  pass `FAR_ISO` (a paid plan's 365-day floor), where the two differ. */
+const RECENT_ISO = daysAgo(10).toISOString();
 
 function msg(over: Partial<ImapMessage>): ImapMessage {
   return {
@@ -191,7 +229,9 @@ function msg(over: Partial<ImapMessage>): ImapMessage {
     from: [{ address: "jane@example.com", name: "Jane" }],
     to: [{ address: "kris@icloud.com", name: "Kris" }],
     messageId: "<m1@example.com>",
-    date: new Date("2026-07-15T10:00:00Z"),
+    // Comfortably inside every window these fixtures use, including the
+    // 7-day default floor a pass gets when no plan history is recorded.
+    date: daysAgo(4),
     subject: "Lunch?",
     bodyText: "Can we meet?",
     ...over,
@@ -284,7 +324,7 @@ describe("mailSync — one merged pass per connection", () => {
     from: [{ address: "jane@example.com", name: "Jane" }],
     to: [{ address: "kris@icloud.com", name: "Kris" }],
     flags: ["\\Seen"],
-    date: new Date("2026-07-10T09:00:00Z"),
+    date: daysAgo(9),
   });
   const oldReply = msg({
     uid: 71,
@@ -292,7 +332,7 @@ describe("mailSync — one merged pass per connection", () => {
     references: ["<root@example.com>"],
     subject: "Re: Project kickoff",
     flags: ["\\Seen"],
-    date: new Date("2026-07-11T09:00:00Z"),
+    date: daysAgo(8),
   });
   const newReply = msg({
     uid: 30,
@@ -300,7 +340,7 @@ describe("mailSync — one merged pass per connection", () => {
     references: ["<root@example.com>"],
     subject: "Re: Project kickoff",
     flags: [], // unseen — genuinely new mail
-    date: new Date("2026-07-20T09:00:00Z"),
+    date: daysAgo(2),
   });
 
   /** No HIGHESTMODSEQ anywhere, so the CONDSTORE gate never skips and every
@@ -536,7 +576,7 @@ describe("mailSync — generalized CONDSTORE gate", () => {
       from: [{ address: "alice@example.com", name: "Alice" }],
       to: [{ address: "kris@icloud.com", name: "Kris" }],
       flags: ["\\Seen"],
-      date: new Date("2026-07-14T09:00:00Z"),
+      date: daysAgo(9),
     });
     const reply = sentMsg({
       uid: 40,
@@ -544,7 +584,7 @@ describe("mailSync — generalized CONDSTORE gate", () => {
       references: ["<orig@x>"],
       subject: "Re: Original",
       to: [{ address: "alice@example.com", name: "Alice" }],
-      date: new Date("2026-07-15T10:00:00Z"),
+      date: daysAgo(7),
     });
     const { host, savedLinks, fetchCalls } = buildFakeHost({
       appleId: "kris@icloud.com",
@@ -611,7 +651,8 @@ describe("mailSync — per-mailbox phase and per-root initial-ness", () => {
       messageId: "<archive-root@x.com>",
       subject: "Old thread",
       flags: [], // unseen, but historical — must NOT be treated as new mail
-      date: new Date("2026-06-01T09:00:00Z"),
+      // Outside the 30-day recent window, inside the 365-day plan floor.
+      date: daysAgo(52),
     });
     const inboxMsg = msg({
       uid: 30,
@@ -638,13 +679,17 @@ describe("mailSync — per-mailbox phase and per-root initial-ness", () => {
     // ONE merged transform/save covering both folders.
     expect(saveLinksCalls).toHaveLength(1);
 
-    // Archive (backfill) is searched from the history floor only.
+    // The window is a property of the PASS: because Archive is backfilling,
+    // EVERY mailbox — INBOX and Sent included — searches from the history
+    // floor, never the 30-day recent window. A per-mailbox window would hand
+    // the single transformMessages call a partial view of any thread that
+    // spans the backfilling folder and an incremental one (see the split-
+    // thread test below).
     const archiveSearches = searchCalls.filter((c) => c.mailbox === "Archive");
     expect(archiveSearches.length).toBeGreaterThan(0);
-    expect(archiveSearches.every((c) => sinceMs(c) === FLOOR_MS)).toBe(true);
-    // INBOX (incremental) also runs the 30-day recent-window rescan.
     const inboxSearches = searchCalls.filter((c) => c.mailbox === "INBOX");
-    expect(inboxSearches.some((c) => sinceMs(c) > FLOOR_MS)).toBe(true);
+    expect(inboxSearches.length).toBeGreaterThan(0);
+    expect(searchCalls.every((c) => sinceMs(c) === FLOOR_MS)).toBe(true);
 
     // A backfilling mailbox contributes NO new-message signal: this unseen
     // historical message must not re-mark its already-known thread unread.
@@ -653,6 +698,198 @@ describe("mailSync — per-mailbox phase and per-root initial-ness", () => {
 
     // Only the folder that completed its FIRST backfill clears its spinner.
     expect(syncCompleted).toEqual(["mail:Archive"]);
+  });
+
+  it("a backfilling folder does not leave the incremental folder's half of a shared thread behind", async () => {
+    // The paid-plan case the merged pass has to survive: a 365-day history
+    // floor and a 30-day recent window are 335 days apart, so a window chosen
+    // per mailbox splits a thread that spans a backfilling folder and an
+    // already-synced one — permanently, since neither message ever re-enters
+    // a 30-day window again.
+    const inboxRoot = msg({
+      uid: 50, // BELOW the INBOX cursor: not new mail, so incremental-only
+      messageId: "<split@x.com>",
+      subject: "Quarterly plan",
+      flags: [], // genuinely unread
+      date: daysAgo(60), // outside the 30-day recent window
+    });
+    const archivedReply = msg({
+      uid: 70,
+      messageId: "<split-reply@x.com>",
+      references: ["<split@x.com>"],
+      subject: "Re: Quarterly plan",
+      flags: ["\\Seen"],
+      date: daysAgo(45), // also outside the recent window
+    });
+    const { host, savedLinks, fetchCalls } = buildFakeHost({
+      appleId: "kris@icloud.com",
+      mailboxes: [box("INBOX", [inboxRoot]), box("Archive", [archivedReply])],
+    });
+    // INBOX is synced up to uid 100; Archive was just enabled (no cursor).
+    await host.set(
+      "state",
+      state(
+        { INBOX: { uidValidity: 1, lastUid: 100, syncHistoryMin: FAR_ISO } },
+        { syncHistoryMin: FAR_ISO }
+      )
+    );
+    // Already known to Plot, so its read state is a real decision rather than
+    // the initial-sync discipline.
+    await host.set("thread:split@x.com", { channelId: "mail:INBOX" } satisfies ThreadMeta);
+
+    await mailSync(host, [INBOX_CHANNEL, ARCHIVE_CHANNEL], FAR_ISO);
+
+    // Both halves reach the single transformMessages call…
+    const fetchedIn = (mailbox: string) =>
+      fetchCalls.filter((c) => c.mailbox === mailbox).flatMap((c) => c.uids);
+    expect(fetchedIn("INBOX")).toContain(50);
+    expect(fetchedIn("Archive")).toContain(70);
+    const link = linkFor(savedLinks, "icloud-mail:thread:split@x.com");
+    expect(noteKeys(link)).toEqual(["split-reply@x.com", "split@x.com"]);
+    // …so the thread keeps the ROOT's subject, not the Archive copy's "Re: …",
+    // and is NOT marked read off the back of the Archive copy's \Seen flag
+    // while the unseen root is missing from the batch.
+    expect(link.title).toBe("Quarterly plan");
+    expect("unread" in link).toBe(false);
+  });
+
+  it("searches Sent from the history floor on a first backfill, so old owner replies land on backfilled threads", async () => {
+    const inbound = msg({
+      uid: 30,
+      messageId: "<inbound@x.com>",
+      subject: "Contract",
+      flags: ["\\Seen"],
+      date: daysAgo(60), // outside the 30-day recent window
+    });
+    const ownerReply = sentMsg({
+      uid: 40,
+      messageId: "<owner-reply@icloud.com>",
+      references: ["<inbound@x.com>"],
+      date: daysAgo(59),
+    });
+    const { host, savedLinks, searchCalls } = buildFakeHost({
+      appleId: "kris@icloud.com",
+      mailboxes: [
+        box("INBOX", [inbound]),
+        box(SENT_BOX, [ownerReply], { specialUse: "\\Sent" }),
+      ],
+    });
+
+    await mailSync(host, [INBOX_CHANNEL], FAR_ISO);
+
+    const sentSearches = searchCalls.filter((c) => c.mailbox === SENT_BOX);
+    expect(sentSearches.length).toBeGreaterThan(0);
+    expect(sentSearches.every((c) => sinceMs(c) === FLOOR_MS)).toBe(true);
+    // The owner's months-old reply is on the thread, not lost to a 30-day
+    // window that only the backfilling folder escaped.
+    const link = linkFor(savedLinks, "icloud-mail:thread:inbound@x.com");
+    expect(noteKeys(link)).toEqual(["inbound@x.com", "owner-reply@icloud.com"]);
+  });
+
+  it("widens an ALREADY-SYNCED Sent mailbox when another folder is backfilling", async () => {
+    // Sent having its own cursor must not narrow it while the rest of the
+    // pass is wide: the owner's older replies would silently drop off every
+    // thread the newly-enabled folder backfills.
+    const archived = msg({
+      uid: 70,
+      messageId: "<deal@x.com>",
+      subject: "Deal terms",
+      flags: ["\\Seen"],
+      date: daysAgo(60),
+    });
+    const ownerReply = sentMsg({
+      uid: 40,
+      messageId: "<deal-reply@icloud.com>",
+      references: ["<deal@x.com>"],
+      date: daysAgo(59),
+    });
+    const { host, savedLinks, searchCalls } = buildFakeHost({
+      appleId: "kris@icloud.com",
+      mailboxes: [
+        box("Archive", [archived]),
+        box(SENT_BOX, [ownerReply], { specialUse: "\\Sent" }),
+      ],
+    });
+    // Sent is already synced; Archive was just enabled.
+    await host.set(
+      "state",
+      state(
+        { [SENT_BOX]: { uidValidity: 1, lastUid: 0, syncHistoryMin: FAR_ISO } },
+        { syncHistoryMin: FAR_ISO }
+      )
+    );
+
+    await mailSync(host, [ARCHIVE_CHANNEL], FAR_ISO);
+
+    const sentSearches = searchCalls.filter((c) => c.mailbox === SENT_BOX);
+    expect(sentSearches.length).toBeGreaterThan(0);
+    expect(sentSearches.every((c) => sinceMs(c) === FLOOR_MS)).toBe(true);
+    const link = linkFor(savedLinks, "icloud-mail:thread:deal@x.com");
+    expect(noteKeys(link)).toEqual(["deal-reply@icloud.com", "deal@x.com"]);
+  });
+
+  it("re-reads every mailbox from the floor when the granted history window widens", async () => {
+    // Plan upgrade: the connection was synced under a 7-day floor and is now
+    // granted a year. Every mailbox has a cursor and an unchanged
+    // HIGHESTMODSEQ, so without noticing the widening the pass would skip
+    // outright and the newly-granted history would never arrive.
+    const older = msg({
+      uid: 20,
+      messageId: "<older@x.com>",
+      subject: "Older",
+      flags: ["\\Seen"],
+      date: daysAgo(90),
+    });
+    const recent = msg({ uid: 30, messageId: "<recent@x.com>", flags: ["\\Seen"] });
+    const { host, savedLinks, searchCalls, stored } = buildFakeHost({
+      appleId: "kris@icloud.com",
+      mailboxes: [box("INBOX", [older, recent], { highestModSeq: 100 })],
+    });
+    const NARROW_ISO = daysAgo(7).toISOString();
+    await host.set(
+      "state",
+      state(
+        {
+          INBOX: { uidValidity: 1, lastUid: 30, lastModSeq: 100, syncHistoryMin: NARROW_ISO },
+        },
+        { syncHistoryMin: NARROW_ISO }
+      )
+    );
+
+    await mailSync(host, [INBOX_CHANNEL], FAR_ISO);
+
+    expect(searchCalls.every((c) => sinceMs(c) === FLOOR_MS)).toBe(true);
+    linkFor(savedLinks, "icloud-mail:thread:older@x.com");
+    // The cursor records how far back the mailbox has now been read, so the
+    // next pass narrows back to the recent window instead of re-reading a
+    // year of history every time.
+    const next = stored.get("state") as MailSyncState;
+    expect(new Date(next.boxes.INBOX.syncHistoryMin!).getTime()).toBe(FLOOR_MS);
+  });
+
+  it("writes every changed thread marker in one batched store call", async () => {
+    const { host, setManyCalls } = buildFakeHost({
+      appleId: "kris@icloud.com",
+      mailboxes: [
+        box("INBOX", [
+          msg({ uid: 30, messageId: "<a@x.com>" }),
+          msg({ uid: 31, messageId: "<b@x.com>" }),
+          msg({ uid: 32, messageId: "<c@x.com>" }),
+        ]),
+      ],
+    });
+
+    await mailSync(host, [INBOX_CHANNEL], RECENT_ISO);
+
+    // One round-trip for all three roots — not one `set` each: a merged pass
+    // can touch hundreds of roots, and a partially-written loop makes the
+    // un-written roots look never-seen next pass (un-archiving them).
+    expect(setManyCalls).toHaveLength(1);
+    expect(setManyCalls[0].sort()).toEqual([
+      "thread:a@x.com",
+      "thread:b@x.com",
+      "thread:c@x.com",
+    ]);
   });
 
   it("a UIDVALIDITY reset re-baselines only that mailbox, and leaves known threads' read state alone", async () => {
@@ -723,8 +960,8 @@ describe("mailSync — per-mailbox phase and per-root initial-ness", () => {
     const historical = msg({
       uid: 70,
       messageId: "<historical@x.com>",
-      flags: [], // unseen years-old mail
-      date: new Date("2026-06-01T09:00:00Z"),
+      flags: [], // unseen older mail, inside this pass's history floor
+      date: daysAgo(9),
     });
     const brandNew = msg({
       uid: 31,
@@ -794,7 +1031,7 @@ describe("mailSync — Sent handling", () => {
     const ownerSent = sentMsg({
       uid: 10,
       messageId: "<root@icloud.com>",
-      date: new Date("2026-07-15T09:00:00Z"),
+      date: daysAgo(8),
       subject: "Proposal",
       bodyText: "Here's the proposal",
     });
@@ -803,7 +1040,7 @@ describe("mailSync — Sent handling", () => {
       messageId: "<reply@example.com>",
       references: ["<root@icloud.com>"],
       flags: [], // unseen inbound reply
-      date: new Date("2026-07-15T10:00:00Z"),
+      date: daysAgo(7),
       bodyText: "Sounds good",
     });
     const { host, savedLinks } = buildFakeHost({
@@ -885,14 +1122,14 @@ describe("mailSync — persisted home channel", () => {
       messageId: "<split-root@x.com>",
       subject: "Kickoff",
       flags: ["\\Seen"],
-      date: new Date("2026-06-01T09:00:00Z"),
+      date: daysAgo(9),
     });
     const inboxReply = msg({
       uid: 30,
       messageId: "<split-reply@x.com>",
       references: ["<split-root@x.com>"],
       flags: ["\\Seen"],
-      date: new Date("2026-07-20T09:00:00Z"),
+      date: daysAgo(2),
     });
     const archiveBox = box("Archive", [archiveRoot]);
     const { host, savedLinks, stored } = buildFakeHost({
