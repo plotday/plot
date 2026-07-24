@@ -14,6 +14,7 @@ export {
 } from "./drain";
 export * from "./tools";
 export * from "./messaging/reply-recipients";
+export * from "./messaging/canonical-email";
 export * from "./options";
 export * from "./utils/types";
 export { getBuilderDocumentation } from "./creator-docs";
