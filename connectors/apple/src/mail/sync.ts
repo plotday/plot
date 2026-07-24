@@ -9,10 +9,26 @@ import {
 } from "./calendar-bundle";
 import { connectIcloud, fetchUidRange, resolveSentMailbox } from "./imap-fetch";
 import type { MailHost, MailSyncState } from "./mail-host";
-import { mailSource, rootMessageId, transformMessages, type MailMessage } from "./transform";
+import {
+  mailSource,
+  messageKey,
+  rootMessageId,
+  transformMessages,
+  type MailMessage,
+} from "./transform";
 
 const DEFAULT_HISTORY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const RECENT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+/** Distinct thread roots present in a message batch. */
+function rootsOf(messages: MailMessage[]): Set<string> {
+  const roots = new Set<string>();
+  for (const m of messages) {
+    const root = rootMessageId(m);
+    if (root) roots.add(root);
+  }
+  return roots;
+}
 
 /**
  * Resolve the initial-sync history floor. Uses `syncHistoryMin` when it
@@ -302,10 +318,19 @@ async function runInitialBackfill(
     ...(sentBox ? sent.map((m) => ({ ...m, mailbox: sentBox })) : []),
   ];
   const calendarBundles = await detectCalendarBundles(host, session, merged);
+  // TEMPORARY ADAPTER — replaced when this file becomes the merged
+  // connection-level pass. `transformMessages` now expresses initial-ness and
+  // the home channel PER THREAD ROOT, but this per-channel pass still has a
+  // single channel and a batch-wide "everything is initial", so it projects
+  // those flat values onto every root. Behaviour is unchanged. `sentMailbox`
+  // is deliberately not passed: the Sent-only title/unread rule belongs to the
+  // merged pass, where a thread's other folders are actually in the batch.
+  const roots = rootsOf(merged);
   const links = transformMessages(merged, {
-    channelId,
     appleId: host.appleId,
-    initialSync: true,
+    channelByRoot: new Map([...roots].map((r) => [r, channelId])),
+    initialRoots: roots,
+    newMessages: new Set<string>(),
     calendarBundles,
   });
   if (links.length > 0) await host.integrations.saveLinks(links);
@@ -483,13 +508,24 @@ export async function mailIncrementalSync(
       ...(sentBox ? sent.map((m) => ({ ...m, mailbox: sentBox })) : []),
     ];
     const calendarBundles = await detectCalendarBundles(host, session, merged);
+    // TEMPORARY ADAPTER — see the note in `runInitialBackfill`. Projects this
+    // per-channel pass's flat inputs onto the per-root shape
+    // `transformMessages` now takes. `newUids` are UIDs of THIS channel's
+    // mailbox only, so they are qualified with `rawMailbox` before becoming
+    // message keys — Sent messages can never be "new" (an owner's own reply
+    // must not mark their thread unread), which the old bare-uid set could not
+    // guarantee.
+    const newUidSet = new Set(newUids);
+    const newMessages = new Set(
+      merged.filter((m) => m.mailbox === rawMailbox && newUidSet.has(m.uid)).map(messageKey)
+    );
     const links = transformMessages(merged, {
-      channelId,
       appleId: host.appleId,
-      initialSync: false,
-      // Only these newly-arrived UIDs may (re)mark a thread unread; the
+      channelByRoot: new Map([...rootsOf(merged)].map((r) => [r, channelId])),
+      initialRoots: new Set<string>(),
+      // Only these newly-arrived messages may (re)mark a thread unread; the
       // recent-window rescan messages are read-state propagation only.
-      newUids,
+      newMessages,
       calendarBundles,
     });
     if (links.length > 0) await host.integrations.saveLinks(links);

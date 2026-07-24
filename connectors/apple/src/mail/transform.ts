@@ -1,6 +1,7 @@
 import type { ImapAddress, ImapMessage } from "@plotday/twister/tools/imap";
 import { ActionType, type Action, type NewContact, type NewLinkWithNotes } from "@plotday/twister";
 
+import { parse } from "../product-channel";
 import { buildAttachmentRef } from "./attachments";
 import { isCalendarAttachment, type CalendarBundle } from "./calendar-bundle";
 import { looksLikeHtml } from "./html";
@@ -26,12 +27,107 @@ export function mailSource(rootId: string): string {
 
 /**
  * An `ImapMessage` tagged with the mailbox it was fetched from. `sync.ts`
- * fetches INBOX and Sent separately then merges them into one
+ * fetches every enabled mailbox plus Sent and merges them into ONE
  * `transformMessages` call (see the docstring below), so the mailbox tag is
- * the only way to build a correct attachment ref once the arrays are
- * combined — UIDs are only unique within a single mailbox.
+ * the only thing that makes a message identifiable once the arrays are
+ * combined — IMAP UIDs are unique only within a single mailbox, so `uid`
+ * alone is ambiguous. It is load-bearing for attachment refs
+ * (`buildAttachmentRef`), for `messageKey`, and for the Sent-only rule.
  */
 export type MailMessage = ImapMessage & { mailbox: string };
+
+/**
+ * Identity of one fetched message across a merged multi-mailbox batch.
+ *
+ * IMAP UIDs are unique only WITHIN a mailbox, so `uid` alone cannot identify
+ * a message once several folders are merged into a single pass: `Archive` uid
+ * 42 and `INBOX` uid 42 are different messages. Qualifying by mailbox is what
+ * keeps a stale unseen message in one folder from being mistaken for
+ * newly-arrived mail in another (which would re-mark its thread unread on
+ * every poll, forever).
+ *
+ * A space is a safe separator: IMAP mailbox names may contain `/` and `:`
+ * but the value is only ever compared to another value built the same way,
+ * so the format just has to be injective for the (mailbox, uid) pairs of a
+ * single pass — and it is, since `uid` is numeric and cannot contain a space.
+ */
+export function messageKey(m: MailMessage): string {
+  return `${m.mailbox} ${m.uid}`;
+}
+
+/**
+ * Sort rank preferring INBOX over any other folder. Compared
+ * case-insensitively because RFC 3501 defines INBOX case-insensitively and a
+ * server may report it in any case (`channels.ts` normalizes the same way).
+ */
+function mailboxRank(mailbox: string): number {
+  return mailbox.toUpperCase() === "INBOX" ? 0 : 1;
+}
+
+/**
+ * Deterministic ordering for messages of one thread: oldest first, then a
+ * stable tie-break on (INBOX-first, mailbox name, uid).
+ *
+ * The tie-break matters now that a pass merges several folders: two copies of
+ * a same-second message arriving from different mailboxes would otherwise
+ * order by whatever sequence the fetch loop happened to produce, making note
+ * order — and the originator that drives `title`/`author` — depend on folder
+ * iteration order rather than on the mail itself.
+ */
+function compareMessages(a: MailMessage, b: MailMessage): number {
+  const byDate = (a.date?.getTime() ?? 0) - (b.date?.getTime() ?? 0);
+  if (byDate !== 0) return byDate;
+  const byRank = mailboxRank(a.mailbox) - mailboxRank(b.mailbox);
+  if (byRank !== 0) return byRank;
+  if (a.mailbox !== b.mailbox) return a.mailbox < b.mailbox ? -1 : 1;
+  return a.uid - b.uid;
+}
+
+/** The note key for one message: its stripped Message-ID, else a uid fallback. */
+function noteKeyOf(m: MailMessage): string {
+  return m.messageId ? stripAngle(m.messageId) : `uid-${m.uid}`;
+}
+
+/**
+ * Collapse copies of the SAME message that a merged pass fetched from two
+ * different folders (the user keeps a copy in a project folder as well as
+ * INBOX, say). Both copies carry the same Message-ID, so they'd produce two
+ * notes with the same `key` in one batch — the last one written would win
+ * non-deterministically — and their `\Seen`/`\Flagged` flags can differ,
+ * perturbing the thread's read state and to-do reconciliation.
+ *
+ * Which copy survives must not depend on fetch order, or the thread would
+ * churn between passes. Preference, in order:
+ *  1. the copy in the thread's own home mailbox (`homeMailbox`, derived from
+ *     the resolved channel) — that folder is where the thread "lives";
+ *  2. otherwise the first by (INBOX-first, mailbox name, uid).
+ *
+ * Messages with no Message-ID are keyed `uid-<uid>` and are deliberately NOT
+ * deduped across mailboxes here beyond that key — they are vanishingly rare
+ * and there is no reliable identity to match them on.
+ */
+function dedupeCopies(msgs: MailMessage[], homeMailbox: string | null): MailMessage[] {
+  const byKey = new Map<string, MailMessage>();
+  for (const m of msgs) {
+    const key = noteKeyOf(m);
+    const held = byKey.get(key);
+    if (!held) {
+      byKey.set(key, m);
+      continue;
+    }
+    if (held.mailbox === homeMailbox) continue;
+    if (m.mailbox === homeMailbox || compareCopies(m, held) < 0) byKey.set(key, m);
+  }
+  return [...byKey.values()];
+}
+
+/** Tie-break between two copies of one message: INBOX first, then name, then uid. */
+function compareCopies(a: MailMessage, b: MailMessage): number {
+  const byRank = mailboxRank(a.mailbox) - mailboxRank(b.mailbox);
+  if (byRank !== 0) return byRank;
+  if (a.mailbox !== b.mailbox) return a.mailbox < b.mailbox ? -1 : 1;
+  return a.uid - b.uid;
+}
 
 /**
  * Build this message's `fileRef` actions from its attachment parts, or
@@ -59,21 +155,65 @@ function attachmentActions(m: MailMessage): Action[] | undefined {
 }
 
 export type TransformCtx = {
-  /** Namespaced enabled channel id, e.g. "mail:INBOX". */
-  channelId: string;
   /** The connection owner's Apple ID (their own address). */
   appleId: string;
-  initialSync: boolean;
   /**
-   * INBOX UIDs that are NEW this pass (uid > the stored cursor). Drives the
-   * incremental unread decision: a thread is only (re)marked unread by a
-   * genuinely new unseen message. The recent-window `\Seen` rescan re-fetches
-   * already-synced messages to propagate reads done in Apple Mail — but those
-   * must NEVER re-assert unread, or a message read in Plot yet still unseen on
-   * IMAP (no `\Seen` write-back until mail-write ships) would flip back to
-   * unread on every poll. Omitted on initial sync (which sets unread:false).
+   * The namespaced mail channel each thread root is homed to, e.g.
+   * `"mail:Archive"` — the link's top-level `channelId` AND its
+   * `meta.syncableId` both come from here, and the two must stay equal
+   * because disable-time archiving ANDs both filters.
+   *
+   * Per ROOT, not per batch: one merged pass covers every enabled folder, so
+   * there is no single channel for the call. The caller resolves and persists
+   * a home channel per thread (rather than deriving it from whichever
+   * messages happen to be inside this pass's window) so the value is stable
+   * across passes. Every root present in `messages` must have an entry; a
+   * root without one is skipped with a warning rather than emitted with a
+   * null channel, which would be un-archivable.
    */
-  newUids?: number[];
+  channelByRoot: Map<string, string>;
+  /**
+   * Thread roots being ingested for the first time by a HISTORICAL backfill.
+   * These get `unread: false, archived: false`, the standard discipline that
+   * stops a bulk import of old mail from spamming notifications.
+   *
+   * Per ROOT, not per batch: one merged pass can backfill a newly-enabled
+   * folder while incrementally syncing the folders that already have a
+   * cursor. A batch-wide `true` would clear genuine unread state and
+   * un-archive threads the user archived; a batch-wide `false` would leave
+   * the newly-enabled folder's historical threads with no `unread` key on
+   * INSERT, so the database default (unread) applies — the spam this exists
+   * to prevent. A root that is new to Plot but arrived as live mail is NOT in
+   * this set.
+   */
+  initialRoots: Set<string>;
+  /**
+   * Messages that are NEW this pass, identified by `messageKey()` —
+   * `"<mailbox> <uid>"`, NOT a bare uid, because IMAP UIDs are unique only
+   * within a mailbox (see `messageKey`).
+   *
+   * Drives the incremental unread decision: a thread is only (re)marked
+   * unread by a genuinely new unseen message. The recent-window `\Seen`
+   * rescan re-fetches already-synced messages to propagate reads done in
+   * Apple Mail — but those must NEVER re-assert unread, or a message read in
+   * Plot yet still unseen on IMAP would flip back to unread on every poll.
+   *
+   * Must never contain a Sent message: mail the owner sent must not mark
+   * their own thread unread.
+   */
+  newMessages: Set<string>;
+  /**
+   * The raw Sent mailbox name for this pass, when the account has one.
+   *
+   * Used only for the Sent-only rule: when every message a thread
+   * contributed to this batch came from Sent, the batch carries no
+   * information about the thread's real subject or read state — the inbound
+   * messages simply fall outside the fetched window — so `title` and `unread`
+   * are both omitted rather than recomputed from the owner's own reply. Both
+   * fields are last-writer-wins on upsert, and a present key of ANY value
+   * overwrites, so the keys must be absent, not null/empty.
+   */
+  sentMailbox?: string | null;
   /**
    * Per-thread-root calendar-invite bundling decisions, computed by
    * `sync.ts`'s `detectCalendarBundles` (which fetches and classifies any
@@ -141,23 +281,27 @@ export function bodyOf(msg: ImapMessage): { content: string; contentType: "html"
  * every participant seen; the owner's own messages are credited via
  * authoredBySelf.
  *
- * `messages` must include both INBOX and Sent for a sync pass in a single
- * call: iCloud Sent messages carry the owner's address in `From`, so
- * per-message address comparison alone identifies owner messages without a
- * batch-level flag. This lets INBOX and Sent be merged into one call, which
- * in turn ensures a thread has exactly one NewLinkWithNotes per sync pass —
- * two separate calls for the same thread each recompute `unread` in
- * isolation, and whichever is saved last (e.g. an owner Sent reply saved
- * after an unseen inbound one) wins and can incorrectly clear `unread`. See
- * `sync.ts`. (Alias-`From` sent mail attributes to the alias's contact
- * instead of `authoredBySelf` — an accepted minor edge case.)
+ * `messages` must be the COMPLETE visible message set for every thread it
+ * touches — every enabled mailbox plus Sent — in a single call. `unread`,
+ * `title` and the originator are all derived from only the messages handed to
+ * one call, so two calls for the same thread each recompute them in isolation
+ * and whichever is saved last wins: an owner Sent reply saved after an unseen
+ * inbound one incorrectly clears `unread`, and a folder holding only part of
+ * a conversation rewrites its title from a partial view. Merging every
+ * mailbox into one call is what makes a thread's rebuild deterministic. See
+ * `sync.ts`.
+ *
+ * Owner messages need no batch-level flag: iCloud Sent messages carry the
+ * owner's address in `From`, so per-message address comparison identifies
+ * them. (Alias-`From` sent mail attributes to the alias's contact instead of
+ * `authoredBySelf` — an accepted minor edge case.)
  */
 export function transformMessages(
   messages: MailMessage[],
   ctx: TransformCtx
 ): NewLinkWithNotes[] {
   const ownEmail = ctx.appleId.toLowerCase();
-  const newUids = ctx.newUids ? new Set(ctx.newUids) : undefined;
+  const sentMailbox = ctx.sentMailbox ?? null;
   // Group by thread root (skip messages with no id to thread on).
   const byRoot = new Map<string, MailMessage[]>();
   for (const m of messages) {
@@ -169,12 +313,27 @@ export function transformMessages(
   }
 
   const links: NewLinkWithNotes[] = [];
-  for (const [root, msgs] of byRoot.entries()) {
+  for (const [root, allCopies] of byRoot.entries()) {
+    // The thread's home channel. A missing entry means the caller failed its
+    // contract; emitting the link anyway would need a null channelId, which
+    // never matches disable-time archiving and never seeds the thread's
+    // topic. Skip the root instead so the rest of the pass still lands.
+    const channelId = ctx.channelByRoot.get(root);
+    if (!channelId) {
+      console.warn(`[Apple Mail] No channel resolved for thread root ${root}; skipping`);
+      continue;
+    }
+    const homeMailbox = parse(channelId).rawId;
+
+    // Collapse copies of one message held in two folders BEFORE anything is
+    // derived from the set — duplicates would double a note key and perturb
+    // the read/flag state (see dedupeCopies) — then order deterministically,
+    // so nothing downstream (note order, originator, the participant union)
+    // depends on which mailbox the merged pass happened to fetch first.
+    const msgs = dedupeCopies(allCopies, homeMailbox).sort(compareMessages);
+
     // Earliest message drives the thread's title + author.
-    const ordered = [...msgs].sort(
-      (a, b) => (a.date?.getTime() ?? 0) - (b.date?.getTime() ?? 0)
-    );
-    const originator = ordered[0];
+    const originator = msgs[0];
     const originatorFrom = originator.from && originator.from[0] ? originator.from[0] : null;
 
     // Union of participants for thread access.
@@ -185,8 +344,8 @@ export function transformMessages(
       }
     }
 
-    const notes = ordered.map((m) => {
-      const key = m.messageId ? stripAngle(m.messageId) : `uid-${m.uid}`;
+    const notes = msgs.map((m) => {
+      const key = noteKeyOf(m);
       const body = bodyOf(m);
       const from = m.from && m.from[0] ? m.from[0] : null;
       const isOwner = from?.address.toLowerCase() === ownEmail;
@@ -205,20 +364,39 @@ export function transformMessages(
       };
     });
 
-    // Incremental read-state (see TransformCtx.newUids):
+    // Incremental read-state (see TransformCtx.newMessages):
     //  - every message seen        → mark read (a read done in Apple Mail)
     //  - a NEW unseen message      → mark unread (genuinely new mail)
     //  - only existing unseen mail → leave `unread` untouched, so IMAP's stale
     //    unseen flag can't clobber a read the user did in Plot.
+    // Newness is matched on `messageKey` (mailbox + uid), never on the bare
+    // uid: a merged pass sees several mailboxes at once, and a bare-uid match
+    // would let an old unseen message in one folder inherit the "new" status
+    // of an unrelated message that happens to share its uid in another —
+    // re-marking the thread unread on every single poll.
     const allSeen = msgs.every((m) => isSeen(m));
     const hasNewUnseen = msgs.some(
-      (m) => !isSeen(m) && (newUids?.has(m.uid) ?? false)
+      (m) => !isSeen(m) && ctx.newMessages.has(messageKey(m))
     );
     const incrementalRead: { unread?: boolean } = allSeen
       ? { unread: false }
       : hasNewUnseen
         ? { unread: true }
         : {};
+
+    // Sent-only rule (see TransformCtx.sentMailbox): this pass saw nothing of
+    // the thread but the owner's own outbound copies, so it knows neither the
+    // real subject nor the read state. Omit both keys rather than assert a
+    // value derived from half the conversation. `initialRoots` still wins for
+    // a root Plot has never seen: `unread: false` on a thread that has never
+    // been surfaced cannot hide anything, whereas omitting the key on INSERT
+    // falls through to the database default and notifies.
+    const sentOnly = sentMailbox !== null && msgs.every((m) => m.mailbox === sentMailbox);
+    const readState: { unread?: boolean; archived?: boolean } = ctx.initialRoots.has(root)
+      ? { unread: false, archived: false }
+      : sentOnly
+        ? {}
+        : incrementalRead;
 
     // Calendar thread bundling (see TransformCtx.calendarBundles doc): when
     // this thread's root was classified as a cancellation/update ICS,
@@ -249,11 +427,13 @@ export function transformMessages(
     const link: NewLinkWithNotes = {
       source: mailSource(root),
       type: "email",
-      channelId: ctx.channelId,
+      // channelId and meta.syncableId must stay EQUAL: disable-time archiving
+      // filters on both together, so a mismatch makes the link unreachable.
+      channelId,
       accessContacts: [...participants.values()],
       meta: {
         syncProvider: "apple-mail",
-        syncableId: ctx.channelId,
+        syncableId: channelId,
         rootMessageId: root,
       },
       notes,
@@ -261,11 +441,11 @@ export function transformMessages(
       // owner-sent threads); explicit null when the sender is unknown, so a
       // From-less message is never mis-credited to the connector.
       author: originatorFrom ? toContact(originatorFrom) : null,
-      ...(ctx.initialSync
-        ? { unread: false, archived: false }
-        : incrementalRead),
+      ...readState,
       ...(calendarBundle ? { sources: [`icaluid:${calendarBundle.uid}`] } : {}),
-      ...(calendarBundle?.eventKnown ? {} : { title: originator.subject ?? "" }),
+      ...(calendarBundle?.eventKnown || sentOnly
+        ? {}
+        : { title: originator.subject ?? "" }),
     };
     links.push(link);
   }
