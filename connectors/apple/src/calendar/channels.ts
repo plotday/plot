@@ -11,8 +11,10 @@ export const CALENDAR_LINK_TYPES: LinkTypeConfig[] = [
     sharingModel: "thread",
     includesSchedules: true,
     // Crisp, high-contrast calendar mark; the previous rounded-square SVG was
-    // mostly white with thin red strokes and washed out at logo size.
-    logo: "https://upload.wikimedia.org/wikipedia/commons/thumb/5/5e/Apple_Calendar_%28iOS%29.svg/1280px-Apple_Calendar_%28iOS%29.svg.png",
+    // mostly white with thin red strokes and washed out at logo size. Served
+    // from plot.day rather than hotlinked from a third-party wiki, so the
+    // artwork can't move or be rate-limited out from under clients.
+    logo: "https://plot.day/assets/logo-icloud-calendar.png",
     logoMono: "https://api.iconify.design/lucide/calendar.svg",
   },
 ];
