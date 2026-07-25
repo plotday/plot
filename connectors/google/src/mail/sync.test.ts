@@ -921,6 +921,10 @@ function rsvpThread(
         ["From", "Beth Round <beth@example.test>"],
         ["To", "me@example.com"],
         ["Subject", "Declined: Beth <> Kris Collab @ Tue Aug 4, 2026"],
+        // Real Google RSVP notifications are machine-generated; this header
+        // lets facet tests below tell "computed from the folded notification"
+        // apart from "computed from the surviving human reply".
+        ["Auto-Submitted", "auto-generated"],
       ],
       parts: [
         part("text/plain", { data: "Beth Round has declined this invitation." }),
@@ -988,6 +992,8 @@ describe("processEmailThreadsFn — attendee responses fold onto the event", () 
       key: "rsvp-declined-msg-1",
       content: "Beth Round declined.",
       contentType: "markdown",
+      // The external timestamp (the RSVP message's internalDate), not sync time.
+      created: new Date(1700000000000),
       unread: true,
       author: { email: "beth@example.test", name: "Beth Round" },
     });
@@ -1063,6 +1069,17 @@ describe("processEmailThreadsFn — attendee responses fold onto the event", () 
       (n) => (n as { key?: string }).key
     );
     expect(keys).toEqual(["rsvp-mixed-msg-2"]);
+
+    // The preview came from thread.messages[0] (the folded RSVP
+    // notification) before this fix — it must now reflect the surviving
+    // human reply instead.
+    expect(links[0].preview).toBe("No problem");
+
+    // Facets must be computed from the surviving human reply, not the
+    // folded notification: the RSVP message carries an Auto-Submitted
+    // header (see rsvpThread), so picking it would classify this thread as
+    // automated even though a real person wrote the surviving message.
+    expect(links[0].facets?.automation).toBe("human");
   });
 
   it("keeps the email thread when the event thread cannot be resolved", async () => {

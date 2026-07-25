@@ -1508,9 +1508,14 @@ async function saveTransformedThread(
     // responses is left with no notes and falls out at the guard below, so no
     // email link is ever created for it. A conversation that also carries real
     // correspondence keeps its thread, minus the folded messages.
+    //
+    // Hoisted to function scope (not just the `if` below) because the preview
+    // and facet-parent selection further down must skip any message whose
+    // note was folded away — otherwise a mixed conversation gets its preview
+    // and classification from an RSVP notification that no longer has a note.
+    const foldedMessageIds = new Set<string>();
     const replies = extractCalendarReplies(thread.messages ?? []);
     if (replies.length > 0) {
-      const foldedMessageIds = new Set<string>();
       for (const reply of replies) {
         // A miss means the calendar event has not synced yet (saveNote returns
         // null when no thread carries `icaluid:<uid>`). Leave the note in place
@@ -1535,6 +1540,28 @@ async function saveTransformedThread(
           const noteKey = "key" in note ? (note as { key: string }).key : null;
           return !noteKey || !foldedMessageIds.has(noteKey);
         });
+
+        // The preview (set from thread.messages[0].snippet in
+        // transformGmailThread) may have come from the message we just
+        // folded away. Recompute it from the first surviving note's own
+        // message so a mixed conversation previews the human reply, not the
+        // RSVP notification that's no longer part of this thread.
+        const previewMessageId = thread.messages?.[0]?.id;
+        if (previewMessageId && foldedMessageIds.has(previewMessageId)) {
+          const firstSurvivingNote = plotThread.notes[0];
+          const firstSurvivingKey =
+            firstSurvivingNote && "key" in firstSurvivingNote
+              ? (firstSurvivingNote as { key: string }).key
+              : null;
+          const firstSurvivingMessage = firstSurvivingKey
+            ? thread.messages?.find((m) => m.id === firstSurvivingKey)
+            : null;
+          plotThread.preview =
+            firstSurvivingMessage?.snippet ||
+            (firstSurvivingNote as { content?: string } | undefined)
+              ?.content ||
+            null;
+        }
       }
     }
 
@@ -1586,8 +1613,24 @@ async function saveTransformedThread(
     }
 
     // Compute classifier facets from the parent message's headers + body.
+    // When the fold above dropped one or more notes, restrict the candidate
+    // to messages whose note survived — otherwise a folded RSVP notification
+    // (headers + snippet of an automated message) can still be picked here
+    // and get a real human reply misclassified as automated. Skipped
+    // entirely (same `.find()` as before) when nothing was folded, which is
+    // the overwhelmingly common case.
+    const survivingNoteKeys =
+      foldedMessageIds.size > 0
+        ? new Set(
+            plotThread.notes
+              .map((n) => ("key" in n ? (n as { key: string }).key : null))
+              .filter((k): k is string => k !== null)
+          )
+        : null;
     const facetParent = thread.messages.find(
-      (m) => !m.labelIds?.includes("DRAFT")
+      (m) =>
+        !m.labelIds?.includes("DRAFT") &&
+        (survivingNoteKeys === null || survivingNoteKeys.has(m.id))
     );
     if (facetParent) {
       // Use the parent message's full note body (not the short preview snippet)
