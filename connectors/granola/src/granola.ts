@@ -226,7 +226,7 @@ export class Granola extends Connector<Granola> {
     for (const summary of list.data) {
       try {
         const note = await api.getNote(summary.id);
-        notes.push(this.transformNote(note, channelId, isInitial));
+        notes.push(this.transformNote(note, channelId));
       } catch (err) {
         if (isGranolaAuthError(err)) throw err;
         // Granola's get-note can fail if the note's AI summary is still
@@ -271,11 +271,7 @@ export class Granola extends Connector<Granola> {
    * sources overlap. When no calendar event matches, the note gets its own
    * thread keyed by the Granola self source (ad-hoc meeting).
    */
-  private transformNote(
-    note: GranolaNote,
-    channelId: string,
-    initialSync: boolean
-  ): NewNote {
+  private transformNote(note: GranolaNote, channelId: string): NewNote {
     const sources: string[] = [`granola:note:${note.id}`];
 
     // Granola's calendar_event_id is the meeting's calendar identifier. We
@@ -321,7 +317,6 @@ export class Granola extends Connector<Granola> {
       contentType: "markdown",
       created: new Date(note.updated_at),
       author,
-      ...(initialSync ? { unread: false } : {}),
       link: {
         source: `granola:note:${note.id}`,
         sources,

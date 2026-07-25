@@ -920,7 +920,7 @@ function rsvpThread(
       headers: [
         ["From", "Beth Round <beth@example.test>"],
         ["To", "me@example.com"],
-        ["Subject", "Declined: Beth <> Kris Collab @ Tue Aug 4, 2026"],
+        ["Subject", "Declined: Weekly sync @ Tue Aug 4, 2026"],
         // Real Google RSVP notifications are machine-generated; this header
         // lets facet tests below tell "computed from the folded notification"
         // apart from "computed from the surviving human reply".
@@ -947,7 +947,7 @@ function rsvpThread(
         headers: [
           ["From", "Beth Round <beth@example.test>"],
           ["To", "me@example.com"],
-          ["Subject", "Re: Declined: Beth <> Kris Collab @ Tue Aug 4, 2026"],
+          ["Subject", "Re: Declined: Weekly sync @ Tue Aug 4, 2026"],
         ],
       }),
     });
