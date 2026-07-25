@@ -1,5 +1,11 @@
 # @plotday/twister
 
+## 0.86.0
+
+### Changed
+
+- `NewNote.unread` now controls read state on the `saveNotes` path. Omitting it leaves the thread's read state untouched, `true` marks the thread unread for everyone but the note's author, and `false` marks it read for the connection owner so a two-way read sync converges. Previously the field had no effect on notes saved through `saveNotes`. ([#342](https://github.com/plotday/plot/pull/342) [`24fed62`](https://github.com/plotday/plot/commit/24fed6212e18e2420c6368a261d4bee91c6e87a2))
+
 ## 0.85.0
 
 ### Added
