@@ -894,9 +894,10 @@ export type NewNote = Partial<
      *   external system reports the item as already read, so a two-way sync
      *   converges.
      *
-     * A note carrying `accessContacts` is *scoped* to those contacts, and a
-     * scoped note always marks the thread unread for every visible non-author
-     * regardless of this field.
+     * A note carrying `accessContacts` is *scoped* to those contacts. Scoping
+     * marks the thread unread for every visible non-author when the note
+     * lands, whatever this field says — so `true` is redundant on a scoped
+     * note, and `false` clears it again for the connection owner.
      */
     unread?: boolean;
 
