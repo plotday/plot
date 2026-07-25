@@ -88,6 +88,7 @@ function makeHost(): { host: GmailSyncHost; store: Map<string, unknown> } {
       integrations: {
         get: vi.fn(async () => ({ token: "tok", scopes: [] })),
         saveLink: vi.fn(async () => null),
+        saveNote: vi.fn(async () => null),
         channelSyncCompleted: vi.fn(async () => {}),
         setThreadToDo: vi.fn(async () => {}),
       },
@@ -881,6 +882,224 @@ describe("processEmailThreadsFn — calendar-thread bundling", () => {
     );
 
     expect(store.get("cancel-email:uid-1")).toBeTruthy();
+  });
+});
+
+/** ICS body for one attendee response. */
+function replyIcs(
+  partstat: "DECLINED" | "ACCEPTED" | "TENTATIVE",
+  opts: { uid?: string; comment?: string } = {}
+): string {
+  const lines = [
+    "BEGIN:VCALENDAR",
+    "METHOD:REPLY",
+    "BEGIN:VEVENT",
+    `UID:${opts.uid ?? "uid-rsvp@google.com"}`,
+    `ATTENDEE;PARTSTAT=${partstat};CN=Beth Round:mailto:beth@example.test`,
+  ];
+  if (opts.comment) lines.push(`COMMENT:${opts.comment}`);
+  lines.push("END:VEVENT", "END:VCALENDAR");
+  return lines.join("\r\n");
+}
+
+/** A Gmail conversation carrying one RSVP notification, plus optional plain mail. */
+function rsvpThread(
+  threadId: string,
+  ics: string,
+  opts: { withPlainReply?: boolean } = {}
+): GmailThread {
+  const rsvp: GmailMessage = {
+    id: `${threadId}-msg-1`,
+    threadId,
+    labelIds: ["INBOX"],
+    snippet: "Beth Round has declined this invitation.",
+    historyId: "1",
+    internalDate: "1700000000000",
+    sizeEstimate: 500,
+    payload: part("multipart/mixed", {
+      headers: [
+        ["From", "Beth Round <beth@example.test>"],
+        ["To", "me@example.com"],
+        ["Subject", "Declined: Weekly sync @ Tue Aug 4, 2026"],
+        // Real Google RSVP notifications are machine-generated; this header
+        // lets facet tests below tell "computed from the folded notification"
+        // apart from "computed from the surviving human reply".
+        ["Auto-Submitted", "auto-generated"],
+      ],
+      parts: [
+        part("text/plain", { data: "Beth Round has declined this invitation." }),
+        part("text/calendar", { data: ics }),
+      ],
+    }),
+  };
+  const messages = [rsvp];
+  if (opts.withPlainReply) {
+    messages.push({
+      id: `${threadId}-msg-2`,
+      threadId,
+      labelIds: ["INBOX"],
+      snippet: "No problem",
+      historyId: "2",
+      internalDate: "1700000060000",
+      sizeEstimate: 200,
+      payload: part("text/plain", {
+        data: "No problem, let's find another time.",
+        headers: [
+          ["From", "Beth Round <beth@example.test>"],
+          ["To", "me@example.com"],
+          ["Subject", "Re: Declined: Weekly sync @ Tue Aug 4, 2026"],
+        ],
+      }),
+    });
+  }
+  return { id: threadId, historyId: "1", messages };
+}
+
+/** Capture every saveNote/saveLink call the sync makes. */
+function captureSaves(host: GmailSyncHost, opts: { noteId?: string | null } = {}) {
+  const notes: Record<string, unknown>[] = [];
+  const links: NewLinkWithNotes[] = [];
+  (host.tools.integrations.saveNote as ReturnType<typeof vi.fn>).mockImplementation(
+    async (n: Record<string, unknown>) => {
+      notes.push(n);
+      return opts.noteId === undefined ? "N" : opts.noteId;
+    }
+  );
+  (host.tools.integrations.saveLink as ReturnType<typeof vi.fn>).mockImplementation(
+    async (l: NewLinkWithNotes) => {
+      links.push(l);
+      return "T";
+    }
+  );
+  return { notes, links };
+}
+
+describe("processEmailThreadsFn — attendee responses fold onto the event", () => {
+  it("writes a note to the event thread and saves no email link", async () => {
+    const { host } = makeHost();
+    const { notes, links } = captureSaves(host);
+
+    await processEmailThreadsFn(
+      host,
+      [rsvpThread("rsvp-declined", replyIcs("DECLINED"))],
+      false,
+      "INBOX"
+    );
+
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toMatchObject({
+      thread: { source: "icaluid:uid-rsvp@google.com" },
+      key: "rsvp-declined-msg-1",
+      content: "Beth Round declined.",
+      contentType: "markdown",
+      // The external timestamp (the RSVP message's internalDate), not sync time.
+      created: new Date(1700000000000),
+      unread: true,
+      author: { email: "beth@example.test", name: "Beth Round" },
+    });
+    expect(links).toHaveLength(0);
+  });
+
+  it("carries the responder's personal note into the quote", async () => {
+    const { host } = makeHost();
+    const { notes } = captureSaves(host);
+
+    await processEmailThreadsFn(
+      host,
+      [
+        rsvpThread(
+          "rsvp-comment",
+          replyIcs("DECLINED", { comment: "Could we move this to Thursday?" })
+        ),
+      ],
+      false,
+      "INBOX"
+    );
+
+    expect(notes[0].content).toBe(
+      "Beth Round declined.\n\n> Could we move this to Thursday?"
+    );
+  });
+
+  it("omits unread entirely for an acceptance", async () => {
+    const { host } = makeHost();
+    const { notes, links } = captureSaves(host);
+
+    await processEmailThreadsFn(
+      host,
+      [rsvpThread("rsvp-accepted", replyIcs("ACCEPTED"))],
+      false,
+      "INBOX"
+    );
+
+    expect(notes[0].content).toBe("Beth Round accepted.");
+    // Not `unread: false` — that would CLEAR unread the event already had.
+    expect(notes[0]).not.toHaveProperty("unread");
+    expect(links).toHaveLength(0);
+  });
+
+  it("omits unread for every response during the initial backfill", async () => {
+    const { host } = makeHost();
+    const { notes } = captureSaves(host);
+
+    await processEmailThreadsFn(
+      host,
+      [rsvpThread("rsvp-backfill", replyIcs("DECLINED"))],
+      true,
+      "INBOX"
+    );
+
+    expect(notes[0]).not.toHaveProperty("unread");
+  });
+
+  it("keeps ordinary correspondence in its own email thread", async () => {
+    const { host } = makeHost();
+    const { notes, links } = captureSaves(host);
+
+    await processEmailThreadsFn(
+      host,
+      [rsvpThread("rsvp-mixed", replyIcs("DECLINED"), { withPlainReply: true })],
+      false,
+      "INBOX"
+    );
+
+    expect(notes).toHaveLength(1);
+    expect(links).toHaveLength(1);
+    const keys = (links[0].notes ?? []).map(
+      (n) => (n as { key?: string }).key
+    );
+    expect(keys).toEqual(["rsvp-mixed-msg-2"]);
+
+    // The preview came from thread.messages[0] (the folded RSVP
+    // notification) before this fix — it must now reflect the surviving
+    // human reply instead.
+    expect(links[0].preview).toBe("No problem");
+
+    // Facets must be computed from the surviving human reply, not the
+    // folded notification: the RSVP message carries an Auto-Submitted
+    // header (see rsvpThread), so picking it would classify this thread as
+    // automated even though a real person wrote the surviving message.
+    expect(links[0].facets?.automation).toBe("human");
+  });
+
+  it("keeps the email thread when the event thread cannot be resolved", async () => {
+    const { host } = makeHost();
+    // null = no thread carries `icaluid:<uid>` yet (calendar hasn't synced).
+    const { notes, links } = captureSaves(host, { noteId: null });
+
+    await processEmailThreadsFn(
+      host,
+      [rsvpThread("rsvp-orphan", replyIcs("DECLINED"))],
+      false,
+      "INBOX"
+    );
+
+    expect(notes).toHaveLength(1);
+    expect(links).toHaveLength(1);
+    const keys = (links[0].notes ?? []).map(
+      (n) => (n as { key?: string }).key
+    );
+    expect(keys).toEqual(["rsvp-orphan-msg-1"]);
   });
 });
 

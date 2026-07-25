@@ -882,14 +882,22 @@ export type NewNote = Partial<
     mentions?: NewActor[];
 
     /**
-     * Whether the note should mark the parent thread as unread for users.
-     * - undefined/omitted (default): Thread is unread for users, except auto-marked
-     *   as read for the author if they are the twist owner (user)
-     * - true: Thread is explicitly unread for ALL users (use sparingly)
-     * - false: Thread is marked as read for all users in the focus at note creation time
+     * Whether this note should change the parent thread's read state.
      *
-     * For the default behavior, omit this field entirely.
-     * Use false for initial sync to avoid marking historical items as unread.
+     * - **omitted (default): leave read state alone.** The note surfaces the
+     *   thread in the feed without creating unread, and without clearing
+     *   unread that other notes already caused. This is the right default for
+     *   low-signal annotations.
+     * - `true`: mark the thread unread, except for the user who authored the
+     *   note — they have necessarily seen it.
+     * - `false`: mark the thread read for the connection owner. Use when the
+     *   external system reports the item as already read, so a two-way sync
+     *   converges.
+     *
+     * A note carrying `accessContacts` is *scoped* to those contacts. Scoping
+     * marks the thread unread for every visible non-author when the note
+     * lands, whatever this field says — so `true` is redundant on a scoped
+     * note, and `false` clears it again for the connection owner.
      */
     unread?: boolean;
 

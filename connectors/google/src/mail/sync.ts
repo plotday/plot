@@ -31,6 +31,7 @@ import type {
   ActorId,
   CreateLinkResult,
   NewLinkWithNotes,
+  NewNote,
   Note,
   Thread,
 } from "@plotday/twister/plot";
@@ -51,6 +52,7 @@ import {
   classifyCalendarThread,
   collectAttachments,
   extractBody,
+  extractCalendarReplies,
   formatFromHeader,
   getHeader,
   isGmailRateLimitError,
@@ -66,6 +68,7 @@ import {
   type ClassifiedSendError,
   classifySendError,
 } from "./gmail-send-errors";
+import { composeRsvpNote, shouldMarkUnread } from "./rsvp-note";
 
 // ---------------------------------------------------------------------------
 // Persisted state shapes (shared with the connector)
@@ -290,6 +293,12 @@ export interface GmailSyncHost {
       ): Promise<{ token: string; scopes: string[] } | null>;
       /** Persist a link (upsert by source). Returns the saved thread id (or null if filtered). */
       saveLink(link: NewLinkWithNotes): Promise<string | null>;
+      /**
+       * Attach a note to an EXISTING thread addressed by `{ source }` or
+       * `{ id }`. Creates no thread-level link. Returns the note id, or null
+       * when the target thread could not be resolved.
+       */
+      saveNote(note: NewNote): Promise<string | null>;
       /** Signal that the initial backfill for a channel has finished. */
       channelSyncCompleted(channelId: string): Promise<void>;
       /** Set a thread's to-do (starred) state from the connector's own write. */
@@ -1492,6 +1501,70 @@ async function saveTransformedThread(
     }
     plotThread.notes = filtered;
 
+    // Attendee responses ("Declined: <event> @ <when>") belong on the event,
+    // not in a thread of their own: Google's notification body is one useful
+    // sentence followed by the whole event repeated. Fold each reply onto the
+    // event thread and drop its note here. A conversation that was nothing but
+    // responses is left with no notes and falls out at the guard below, so no
+    // email link is ever created for it. A conversation that also carries real
+    // correspondence keeps its thread, minus the folded messages.
+    //
+    // Hoisted to function scope (not just the `if` below) because the preview
+    // and facet-parent selection further down must skip any message whose
+    // note was folded away — otherwise a mixed conversation gets its preview
+    // and classification from an RSVP notification that no longer has a note.
+    const foldedMessageIds = new Set<string>();
+    const replies = extractCalendarReplies(thread.messages ?? []);
+    if (replies.length > 0) {
+      for (const reply of replies) {
+        // A miss means the calendar event has not synced yet (saveNote returns
+        // null when no thread carries `icaluid:<uid>`). Leave the note in place
+        // so the response still lands somewhere rather than vanishing. Expected,
+        // so not reported as an error.
+        const noteId = await host.tools.integrations.saveNote({
+          thread: { source: `icaluid:${reply.uid}` },
+          key: reply.messageId,
+          content: composeRsvpNote(reply),
+          contentType: "markdown",
+          created: reply.sourceCreatedAt,
+          author: {
+            email: reply.attendeeEmail,
+            ...(reply.attendeeName ? { name: reply.attendeeName } : {}),
+          },
+          ...(shouldMarkUnread(reply, initialSync) ? { unread: true } : {}),
+        });
+        if (noteId) foldedMessageIds.add(reply.messageId);
+      }
+      if (foldedMessageIds.size > 0) {
+        plotThread.notes = plotThread.notes.filter((note) => {
+          const noteKey = "key" in note ? (note as { key: string }).key : null;
+          return !noteKey || !foldedMessageIds.has(noteKey);
+        });
+
+        // The preview (set from thread.messages[0].snippet in
+        // transformGmailThread) may have come from the message we just
+        // folded away. Recompute it from the first surviving note's own
+        // message so a mixed conversation previews the human reply, not the
+        // RSVP notification that's no longer part of this thread.
+        const previewMessageId = thread.messages?.[0]?.id;
+        if (previewMessageId && foldedMessageIds.has(previewMessageId)) {
+          const firstSurvivingNote = plotThread.notes[0];
+          const firstSurvivingKey =
+            firstSurvivingNote && "key" in firstSurvivingNote
+              ? (firstSurvivingNote as { key: string }).key
+              : null;
+          const firstSurvivingMessage = firstSurvivingKey
+            ? thread.messages?.find((m) => m.id === firstSurvivingKey)
+            : null;
+          plotThread.preview =
+            firstSurvivingMessage?.snippet ||
+            (firstSurvivingNote as { content?: string } | undefined)
+              ?.content ||
+            null;
+        }
+      }
+    }
+
     if (plotThread.notes.length === 0) return;
 
     const isUnread =
@@ -1540,8 +1613,24 @@ async function saveTransformedThread(
     }
 
     // Compute classifier facets from the parent message's headers + body.
+    // When the fold above dropped one or more notes, restrict the candidate
+    // to messages whose note survived — otherwise a folded RSVP notification
+    // (headers + snippet of an automated message) can still be picked here
+    // and get a real human reply misclassified as automated. Skipped
+    // entirely (same `.find()` as before) when nothing was folded, which is
+    // the overwhelmingly common case.
+    const survivingNoteKeys =
+      foldedMessageIds.size > 0
+        ? new Set(
+            plotThread.notes
+              .map((n) => ("key" in n ? (n as { key: string }).key : null))
+              .filter((k): k is string => k !== null)
+          )
+        : null;
     const facetParent = thread.messages.find(
-      (m) => !m.labelIds?.includes("DRAFT")
+      (m) =>
+        !m.labelIds?.includes("DRAFT") &&
+        (survivingNoteKeys === null || survivingNoteKeys.has(m.id))
     );
     if (facetParent) {
       // Use the parent message's full note body (not the short preview snippet)
