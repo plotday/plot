@@ -98,6 +98,9 @@ function makeFakeHost(overrides?: {
     set: async (key, value) => {
       storeMap.set(key, value);
     },
+    setMany: async (entries) => {
+      for (const [key, value] of entries) storeMap.set(key, value);
+    },
     get: async <T>(key: string): Promise<T | null> => {
       const val = storeMap.get(key);
       return val === undefined ? null : (val as T);
@@ -131,6 +134,19 @@ function makeFakeHost(overrides?: {
             if (k.startsWith(prefix)) keys.push(k);
           }
           return keys;
+        },
+        listEntries: async <T>(prefix: string) => {
+          const entries: [string, T][] = [];
+          for (const [k, v] of storeMap.entries()) {
+            if (k.startsWith(prefix)) entries.push([k, v as T]);
+          }
+          // The real store returns key-ascending; sort so tests can't depend
+          // on Map insertion order the backend doesn't guarantee.
+          entries.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+          return entries;
+        },
+        clearMany: async (keys) => {
+          for (const k of keys) storeMap.delete(k);
         },
       },
     },
@@ -1771,5 +1787,121 @@ describe("processCalendarEventsFn — event link priority", () => {
 
     const link = saved.find((l) => l.source === "google-calendar:master-1");
     expect(link?.priority).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("processCalendarEventsFn — initial-sync occurrence round-trips", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const calendarId = "user@example.com";
+
+  /** Wrap a fake host's storage surface with per-method call counters. */
+  function makeCountingHost() {
+    const host = makeFakeHost({ calendarId });
+    const calls = {
+      set: 0,
+      setMany: 0,
+      get: 0,
+      clear: 0,
+      list: 0,
+      listEntries: 0,
+      clearMany: 0,
+    };
+    const { set, setMany, get, clear } = host;
+    const store = host.tools.store;
+    const { list, listEntries, clearMany } = store;
+    host.set = (...a) => (calls.set++, set(...a));
+    host.setMany = (...a) => (calls.setMany++, setMany(...a));
+    host.get = (...a) => (calls.get++, get(...a)) as never;
+    host.clear = (...a) => (calls.clear++, clear(...a));
+    store.list = (...a) => (calls.list++, list(...a));
+    store.listEntries = ((...a: [string]) =>
+      (calls.listEntries++, listEntries(...a))) as never;
+    store.clearMany = (...a) => (calls.clearMany++, clearMany(...a));
+    return { host, calls };
+  }
+
+  /** A recurring master plus `n` exception instances, all in one page. */
+  function makePage(n: number) {
+    const base = Date.now() + 7 * 24 * 60 * 60 * 1000;
+    const master = {
+      id: "masterid",
+      iCalUID: "master@google.com",
+      status: "confirmed" as const,
+      summary: "Standup",
+      updated: new Date().toISOString(),
+      start: { dateTime: new Date(base).toISOString() },
+      end: { dateTime: new Date(base + 1_800_000).toISOString() },
+      recurrence: ["RRULE:FREQ=DAILY"],
+      organizer: { email: "user@example.com", self: true },
+    };
+    const instances = Array.from({ length: n }, (_, i) => {
+      const start = base + (i + 1) * 24 * 60 * 60 * 1000;
+      return {
+        id: `masterid_${i}`,
+        iCalUID: "master@google.com",
+        recurringEventId: "masterid",
+        status: "confirmed" as const,
+        summary: "Standup (moved)",
+        updated: new Date().toISOString(),
+        originalStartTime: { dateTime: new Date(start).toISOString() },
+        start: { dateTime: new Date(start + 3_600_000).toISOString() },
+        end: { dateTime: new Date(start + 5_400_000).toISOString() },
+        organizer: { email: "user@example.com", self: true },
+      };
+    });
+    return [master, ...instances];
+  }
+
+  const totalRoundTrips = (calls: Record<string, number>) =>
+    Object.values(calls).reduce((sum, n) => sum + n, 0);
+
+  it("merges every buffered occurrence onto its master", async () => {
+    const { host } = makeCountingHost();
+    vi.stubGlobal("fetch", vi.fn(async () => makeEventsResponse([])));
+
+    await processCalendarEventsFn(host, makePage(25), calendarId, true);
+
+    const saved = host.savedLinks.flat();
+    expect(saved).toHaveLength(1);
+    expect(saved[0].source).toBe("google-calendar:master@google.com");
+    expect(saved[0].scheduleOccurrences?.length).toBe(25);
+    // Buffers are consumed, not left behind for the terminal flush to re-emit.
+    expect(
+      [...host.store.keys()].filter((k) => k.startsWith("pending_occ:"))
+    ).toEqual([]);
+  });
+
+  it("costs the same number of storage round-trips regardless of occurrence count", async () => {
+    // The regression this pins: buffering used one `set` per occurrence and
+    // draining used a `get` + a `clear` per occurrence, so a page of N
+    // occurrences cost ~3N serial storage round-trips. Each is a subrequest
+    // against the worker's per-invocation budget (1000) and ~hundreds of ms of
+    // wall clock, which is how a single backfill pass reached 6 minutes and
+    // exhausted the budget for its whole queue batch.
+    vi.stubGlobal("fetch", vi.fn(async () => makeEventsResponse([])));
+
+    const small = makeCountingHost();
+    await processCalendarEventsFn(small.host, makePage(3), calendarId, true);
+
+    const large = makeCountingHost();
+    await processCalendarEventsFn(large.host, makePage(60), calendarId, true);
+
+    // 20x the occurrences must not cost a single extra round-trip.
+    expect(large.calls).toEqual(small.calls);
+    expect(totalRoundTrips(large.calls)).toBe(totalRoundTrips(small.calls));
+    // Buffered occurrence state never touches the per-key methods: it is
+    // written with setMany, read with listEntries, and deleted with clearMany.
+    // (The one remaining `get` is the per-page `first_sync_at` read, which is
+    // constant — it is counted by the equality assertion above.)
+    expect(large.calls.set).toBe(0);
+    expect(large.calls.clear).toBe(0);
+    expect(large.calls.setMany).toBeGreaterThan(0);
+    expect(large.calls.listEntries).toBe(1);
+    expect(large.calls.clearMany).toBe(1);
+    // The whole page costs a handful of round-trips, not one per occurrence.
+    expect(totalRoundTrips(large.calls)).toBeLessThan(10);
   });
 });

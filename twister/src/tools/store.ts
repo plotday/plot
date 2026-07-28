@@ -148,11 +148,73 @@ export abstract class Store extends ITool {
    * Returns an array of key strings that start with the given prefix.
    * Useful for finding all keys in a namespace (e.g., all sync locks).
    *
+   * Prefer {@link listEntries} when you are going to read every value anyway
+   * — `list()` followed by a `get()` per key costs one round-trip per key.
+   *
    * @param prefix - The prefix to match keys against
    * @returns Promise resolving to an array of matching key strings
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract list(prefix: string): Promise<string[]>;
+
+  /**
+   * Lists matching keys **with their values** in one round-trip.
+   *
+   * This is the read counterpart of {@link setMany}. The common
+   * `list(prefix)` → `get(key)` per key shape costs `1 + N` round-trips; this
+   * costs one, because the storage backend already reads the values during
+   * the prefix scan and `list()` simply discards them.
+   *
+   * Reach for this whenever you buffer per-item state under a prefix and
+   * later drain it (occurrence buffers, pending write-backs, id→id caches).
+   * A drain loop of a few hundred keys is enough to dominate an execution's
+   * wall-clock time and exhaust its request budget.
+   *
+   * @template T - The type of the stored values
+   * @param prefix - The prefix to match keys against
+   * @returns Promise resolving to `[key, value]` pairs, key-ascending
+   *
+   * @example
+   * ```typescript
+   * const buffered = await this.tools.store.listEntries<Occurrence>(
+   *   `pending:${id}:`
+   * );
+   * merge(buffered.map(([, value]) => value));
+   * await this.tools.store.clearMany(buffered.map(([key]) => key));
+   * ```
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract listEntries<T extends Serializable>(
+    prefix: string
+  ): Promise<[key: string, value: T][]>;
+
+  /**
+   * Reads many keys in one round-trip.
+   *
+   * Equivalent to calling {@link get} for each key, but issues a single
+   * storage operation. **Always prefer this over looping `get()`** — the same
+   * round-trip arithmetic as {@link setMany}. Use {@link listEntries} instead
+   * when the keys share a prefix and you don't already know them.
+   *
+   * Missing keys come back as `null`, and the result is positionally aligned
+   * with `keys`, so a `keys[i]` ↔ `values[i]` zip is always safe.
+   *
+   * @template T - The type of the stored values
+   * @param keys - The storage keys to read
+   * @returns Promise resolving to one value (or null) per requested key
+   *
+   * @example
+   * ```typescript
+   * const sent = await this.tools.store.getMany<boolean>(
+   *   notes.map((n) => `sent:${n.key}`)
+   * );
+   * const unsent = notes.filter((_, i) => !sent[i]);
+   * ```
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract getMany<T extends Serializable>(
+    keys: string[]
+  ): Promise<(T | null)[]>;
 
   /**
    * Removes a specific key from storage.
@@ -165,6 +227,23 @@ export abstract class Store extends ITool {
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract clear(key: string): Promise<void>;
+
+  /**
+   * Removes many keys in one round-trip.
+   *
+   * Equivalent to calling {@link clear} for each key, but issues a single
+   * storage operation — the delete counterpart of {@link setMany}. Draining a
+   * buffered prefix is the usual case: pair it with {@link listEntries} so the
+   * whole drain costs two round-trips regardless of how many keys there are,
+   * instead of one per key.
+   *
+   * Keys that don't exist are ignored. All deletes are applied atomically.
+   *
+   * @param keys - The storage keys to remove
+   * @returns Promise that resolves when all keys are removed
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract clearMany(keys: string[]): Promise<void>;
 
   /**
    * Removes all keys from this storage instance.

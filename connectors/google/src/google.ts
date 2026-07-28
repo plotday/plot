@@ -264,6 +264,12 @@ export class Google extends Connector<Google> {
   _calendarHostClear(key: string): Promise<void> {
     return this.clear(`calendar:${key}`);
   }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  _calendarHostSetMany(entries: [key: string, value: any][]): Promise<void> {
+    return this.setMany(
+      entries.map(([key, value]): [string, any] => [`calendar:${key}`, value])
+    );
+  }
 
   /**
    * Returns a CalendarSyncHost that namespaces every storage key under
@@ -276,6 +282,7 @@ export class Google extends Connector<Google> {
     const self = this;
     return {
       set: (key, value) => self._calendarHostSet(key, value),
+      setMany: (entries) => self._calendarHostSetMany(entries),
       get: <T>(key: string) => self._calendarHostGet<T>(key),
       clear: (key) => self._calendarHostClear(key),
       // Read into the MAIL namespace so the calendar sync can check for a
@@ -300,6 +307,24 @@ export class Google extends Connector<Google> {
               k.startsWith("calendar:") ? k.slice("calendar:".length) : k
             );
           },
+          /**
+           * Same prefix stripping as `list`, but the values come back with the
+           * keys so a drain doesn't need a `get` per key.
+           */
+          listEntries: async <T>(prefix: string) => {
+            const entries = await self.tools.store.listEntries<any>(
+              `calendar:${prefix}`
+            );
+            return entries.map(
+              ([k, value]): [string, T] => [
+                k.startsWith("calendar:") ? k.slice("calendar:".length) : k,
+                value as T,
+              ]
+            );
+          },
+          /** Re-adds the `calendar:` prefix that `list` strips. */
+          clearMany: (keys) =>
+            self.tools.store.clearMany(keys.map((k) => `calendar:${k}`)),
         },
       },
     };
