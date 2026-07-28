@@ -265,6 +265,36 @@ export abstract class Twist<TSelf> {
   }
 
   /**
+   * Reads many keys in one round-trip. Always prefer this over looping
+   * `get()`. Results are positionally aligned with `keys`; missing keys are
+   * `null`. See {@link Store.getMany}.
+   *
+   * @template T - The type of the stored values
+   * @param keys - The storage keys to read
+   * @returns Promise resolving to one value (or null) per requested key
+   */
+  protected async getMany<T extends import("./index").Serializable>(
+    keys: string[]
+  ): Promise<(T | null)[]> {
+    return this.tools.store.getMany<T>(keys);
+  }
+
+  /**
+   * Lists matching keys with their values in one round-trip — the read
+   * counterpart of `setMany`. Replaces `list()` + a `get()` per key, which
+   * costs `1 + N` round-trips. See {@link Store.listEntries}.
+   *
+   * @template T - The type of the stored values
+   * @param prefix - The prefix to match keys against
+   * @returns Promise resolving to `[key, value]` pairs, key-ascending
+   */
+  protected async listEntries<T extends import("./index").Serializable>(
+    prefix: string
+  ): Promise<[key: string, value: T][]> {
+    return this.tools.store.listEntries<T>(prefix);
+  }
+
+  /**
    * Removes a specific key from persistent storage.
    *
    * @param key - The storage key to remove
@@ -272,6 +302,18 @@ export abstract class Twist<TSelf> {
    */
   protected async clear(key: string): Promise<void> {
     return this.tools.store.clear(key);
+  }
+
+  /**
+   * Removes many keys in one round-trip. Pair with {@link listEntries} so a
+   * drain costs two round-trips regardless of key count. Atomic.
+   * See {@link Store.clearMany}.
+   *
+   * @param keys - The storage keys to remove
+   * @returns Promise that resolves when all keys are removed
+   */
+  protected async clearMany(keys: string[]): Promise<void> {
+    return this.tools.store.clearMany(keys);
   }
 
   /**

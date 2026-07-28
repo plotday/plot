@@ -49,6 +49,8 @@ import {
 export interface CalendarSyncHost {
   /** Persist a value under a connector-scoped key. */
   set(key: string, value: unknown): Promise<void>;
+  /** Persist many key/value pairs in one round-trip. */
+  setMany(entries: [key: string, value: unknown][]): Promise<void>;
   /** Retrieve a previously persisted value. Returns null if absent. */
   get<T>(key: string): Promise<T | null>;
   /** Delete a persisted value. */
@@ -81,6 +83,10 @@ export interface CalendarSyncHost {
       releaseLock(key: string): Promise<void>;
       /** List all persisted keys that start with the given prefix. */
       list(prefix: string): Promise<string[]>;
+      /** List matching keys AND their values in one round-trip. */
+      listEntries<T>(prefix: string): Promise<[key: string, value: T][]>;
+      /** Delete many keys in one round-trip. */
+      clearMany(keys: string[]): Promise<void>;
     };
   };
 }
@@ -394,15 +400,17 @@ export async function clearBuffersFn(
   host: CalendarSyncHost,
   calendarId: string
 ): Promise<void> {
+  // Two list + two clearMany round-trips regardless of how many markers a
+  // long-running backfill left behind, instead of one clear per key.
   const pendingKeys = await host.tools.store.list(`pending_occ:${calendarId}:`);
-  for (const key of pendingKeys) {
-    await host.clear(key);
+  if (pendingKeys.length > 0) {
+    await host.tools.store.clearMany(pendingKeys);
   }
   const seenMasterKeys = await host.tools.store.list(
     `seen_master:${calendarId}:`
   );
-  for (const key of seenMasterKeys) {
-    await host.clear(key);
+  if (seenMasterKeys.length > 0) {
+    await host.tools.store.clearMany(seenMasterKeys);
   }
 }
 
@@ -416,7 +424,18 @@ export async function prepareEventInstanceFn(
   host: CalendarSyncHost,
   event: GoogleEvent,
   calendarId: string,
-  initialSync: boolean
+  initialSync: boolean,
+  /**
+   * Collector for initial-sync occurrence buffers. Occurrences are pushed here
+   * instead of being written one `store.set` at a time; the caller flushes the
+   * whole batch with a single `setMany` before draining.
+   *
+   * A recurring master expands into one instance event per occurrence, so the
+   * per-occurrence write was a storage round-trip per occurrence — the
+   * dominant cost of a backfill pass, and enough on a busy calendar to exhaust
+   * the worker's per-invocation subrequest budget.
+   */
+  pendingWrites: [key: string, value: NewScheduleOccurrence][]
 ): Promise<NewLinkWithNotes | null> {
   const originalStartTime =
     event.originalStartTime?.dateTime || event.originalStartTime?.date;
@@ -457,7 +476,7 @@ export async function prepareEventInstanceFn(
       const pendingKey = `pending_occ:${calendarId}:${masterCanonicalUrl}:${new Date(
         originalStartTime
       ).toISOString()}`;
-      await host.set(pendingKey, cancelledOccurrence);
+      pendingWrites.push([pendingKey, cancelledOccurrence]);
       console.log(
         `[GoogleCalendar] buffered cancelled instance: ` +
           `master=${masterCanonicalUrl} ` +
@@ -591,7 +610,7 @@ export async function prepareEventInstanceFn(
     const pendingKey = `pending_occ:${calendarId}:${masterCanonicalUrl}:${new Date(
       originalStartTime
     ).toISOString()}`;
-    await host.set(pendingKey, occurrence);
+    pendingWrites.push([pendingKey, occurrence]);
     console.log(
       `[GoogleCalendar] buffered exception instance: ` +
         `master=${masterCanonicalUrl} ` +
@@ -629,6 +648,9 @@ export async function processCalendarEventsFn(
   initialSync: boolean
 ): Promise<void> {
   const linksBySource = new Map<string, NewLinkWithNotes>();
+  // Occurrence buffers accumulated across this page and flushed in ONE
+  // setMany below, rather than a storage round-trip per occurrence.
+  const pendingWrites: [key: string, value: NewScheduleOccurrence][] = [];
   type LinkWithSource = NewLinkWithNotes & { source: string };
   const addLink = (link: LinkWithSource) => {
     const existing = linksBySource.get(link.source) as
@@ -706,7 +728,8 @@ export async function processCalendarEventsFn(
           host,
           event,
           calendarId,
-          initialSync
+          initialSync,
+          pendingWrites
         );
         if (instanceLink) addLink(instanceLink as LinkWithSource);
       } else {
@@ -1040,28 +1063,63 @@ export async function processCalendarEventsFn(
     }
   }
 
+  // Flush the page's occurrence buffers in one round-trip. Must happen BEFORE
+  // the drain below: a master and its own exception instances routinely land
+  // in the same page, and the drain is what merges them.
+  if (pendingWrites.length > 0) {
+    await host.setMany(pendingWrites);
+  }
+
   // Drain pending_occ buffers for any masters present in this batch.
+  //
+  // Scanned ONCE for the whole calendar rather than per master, and read with
+  // listEntries so the values arrive with the keys. The previous shape —
+  // `list(prefix)` per master, then a `get` and a `clear` per key — cost
+  // `masters + 2 x occurrences` serial storage round-trips, which is what made
+  // a backfill pass take minutes and exhaust the invocation's subrequest
+  // budget. This costs two round-trips no matter how many occurrences there
+  // are. Matching is unchanged: only masters present in THIS batch are
+  // merged and cleared, so buffers for other masters stay untouched.
   let drainedTotal = 0;
-  for (const [source, link] of linksBySource.entries()) {
-    const pendingPrefix = `pending_occ:${calendarId}:${source}:`;
-    const pendingKeys = await host.tools.store.list(pendingPrefix);
-    if (pendingKeys.length === 0) continue;
-    const merged: NewScheduleOccurrence[] = [
-      ...(link.scheduleOccurrences || []),
-    ];
-    for (const key of pendingKeys) {
-      const pending = await host.get<NewScheduleOccurrence>(key);
-      if (pending) {
-        merged.push(pending);
-        drainedTotal += 1;
-      }
-      await host.clear(key);
-    }
-    link.scheduleOccurrences = merged;
-    console.log(
-      `[GoogleCalendar] drain: master=${source} ` +
-        `merged=${pendingKeys.length} (calendar=${calendarId})`
+  if (linksBySource.size > 0) {
+    const calendarPrefix = `pending_occ:${calendarId}:`;
+    const buffered = await host.tools.store.listEntries<NewScheduleOccurrence>(
+      calendarPrefix
     );
+    if (buffered.length > 0) {
+      const drainedKeys: string[] = [];
+      const mergedBySource = new Map<string, NewScheduleOccurrence[]>();
+      for (const [key, pending] of buffered) {
+        // Master canonical URLs contain ':' themselves, so the owning master
+        // is resolved by prefix match against this batch rather than by
+        // splitting the key.
+        for (const source of linksBySource.keys()) {
+          if (!key.startsWith(`${calendarPrefix}${source}:`)) continue;
+          drainedKeys.push(key);
+          if (pending) {
+            const list = mergedBySource.get(source);
+            if (list) list.push(pending);
+            else mergedBySource.set(source, [pending]);
+            drainedTotal += 1;
+          }
+          break;
+        }
+      }
+      for (const [source, occurrences] of mergedBySource.entries()) {
+        const link = linksBySource.get(source)!;
+        link.scheduleOccurrences = [
+          ...(link.scheduleOccurrences || []),
+          ...occurrences,
+        ];
+        console.log(
+          `[GoogleCalendar] drain: master=${source} ` +
+            `merged=${occurrences.length} (calendar=${calendarId})`
+        );
+      }
+      if (drainedKeys.length > 0) {
+        await host.tools.store.clearMany(drainedKeys);
+      }
+    }
   }
   if (initialSync) {
     console.log(
@@ -1070,8 +1128,16 @@ export async function processCalendarEventsFn(
         `drained=${drainedTotal}`
     );
 
-    for (const source of linksBySource.keys()) {
-      await host.set(`seen_master:${calendarId}:${source}`, true);
+    // One round-trip for the whole page, not one per master.
+    if (linksBySource.size > 0) {
+      await host.setMany(
+        [...linksBySource.keys()].map(
+          (source): [string, unknown] => [
+            `seen_master:${calendarId}:${source}`,
+            true,
+          ]
+        )
+      );
     }
   }
 
@@ -1186,22 +1252,25 @@ export async function runSyncBatch(
       const seenMasters = new Set(
         seenMasterKeys.map((k) => k.slice(seenMasterPrefix.length))
       );
-      const pendingKeys = await host.tools.store.list(pendingPrefix);
+      // listEntries + one clearMany: every branch below cleared its key
+      // anyway, so the whole terminal flush is two round-trips instead of a
+      // get and a clear per leftover occurrence. On a calendar whose backfill
+      // left hundreds buffered, that loop alone could outrun the invocation's
+      // subrequest budget right at the finish line.
+      const buffered = await host.tools.store.listEntries<NewScheduleOccurrence>(
+        pendingPrefix
+      );
+      const drainedKeys = buffered.map(([key]) => key);
       const flushLinks: NewLinkWithNotes[] = [];
       let droppedOrphans = 0;
-      for (const key of pendingKeys) {
-        const pending = await host.get<NewScheduleOccurrence>(key);
-        if (!pending) {
-          await host.clear(key);
-          continue;
-        }
+      for (const [key, pending] of buffered) {
+        if (!pending) continue;
         const occurrenceDate =
           pending.occurrence instanceof Date
             ? pending.occurrence
             : new Date(pending.occurrence);
         const suffix = `:${occurrenceDate.toISOString()}`;
         if (!key.startsWith(pendingPrefix) || !key.endsWith(suffix)) {
-          await host.clear(key);
           continue;
         }
         const canonical = key.slice(
@@ -1210,7 +1279,6 @@ export async function runSyncBatch(
         );
         if (!seenMasters.has(canonical)) {
           droppedOrphans += 1;
-          await host.clear(key);
           continue;
         }
         flushLinks.push({
@@ -1222,7 +1290,9 @@ export async function runSyncBatch(
           scheduleOccurrences: [pending],
           notes: [],
         });
-        await host.clear(key);
+      }
+      if (drainedKeys.length > 0) {
+        await host.tools.store.clearMany(drainedKeys);
       }
       if (flushLinks.length > 0 || droppedOrphans > 0) {
         console.log(
@@ -1235,8 +1305,8 @@ export async function runSyncBatch(
         await host.tools.integrations.saveLinks(flushLinks);
       }
 
-      for (const key of seenMasterKeys) {
-        await host.clear(key);
+      if (seenMasterKeys.length > 0) {
+        await host.tools.store.clearMany(seenMasterKeys);
       }
 
       await host.clear(`sync_state_${calendarId}`);

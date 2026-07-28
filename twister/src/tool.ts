@@ -234,13 +234,57 @@ export abstract class Tool<TSelf> implements ITool {
   }
 
   /**
+   * Reads many keys in one round-trip. Always prefer this over looping
+   * `get()`. Results are positionally aligned with `keys`; missing keys are
+   * `null`. See {@link Store.getMany}.
+   *
+   * @template T - The type of the stored values
+   * @param keys - The storage keys to read
+   * @returns Promise resolving to one value (or null) per requested key
+   */
+  protected async getMany<T extends Serializable>(
+    keys: string[]
+  ): Promise<(T | null)[]> {
+    return this.tools.store.getMany<T>(keys);
+  }
+
+  /**
    * Lists all storage keys matching a prefix.
+   *
+   * Prefer {@link listEntries} when you will read every value anyway.
    *
    * @param prefix - The prefix to match keys against
    * @returns Promise resolving to an array of matching key strings
    */
   protected async list(prefix: string): Promise<string[]> {
     return this.tools.store.list(prefix);
+  }
+
+  /**
+   * Lists matching keys with their values in one round-trip — the read
+   * counterpart of `setMany`. Replaces `list()` + a `get()` per key, which
+   * costs `1 + N` round-trips. See {@link Store.listEntries}.
+   *
+   * @template T - The type of the stored values
+   * @param prefix - The prefix to match keys against
+   * @returns Promise resolving to `[key, value]` pairs, key-ascending
+   */
+  protected async listEntries<T extends Serializable>(
+    prefix: string
+  ): Promise<[key: string, value: T][]> {
+    return this.tools.store.listEntries<T>(prefix);
+  }
+
+  /**
+   * Removes many keys in one round-trip. Pair with {@link listEntries} so a
+   * drain costs two round-trips regardless of key count. Atomic.
+   * See {@link Store.clearMany}.
+   *
+   * @param keys - The storage keys to remove
+   * @returns Promise that resolves when all keys are removed
+   */
+  protected async clearMany(keys: string[]): Promise<void> {
+    return this.tools.store.clearMany(keys);
   }
 
   /**
