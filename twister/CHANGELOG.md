@@ -1,5 +1,11 @@
 # @plotday/twister
 
+## 0.87.0
+
+### Added
+
+- the `Chat` built-in tool for realtime conversations.
+
 ## 0.86.0
 
 ### Changed
