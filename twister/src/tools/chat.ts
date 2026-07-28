@@ -33,7 +33,13 @@ export type ChatSpec = {
    * Null for the platform maximum.
    */
   maxSeconds: number | null;
-  /** Invoked with the finished {@link ChatSession} once the session ends. */
+  /**
+   * Invoked with the finished {@link ChatSession} once the session ends.
+   *
+   * Delivered at-least-once: a retry after a transient failure can invoke
+   * this callback again for the same session. Write it to be safe to run
+   * more than once for the same {@link ChatSession.id}.
+   */
   onEnded: Callback;
 };
 
