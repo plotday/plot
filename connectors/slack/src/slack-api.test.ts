@@ -52,4 +52,18 @@ describe("transformSlackThread", () => {
     });
     expect(link.notes?.[0]?.author).toEqual(link.author);
   });
+
+  it("does not ask the platform to re-group the messages", () => {
+    // Outside a direct conversation, Slack's own reply threads are a real,
+    // user-visible grouping. Folding consecutive messages on top of that
+    // would merge separate conversations that happen to run back to back.
+    const link = transformSlackThread(
+      [{ type: "message", ts: "3000.0001", user: "U1", text: "Standalone" }],
+      "C123"
+    );
+
+    expect(
+      (link as unknown as { autoThread?: unknown }).autoThread
+    ).toBeUndefined();
+  });
 });

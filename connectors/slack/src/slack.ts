@@ -42,8 +42,10 @@ import {
   syncSlackChannel,
   transformSlackThread,
 } from "./slack-api";
+import { assembleSlackDmLink, slackConversationIdentity } from "./slack-dm";
 import { unicodeToSlackName } from "./slack-emoji";
 import { slackFacets } from "./slack-facets";
+import { mentionsUser, type MentionContext } from "./slack-mentions";
 
 /**
  * Slack integration source.
@@ -58,9 +60,11 @@ import { slackFacets } from "./slack-facets";
  * - OAuth 2.0 authentication with Slack (user token)
  * - Per-user authorization; no workspace bot required
  * - Real-time message synchronization via Slack Events API (user events)
- * - Support for threaded messages, mentions, and reactions
- * - Batch processing for large channels
+ * - Direct and group conversations, each as one ongoing thread
+ * - Channel threads that mention the user (directly, via a user group, or
+ *   through `@here`/`@channel`) or that the user saved — never whole channels
  * - Star-based to-do sync against the user's saved items
+ * - Reactions round-trip on everything that is synced
  *
  * **Required OAuth User Scopes** (each backs a shipped, user-visible feature —
  * kept in sync with the authoritative {@link Slack.SCOPES} array below):
@@ -80,6 +84,8 @@ import { slackFacets } from "./slack-facets";
  *
  * **Optional** (connect-time toggle):
  * - `emoji:read` — render the workspace's custom emoji in reactions
+ * - `usergroups:read` — recognise mentions of a user group the connected user
+ *   belongs to (`@engineering`) as mentions of that user
  * - `im:history`, `im:write`, `mpim:history`, `mpim:write` — read and compose
  *   direct messages and group DMs
  * - `im:read`, `mpim:read` — enumerate/list the user's DM and group-DM
@@ -96,6 +102,34 @@ import { slackFacets } from "./slack-facets";
  * collapses into one pass that fires at most this long after the first one.
  */
 const INCREMENTAL_SYNC_COALESCE_MS = 10_000;
+
+/**
+ * How far back an event-triggered incremental sync reads. Wide enough to
+ * absorb delayed webhook delivery and the coalescing delay above, narrow
+ * enough that it never drags in yesterday's conversation.
+ */
+const INCREMENTAL_SYNC_WINDOW_SEC = 15 * 60;
+
+/**
+ * Pages of `conversations.history` one incremental pass will read before
+ * giving up on the rest of the window. `conversations.history` is limited to
+ * 1 rpm for non-Marketplace apps, so paging further would stall the pass for
+ * minutes; the next message event opens a fresh, overlapping window anyway.
+ */
+const INCREMENTAL_SYNC_MAX_PAGES = 5;
+
+/**
+ * How long a queued once-per-connection task stays "claimed".
+ *
+ * Only long enough to dedupe a fan-out of near-simultaneous
+ * `onChannelEnabled` calls (a multi-channel reconnect, a "refresh channels",
+ * a stuck-sync watchdog retry). NOT a substitute for each task's own gate —
+ * those are owned by the tasks themselves and set only on their own success.
+ * A claim expiring after a few minutes means a permanently-failed queued task
+ * doesn't silently suppress a legitimate retry; it just means a fan-out
+ * inside the claim window won't double-queue.
+ */
+const WORKSPACE_TASK_CLAIM_TTL_MS = 5 * 60 * 1000;
 
 /**
  * Coalescing delay for reaction-triggered thread refreshes. A burst of
@@ -127,9 +161,29 @@ const REACTION_REFRESH_MAX_ATTEMPTS = 20;
  */
 const DM_WEBHOOK_SENTINEL = "__dm_workspace__";
 
+/**
+ * Extra-arg value for the single workspace-wide callback that observes channel
+ * messages for at-mentions and replies on already-subscribed threads. Mirrors
+ * {@link DM_WEBHOOK_SENTINEL}: there is no per-channel registration because
+ * there is no channel selection.
+ */
+const MENTION_WEBHOOK_SENTINEL = "__mentions__";
+
+/**
+ * How long to wait before re-attempting a webhook registration that could not
+ * go ahead. Long enough to cost nothing, short enough that a connection whose
+ * token was momentarily unresolvable starts observing again the same day.
+ */
+const WEBHOOK_REGISTER_RETRY_MS = 60 * 60 * 1000;
+
+/** Task keys for the two registration retry chains. */
+const DM_WEBHOOK_RETRY_KEY = "dm-webhook-register";
+const MENTION_WEBHOOK_RETRY_KEY = "mention-webhook-register";
+
 export class Slack extends Connector<Slack> {
   static readonly PROVIDER = AuthProvider.Slack;
   static readonly DM_WEBHOOK_SENTINEL = DM_WEBHOOK_SENTINEL;
+  static readonly MENTION_WEBHOOK_SENTINEL = MENTION_WEBHOOK_SENTINEL;
   static readonly handleReplies = true;
   static readonly SCOPES: ScopeConfig = {
     required: [
@@ -183,16 +237,29 @@ export class Slack extends Connector<Slack> {
         ],
         default: true,
       },
+      {
+        id: "usergroups",
+        label: "Notice @-mentions of your groups",
+        description:
+          "Bring in messages that mention a Slack user group you belong to, like @engineering, as well as messages that mention you directly.",
+        scopes: ["usergroups:read"],
+        default: true,
+      },
     ],
   };
 
   readonly provider = AuthProvider.Slack;
+  // Channels are internal detail here: this connector decides what to sync
+  // from the message itself (a direct conversation, an at-mention, a saved
+  // thread), not from a channel the user picked. Channels are still mirrored
+  // so links carry channel attribution and compose has targets.
+  readonly hiddenChannels = true;
+  // Not a user-facing preference: this connector hides its channels, so
+  // nothing else ever enables one. Auto-enabling on discovery is what makes
+  // `onChannelEnabled` fire, which is where this connector anchors its
+  // workspace-level setup (sentinel webhooks, saved-item backfill, daily
+  // roster refreshes).
   readonly autoEnableNewChannelsByDefault = true;
-  // Slack culture often carries one conversation as a run of separate
-  // top-level channel messages. Opt this connector into sequential
-  // auto-threading so opted-in connections can fold those into one thread
-  // (channels: LLM-judged continuation; DMs: one running thread).
-  readonly autoThreading = true;
   readonly reactionCapabilities = {
     mode: "open-unicode" as const,
     // Workspace custom emoji sync both ways: inbound reactions become
@@ -281,66 +348,202 @@ export class Slack extends Connector<Slack> {
     return filtered.map((c: SlackChannel) => ({ id: c.id, title: c.name }));
   }
 
-  async onChannelEnabled(channel: Channel, context?: SyncContext): Promise<void> {
-    await this.set(`sync_enabled_${channel.id}`, true);
+  /**
+   * Runs once per active connection when a new connector version deploys —
+   * the standard hook for a one-time migration (see `upgradeToScopedSync`).
+   * This is the primary trigger: it fires for every existing connection on
+   * deploy regardless of channel activity, unlike `onChannelEnabled`, which
+   * only re-dispatches for a channel that changes state (a stable, already-
+   * enabled workspace produces none). `onChannelEnabled` still calls the
+   * same routine as a backstop for connections that connect or finish
+   * enabling around the deploy boundary and so might miss this dispatch.
+   */
+  override async upgrade(): Promise<void> {
+    await this.upgradeToScopedSync();
+  }
 
-    // Pin the forward-sync floor to enable-time so the first webhook-driven
-    // incremental sync doesn't backfill the preceding hour (see
-    // `startIncrementalSync`). Stored in Slack ts format (seconds).
-    await this.set(
-      `enabled_at_${channel.id}`,
-      (Date.now() / 1000).toString()
-    );
+  async onChannelEnabled(channel: Channel, context?: SyncContext): Promise<void> {
+    // Channels are not individually synced any more (see `hiddenChannels`).
+    // This still fires when channels are mirrored, so it is where the
+    // workspace-wide setup is anchored — the sentinel webhooks and the daily
+    // roster refreshes, each internally gated to run once per connection.
+    //
+    // The one piece of per-channel state left is the marker below. It is NOT
+    // a sync gate: it is the connector's only record of which channel ids its
+    // OAuth token can be resolved against, which `getWorkspaceApi` walks to
+    // send a reply on a direct conversation (DM ids are never channels) and
+    // `findChannelForFile` walks to locate an attachment.
+    await this.set(`token_channel_${channel.id}`, true);
 
     // Slack does no historical backfill (see below), so there is no "still
-    // syncing" period — the channel is fully live as soon as the state above
-    // is stamped and webhook registration is queued. Signal completion here,
-    // unconditionally and before queuing anything else, so it fires even if
-    // this call is a stuck-sync watchdog retry re-running an already-complete
-    // channel, and even if a later step in this method throws. Without this
-    // call, `twist_instance_connection.initial_sync_completed_at` never gets
-    // set for ANY Slack connection — the stuck-sync watchdog
-    // (recover-stuck-syncs.ts) treats every connection as permanently
-    // orphaned, retries up to MAX_INITIAL_SYNC_ATTEMPTS times, then forces
-    // needs_reauth_at and shows "Reconnect Slack" on a healthy connection.
+    // syncing" period. Signal completion here, unconditionally and before
+    // queuing anything else, so it fires even if this call is a stuck-sync
+    // watchdog retry re-running an already-complete channel, and even if a
+    // later step in this method throws. Without this call,
+    // `initial_sync_completed_at` never gets set for ANY Slack connection —
+    // the stuck-sync watchdog treats every connection as permanently
+    // orphaned, retries a handful of times, then forces a re-auth prompt on a
+    // perfectly healthy connection.
     await this.tools.integrations.channelSyncCompleted(channel.id);
+
+    // Backstop for the one-time cleanup normally run from `upgrade()` (fires
+    // once per connection when a new connector version deploys). A
+    // connection that was mid-enable across that deploy, or a fresh connect,
+    // never gets an `upgrade()` dispatch of its own, so this catches those.
+    // Placed AFTER `channelSyncCompleted` above and made fully non-throwing
+    // internally: nothing here may be allowed to skip that call or the
+    // queuing below, or a healthy connection reads as permanently stuck to
+    // the sync watchdog.
+    await this.upgradeToScopedSync();
 
     // No historical message backfill. Slack reduced `conversations.history`
     // and `conversations.replies` rate limits for non-Marketplace apps to
     // 1 rpm / 15 objects per call (2025-05-29 changelog), which makes
-    // bulk-importing a channel's history impractical. Instead we watch for
-    // new messages via the webhook and only backfill starred items
-    // so users keep their to-do (starred) threads.
-
-    // Webhook registration is queued as a separate task so it doesn't block
-    // the HTTP response from `onChannelEnabled`.
-    const webhookCallback = await this.callback(
-      this.setupChannelWebhook,
-      channel.id
-    );
-    await this.runTask(webhookCallback);
+    // bulk-importing history impractical. Instead we watch for new messages
+    // via the two workspace-wide webhooks (queued by
+    // `queueWorkspaceDailyTasks` below) and only backfill saved items so
+    // users keep their to-do (starred) threads.
 
     // observeOnly = the channel was auto-observed because a Plot thread was
-    // composed into it. Register the webhook (above) for go-forward events but
-    // skip the starred-items backfill — the user didn't opt to sync this
-    // channel's history.
+    // composed into it. Register the webhooks (above) for go-forward events
+    // but skip the saved-items backfill — nothing about composing a message
+    // asks for the user's history.
     if (!context?.observeOnly) {
-      const backfillCallback = await this.callback(
-        this.backfillStars,
-        channel.id,
-        null
-      );
-      await this.runTask(backfillCallback);
+      await this.queueStarBackfill(channel.id);
     }
 
-    // Queue workspace-scoped daily tasks (member sync, custom emoji sync)
-    // at most once per fan-out instead of once per channel.
+    // Queue the workspace-scoped work — both webhook registrations, member
+    // sync, custom emoji sync, user groups, DM roster — at most once per
+    // fan-out instead of once per channel.
     await this.queueWorkspaceDailyTasks(channel.id);
   }
 
   async onChannelDisabled(channel: Channel): Promise<void> {
-    await this.stopSync(channel.id);
-    await this.clear(`sync_enabled_${channel.id}`);
+    // There is no per-channel sync to stop — nothing is synced per channel.
+    // Disabling a channel is not a supported operation on a connector that
+    // hides its channels, so this only runs when a channel becomes
+    // unreachable or the connection is torn down.
+    await this.clear(`token_channel_${channel.id}`);
+
+    // Cancel the daily recurring chains keyed to this channel, and drop any
+    // pending event-driven drains (and their backlogs) for it.
+    // Every recurring chain and drain keyed to this channel has to be listed
+    // here. A chain left running fires daily forever and calls
+    // `integrations.get(channel.id)`, whose migration fallback rewrites the
+    // channel config as enabled — so a leak does not merely waste work, it
+    // resurrects the channel.
+    await this.cancelScheduledTask(`members-sync:${channel.id}`);
+    await this.cancelScheduledTask(`custom-emoji-sync:${channel.id}`);
+    await this.cancelScheduledTask(`user-groups-sync:${channel.id}`);
+    await this.cancelScheduledTask(`dm-channels-sync:${channel.id}`);
+    await this.cancelDrain(`incremental-sync:${channel.id}`);
+    await this.cancelDrain(`reaction-refresh:${channel.id}`);
+    await this.cancelDrain(`subscribed-thread:${channel.id}`);
+
+    // `queueReactionRefresh`'s rate-limit retry (see there) is keyed per
+    // message rather than per channel, so it cannot be cancelled by a single
+    // fixed key like the chains above. It records a listable marker instead;
+    // walk those to cancel every retry still pending for this channel.
+    const reactionScopePrefix = `reaction-scope-pending:${channel.id}:`;
+    const reactionScopeKeys = await this.tools.store.list(reactionScopePrefix);
+    for (const key of reactionScopeKeys) {
+      const messageTs = key.substring(reactionScopePrefix.length);
+      await this.cancelScheduledTask(`reaction-scope:${channel.id}:${messageTs}`);
+      await this.clear(key);
+    }
+
+    // Sweep per-thread saved-state for this channel. Subscriptions
+    // (`sync_thread:`) are deliberately NOT swept — they are permanent, so a
+    // thread that already earned its place in Plot keeps updating.
+    const starredKeys = await this.tools.store.list(`starred:${channel.id}:`);
+    for (const key of starredKeys) await this.clear(key);
+  }
+
+  /**
+   * One-time cleanup for connections created under the old per-channel sync
+   * model. Called from `upgrade()` (primary trigger, once per connection on
+   * deploy) and from `onChannelEnabled` (backstop); gated on
+   * `scoped_sync_upgraded` so it does real work exactly once and is a single
+   * cheap read on every call after.
+   *
+   * `channel_webhook_<channelId>` and its registered Slack webhook, plus
+   * `sync_state_<channelId>` and `enabled_at_<channelId>`, are pure leftovers
+   * from the old model — nothing reads them any more, so they are removed
+   * outright. Duplicate deliveries from a webhook that outlives its
+   * deregistration are idempotent (every downstream path already handles
+   * them), so the webhook removal itself is best-effort.
+   *
+   * `sync_enabled_<channelId>` is different: its gating read is gone, but the
+   * key is still the ONLY record of which channel ids this connection's
+   * OAuth token can be resolved against — `getWorkspaceApi` walks it to reach
+   * a direct conversation, and `findChannelForFile` walks it to locate an
+   * uncached attachment. Dropping it outright (rather than renaming it) would
+   * silently break both: replies on synced DMs would stop sending and
+   * inbound file attachments would stop resolving, with no error anywhere.
+   * So it is RENAMED to `token_channel_<channelId>`, the name
+   * `onChannelEnabled` now writes going forward.
+   *
+   * The entire body below runs inside one try/catch: this is genuinely
+   * best-effort, not just documented as such. A store blip partway through
+   * (a large workspace's first post-deploy pass can be dozens of Durable
+   * Object round-trips) must not throw out of here — `onChannelEnabled`
+   * calls this AFTER `channelSyncCompleted`, so a throw at that call site
+   * would be harmless to the stuck-sync watchdog either way, but `upgrade()`
+   * has no such downstream step to protect and no caller that tolerates a
+   * rejected lifecycle hook well. Catching here, once, covers both callers
+   * uniformly. `scoped_sync_upgraded` is set only as the LAST statement
+   * inside the try, so a failure anywhere above it — caught here or not —
+   * never marks the upgrade done with the work incomplete; the next call
+   * (from either trigger) resumes from whatever `store.list` still finds.
+   */
+  private async upgradeToScopedSync(): Promise<void> {
+    try {
+      // Inside the try: this read is a Durable Object round-trip like every
+      // other statement below, and it is the one that runs on EVERY call
+      // forever. Left outside, a blip on it would throw out of here — and
+      // out of `onChannelEnabled`, skipping the saved-items backfill and the
+      // workspace task queuing (webhook registration included) that follow
+      // the call.
+      if (await this.get<boolean>("scoped_sync_upgraded")) return;
+
+      for (const key of await this.tools.store.list("channel_webhook_")) {
+        const webhook = await this.get<{ url?: string }>(key);
+        if (webhook?.url) {
+          try {
+            await this.tools.network.deleteWebhook(webhook.url);
+          } catch (error) {
+            console.warn(`[slack] failed to remove webhook for ${key}`, error);
+          }
+        }
+        await this.clear(key);
+      }
+
+      // Rename, not drop: write the new key before clearing the old one, so
+      // a partial pass leaves at worst both keys present for a channel
+      // (harmless — only `token_channel_` is read going forward) and never
+      // neither. Re-running the whole loop on a retry is safe: any channel
+      // already renamed no longer has a `sync_enabled_` key to find, and
+      // re-writing `token_channel_<id>` = true for one still pending is a
+      // no-op overwrite of the same value.
+      for (const key of await this.tools.store.list("sync_enabled_")) {
+        const channelId = key.substring("sync_enabled_".length);
+        await this.set(`token_channel_${channelId}`, true);
+        await this.clear(key);
+      }
+
+      for (const prefix of ["sync_state_", "enabled_at_"]) {
+        for (const key of await this.tools.store.list(prefix)) {
+          await this.clear(key);
+        }
+      }
+
+      await this.set("scoped_sync_upgraded", true);
+    } catch (error) {
+      console.warn(
+        "[slack] upgradeToScopedSync failed; will retry on the next pass",
+        error
+      );
+    }
   }
 
   private async getApi(channelId: string): Promise<SlackApi> {
@@ -377,24 +580,22 @@ export class Slack extends Connector<Slack> {
    * currently-enabled channel's token if the preferred one is unavailable.
    *
    * Slack user-token scopes are workspace-wide: any token from the same OAuth
-   * grant can address any DM the user is in. So when the channel a DM was
-   * opened against is later disabled, we can still post by enumerating other
-   * enabled channels in this connector instance's store. Enabled channels are
-   * tracked under `sync_enabled_<channelId>` keys by `onChannelEnabled` /
-   * `onChannelDisabled`.
+   * grant can address any conversation the user is in. A direct conversation
+   * is not a channel, so its id can never resolve a token on its own — we
+   * fall back to enumerating the channel ids this connection has seen, which
+   * `onChannelEnabled` records under `token_channel_<channelId>`.
    *
-   * Use this on DM write-back paths (where the original `tokenChannelId` is
-   * just a hint, not a hard binding). Regular per-channel paths should
-   * continue to use {@link getApi} — disabling a channel intentionally
-   * disables operations on threads from that channel.
+   * Use this on every write-back path that targets a conversation rather than
+   * a channel. {@link getApi} remains the direct path when the id in hand is
+   * known to be a real channel.
    */
   private async getWorkspaceApi(preferredChannelId: string): Promise<SlackApi> {
     const preferred = await this.tools.integrations.get(preferredChannelId);
     if (preferred) return new SlackApi(preferred.token);
 
-    const keys = await this.tools.store.list("sync_enabled_");
+    const keys = await this.tools.store.list("token_channel_");
     for (const key of keys) {
-      const channelId = key.substring("sync_enabled_".length);
+      const channelId = key.substring("token_channel_".length);
       if (channelId === preferredChannelId) continue;
       const token = await this.tools.integrations.get(channelId);
       if (token) return new SlackApi(token.token);
@@ -419,158 +620,6 @@ export class Slack extends Connector<Slack> {
         description: channel.topic?.value || channel.purpose?.value || null,
         primary: channel.name === "general", // Slack convention
       }));
-  }
-
-  async startSync(options: { channelId: string }): Promise<void> {
-    // Historical sync is no longer performed (see `onChannelEnabled` for
-    // context on Slack's 2025-05-29 rate-limit change). Just (re)register
-    // the webhook so new messages flow in.
-    await this.setupChannelWebhook(options.channelId);
-  }
-
-  async stopSync(channelId: string): Promise<void> {
-    const webhook = await this.get<{ url: string }>(`channel_webhook_${channelId}`);
-    if (webhook?.url) {
-      try {
-        await this.tools.network.deleteWebhook(webhook.url);
-      } catch (error) {
-        console.warn("Failed to delete Slack webhook:", error);
-      }
-    }
-    await this.clear(`channel_webhook_${channelId}`);
-    await this.clear(`sync_state_${channelId}`);
-    await this.clear(`enabled_at_${channelId}`);
-
-    // Cancel the daily recurring chains for this channel so disabling it stops
-    // them. Singleton keyed tasks — cancelling by key is a no-op if none is
-    // pending or it already ran.
-    await this.cancelScheduledTask(`members-sync:${channelId}`);
-    await this.cancelScheduledTask(`custom-emoji-sync:${channelId}`);
-
-    // Drop pending event-driven drains (and their backlogs) for this channel.
-    await this.cancelDrain(`incremental-sync:${channelId}`);
-    await this.cancelDrain(`reaction-refresh:${channelId}`);
-
-    // Sweep per-thread state for this channel so a re-enable starts clean.
-    const starredKeys = await this.tools.store.list(`starred:${channelId}:`);
-    for (const key of starredKeys) await this.clear(key);
-  }
-
-  async setupChannelWebhook(channelId: string): Promise<void> {
-    // Slack events arrive at a single app-wide URL (/hook/slack) and are
-    // routed to a callback by team_id. Passing { provider, authorization }
-    // makes createWebhook register this callback under the team's
-    // CallbacksState DO; with empty options the callback would be keyed by
-    // twist_instance_id and /hook/slack would never find it.
-    const authorization = await this.get<Authorization>("auth");
-    if (!authorization) {
-      console.error(
-        "Slack connector missing stored Authorization; cannot register webhook. Reconnect the account."
-      );
-      return;
-    }
-
-    // The stored "auth" Authorization is written once in `activate()` and is
-    // never cleared when the underlying OAuth token is removed (account
-    // disconnected, re-auth with a different account, or a token cleared after
-    // a failure). Its presence therefore does NOT guarantee a usable token.
-    // `createWebhook` -> `createSlackWebhook` does a direct `auth_token` lookup
-    // and throws "No integration found for authorization" when the token is
-    // gone, which then fails-and-retries forever on the webhook queue. Confirm
-    // a live token through the integrations resolver (the same check `getApi`
-    // uses); `integrations.get()` also flags the connection for re-auth when
-    // the token is missing, so the user is prompted to reconnect.
-    const token = await this.tools.integrations.get(channelId);
-    if (!token) {
-      console.error(
-        `Slack connector has no usable token for channel ${channelId}; skipping webhook registration. Reconnect the account.`
-      );
-      return;
-    }
-
-    const webhookUrl = await this.tools.network.createWebhook(
-      { provider: AuthProvider.Slack, authorization },
-      this.onSlackWebhook,
-      channelId
-    );
-
-    await this.set(`channel_webhook_${channelId}`, {
-      url: webhookUrl,
-      channelId,
-      created: new Date().toISOString(),
-    });
-  }
-
-  async syncBatch(
-    batchNumber: number,
-    mode: "full" | "incremental",
-    channelId: string,
-    initialSync?: boolean
-  ): Promise<void> {
-    const isInitial = initialSync ?? mode === "full";
-    try {
-      const state = await this.get<SyncState>(`sync_state_${channelId}`);
-      if (!state) {
-        throw new Error("No sync state found");
-      }
-
-      const api = await this.getApi(channelId);
-      const result = await syncSlackChannel(api, state);
-
-      if (result.threads.length > 0) {
-        await this.processMessageThreads(result.threads, channelId, isInitial);
-      }
-
-      await this.set(`sync_state_${channelId}`, result.state);
-
-      if (result.state.more) {
-        const syncCallback = await this.callback(
-          this.syncBatch,
-          batchNumber + 1,
-          mode,
-          channelId,
-          isInitial
-        );
-        await this.runTask(syncCallback);
-      } else {
-        if (mode === "full") {
-          await this.clear(`sync_state_${channelId}`);
-        }
-      }
-    } catch (error) {
-      if (error instanceof SlackRateLimitedError) {
-        const runAt = new Date(Date.now() + error.retryAfterMs);
-        const retry = await this.callback(
-          this.syncBatch,
-          batchNumber,
-          mode,
-          channelId,
-          isInitial
-        );
-        await this.rescheduleAt(
-          retry,
-          runAt,
-          `syncBatch ${batchNumber} ${channelId} (${error.method})`
-        );
-        return;
-      }
-      if (error instanceof SlackPermanentError) {
-        console.warn(
-          `syncBatch ${batchNumber} for ${channelId} stopped: ${error.method} → ${error.slackError}`
-        );
-        if (SLACK_AUTH_ERRORS.has(error.slackError)) {
-          await this.tools.integrations.markNeedsReauth(channelId);
-        }
-        if (mode === "full") await this.clear(`sync_state_${channelId}`);
-        return;
-      }
-      console.error(
-        `Error in sync batch ${batchNumber} for channel ${channelId}:`,
-        error
-      );
-
-      throw error;
-    }
   }
 
   private async processMessageThreads(
@@ -610,53 +659,207 @@ export class Slack extends Connector<Slack> {
     const { teamId, customEmojiNames } =
       await this.customEmojiContext(channelId);
 
+    // Cache file → channel so downloadAttachment can resolve the right API
+    // token later. Done up front, before anything that can fail or take an
+    // early exit, so no attachment loses its mapping.
+    for (const thread of threads) {
+      for (const message of thread) {
+        for (const f of message.files ?? []) {
+          await this.set(`slack:file-channel:${f.id}`, channelId);
+        }
+      }
+    }
+
+    if (await this.isKnownDMChannel(channelId)) {
+      // One permanent link for the whole conversation: flatten the thread
+      // grouping `syncSlackChannel` applied, since a direct conversation
+      // reads as one running conversation and its occasional threaded reply
+      // becomes a note reply.
+      const link = await this.buildConversationLink({
+        channelId,
+        messages: threads.flat(),
+        initialSync,
+        userInfos,
+        teamId,
+        customEmojiNames,
+      });
+      if (link) await this.tools.integrations.saveLink(link);
+      return;
+    }
+
     for (const thread of threads) {
       try {
-        // Cache file → channel so downloadAttachment can resolve the right API
-        // token later. Do this before the transform so even failed transforms
-        // don't lose the mapping.
-        for (const message of thread) {
-          for (const f of message.files ?? []) {
-            await this.set(`slack:file-channel:${f.id}`, channelId);
-          }
-        }
-
-        // Transform Slack thread to NewLinkWithNotes
-        const activityThread = transformSlackThread(
-          thread,
+        const link = await this.buildConversationLink({
           channelId,
-          userInfos,
+          messages: thread,
           initialSync,
+          userInfos,
           teamId,
-          customEmojiNames
-        );
-
-        // Echo guard: drop notes for messages Plot itself sent (composed or
-        // replied). They come back through the channel webhook once the
-        // channel is observed and would otherwise round-trip as duplicate
-        // notes. Filter by note.key (the bare ts) rather than the raw
-        // messages so the link still upserts by source (thread identity is
-        // preserved). Clear the marker on first read so a later genuine
-        // edit/reaction on the same message still re-syncs.
-        activityThread.notes = await this.dropSentEchoNotes(activityThread.notes);
-
-        if (!activityThread.notes || activityThread.notes.length === 0) continue;
-
-        // Inject sync metadata for the parent to identify the source
-        activityThread.meta = {
-          ...activityThread.meta,
-          syncProvider: "slack",
-          syncableId: channelId,
-        };
-        if (thread[0]) activityThread.facets = slackFacets(thread[0], channelId);
-
-        // Save link directly via integrations
-        await this.tools.integrations.saveLink(activityThread);
+          customEmojiNames,
+        });
+        if (link) await this.tools.integrations.saveLink(link);
       } catch (error) {
         console.error(`Failed to process thread:`, error);
         // Continue processing other threads
       }
     }
+  }
+
+  /**
+   * Build the link for a set of Slack messages in the shape their
+   * conversation uses.
+   *
+   * A direct or group conversation is ONE permanent, ever-growing link (see
+   * {@link assembleSlackDmLink}); anywhere else, Slack's own reply threads are
+   * a real, user-visible grouping and each thread stays its own link. Every
+   * path that saves fetched messages goes through here, so a conversation
+   * can never be saved in two different shapes and end up duplicated in Plot.
+   *
+   * Returns `null` when nothing is left to save.
+   */
+  private async buildConversationLink(opts: {
+    channelId: string;
+    messages: SlackMessage[];
+    initialSync: boolean;
+    userInfos?: SlackUserInfoMap;
+    teamId?: string;
+    customEmojiNames?: ReadonlySet<string>;
+    /**
+     * Whether to drop messages Plot itself sent. Defaults to `true`. Pass
+     * `false` on paths that are re-reading a conversation for a reason other
+     * than new inbound content: the marker is consumed on first read, so
+     * spending it here would let the real inbound echo through as a duplicate.
+     */
+    dropSentEchoes?: boolean;
+    /**
+     * Whether these messages are the newest the conversation has. Defaults to
+     * `true`. Pass `false` when the messages were selected by something other
+     * than recency — a reaction or a save can name a message of any age — so
+     * a direct conversation's running head is not rewritten backwards.
+     */
+    advanceConversationHead?: boolean;
+  }): Promise<NewLinkWithNotes | null> {
+    const {
+      channelId,
+      messages,
+      initialSync,
+      userInfos,
+      teamId,
+      customEmojiNames,
+      dropSentEchoes = true,
+      advanceConversationHead = true,
+    } = opts;
+
+    if (await this.isKnownDMChannel(channelId)) {
+      const kept = dropSentEchoes
+        ? await this.dropSentEchoNotes(messages, (message) => message.ts)
+        : messages;
+      const link = assembleSlackDmLink({
+        channelId,
+        counterpartyUserId: await this.dmCounterpartyUserId(channelId),
+        messages: kept,
+        initialSync,
+        userInfos,
+        teamId,
+        customEmojiNames,
+      });
+      if (!link) return null;
+      if (advanceConversationHead) {
+        // These messages ARE the conversation head, so the link carries it.
+        // Record that fact for the branch below, which must be able to tell
+        // "preserve the stored head" from "there is no stored head yet".
+        // Written here rather than at each of the several save sites: if the
+        // save that follows fails, the marker is merely optimistic and the
+        // next inbound message rewrites both it and the head.
+        await this.set(this.dmHeadKey(channelId), true);
+      } else if (await this.get<boolean>(this.dmHeadKey(channelId))) {
+        // This link is permanent and ever-growing, and every field below
+        // describes where the conversation currently STANDS — the latest
+        // message's text, an "open in Slack" anchor on it, when the
+        // conversation began, and which message a to-do star should land on.
+        // Rebuilt from an arbitrary older message they would each move
+        // backwards, so reacting to a month-old message would regress the
+        // whole conversation's preview (and re-point new stars at a stale
+        // message). Leaving them out of the upsert keeps whatever is already
+        // stored — `meta` merges key-by-key (see upsert_link), so omitting
+        // `threadTs` here does not disturb any other key already in `meta`.
+        //
+        // Only when there IS something stored to keep. Saving or reacting to
+        // an old message in a conversation Plot has never synced CREATES the
+        // link, and dropping these fields from a create leaves a thread with
+        // no preview, no "open in Slack" anchor and a `created` that defaults
+        // to now, until the next inbound message heals it.
+        delete link.preview;
+        delete link.sourceUrl;
+        delete link.created;
+        if (link.meta) delete link.meta.threadTs;
+      } else {
+        // No stored head, and this message is not the conversation head
+        // either — so this save/reaction is what's creating the link,
+        // exactly like the branch above describes. Stamp the marker now so a
+        // SECOND old-message save on this still-never-advanced conversation
+        // takes the "preserve what's stored" branch above instead of
+        // repeating this create with a different, possibly older, message
+        // and rewinding what this one just wrote.
+        await this.set(this.dmHeadKey(channelId), true);
+      }
+      return link;
+    }
+
+    const link = transformSlackThread(
+      messages,
+      channelId,
+      userInfos,
+      initialSync,
+      teamId,
+      customEmojiNames
+    );
+    // Echo guard: drop notes for messages Plot itself sent (composed or
+    // replied). They come back through the webhook and would otherwise
+    // round-trip as duplicate notes. Filter by note.key (the bare ts) rather
+    // than the raw messages so the link still upserts by source (thread
+    // identity is preserved).
+    if (dropSentEchoes) {
+      link.notes = await this.dropSentEchoNotes(link.notes);
+    }
+    if (!link.notes || link.notes.length === 0) return null;
+    link.meta = {
+      ...link.meta,
+      syncProvider: "slack",
+      syncableId: channelId,
+    };
+    if (messages[0]) link.facets = slackFacets(messages[0], channelId);
+    return link;
+  }
+
+  /**
+   * The `source` the link for this conversation is keyed on — the same value
+   * {@link buildConversationLink} produces, so any path addressing an
+   * already-saved link resolves the one that path wrote.
+   */
+  private async conversationSource(
+    channelId: string,
+    threadTs: string
+  ): Promise<string> {
+    if (await this.isKnownDMChannel(channelId)) {
+      return slackConversationIdentity({
+        channelId,
+        counterpartyUserId: await this.dmCounterpartyUserId(channelId),
+      }).source;
+    }
+    return `https://slack.com/app_redirect?channel=${channelId}&message_ts=${threadTs}`;
+  }
+
+  /**
+   * The other party's Slack user id for a 1:1 conversation, or `null` for a
+   * group conversation (and for a 1:1 whose counterparty isn't cached yet).
+   * Cached alongside the conversation roster by {@link listDMChannels}.
+   */
+  private async dmCounterpartyUserId(channelId: string): Promise<string | null> {
+    const conversations = await this.get<Record<string, { user?: string }>>(
+      "dm_conversations"
+    );
+    return conversations?.[channelId]?.user ?? null;
   }
 
   /**
@@ -747,36 +950,19 @@ export class Slack extends Connector<Slack> {
       return;
     }
 
+    // Messages arrive through exactly two workspace-wide callbacks: one for
+    // direct conversations, one for everything else. There is no per-channel
+    // registration, so a message is never routed by matching the channel a
+    // callback was registered for.
     if (event.type === "message" && !event.subtype) {
-      if (event.channel === channelId) {
-        await this.startIncrementalSync(channelId);
-      } else if (
+      if (
         channelId === DM_WEBHOOK_SENTINEL &&
         typeof event.channel === "string" &&
         (await this.isKnownDMChannel(event.channel))
       ) {
-        // Seed the incremental-sync floor for clarity/parity with the
-        // regular-channel path, even though drainChannelSync already
-        // defaults to a sane 15-minute window when this is unset.
-        if (!(await this.get<string>(`enabled_at_${event.channel}`))) {
-          await this.set(`enabled_at_${event.channel}`, (Date.now() / 1000).toString());
-        }
-        // drainChannelSync guards on `channel_webhook_<channelId>` being
-        // present (a marker that this channel's sync path is live) — regular
-        // channels get this from setupChannelWebhook's per-channel
-        // registration, but DM channels share ONE workspace-wide webhook
-        // (see registerDMWebhook) with no per-DM registration entry. Seed a
-        // synthetic marker so the guard passes; drainChannelSync never reads
-        // this value past the presence check.
-        if (!(await this.get<any>(`channel_webhook_${event.channel}`))) {
-          await this.set(`channel_webhook_${event.channel}`, {
-            url: null,
-            channelId: event.channel,
-            created: new Date().toISOString(),
-            dm: true,
-          });
-        }
         await this.startIncrementalSync(event.channel);
+      } else if (channelId === MENTION_WEBHOOK_SENTINEL) {
+        await this.handleChannelMessage(event);
       }
     }
   }
@@ -800,10 +986,94 @@ export class Slack extends Connector<Slack> {
     const messageTs = item.ts as string | undefined;
     if (!channelId || !messageTs) return;
 
-    const syncEnabled = await this.get<boolean>(`sync_enabled_${channelId}`);
-    if (!syncEnabled) {
-      return;
+    await this.queueReactionRefresh(channelId, messageTs);
+  }
+
+  /**
+   * Decide whether one reacted message is in scope and, if it is, queue its
+   * thread for refresh.
+   *
+   * Public and primitive-argumented because a rate limit reschedules it
+   * through a callback token: the scope decision itself can need
+   * `conversations.history`, and dropping it would lose the reaction for good
+   * (Slack never redelivers an acked event).
+   */
+  async queueReactionRefresh(
+    channelId: string,
+    messageTs: string
+  ): Promise<void> {
+    // Clear any pending-retry marker for this message: this call is either
+    // the first attempt (no marker set, a no-op clear) or a rate-limit retry
+    // firing (see below) — either way any previously recorded marker is now
+    // stale. A retry that hits the rate limit again re-records it below.
+    await this.clear(`reaction-scope-pending:${channelId}:${messageTs}`);
+
+    // Refresh reactions on anything we actually sync: any direct
+    // conversation, and any channel thread the user is subscribed to.
+    //
+    // Every reaction anywhere in the workspace reaches this handler, so the
+    // store-only checks come first. Resolving a reply's parent costs a
+    // `conversations.history` call, and that method is limited to 1 rpm — it
+    // is only worth spending on a channel that already has a subscription,
+    // which is also the only case where the id in hand is known to be a real
+    // channel we can resolve a token against.
+    let inScope =
+      (await this.isKnownDMChannel(channelId)) ||
+      (await this.isSubscribedThread(channelId, messageTs));
+    if (!inScope && (await this.hasSubscribedThreads(channelId))) {
+      let api: SlackApi;
+      try {
+        api = await this.getApi(channelId);
+      } catch (error) {
+        // Expected: no token for this channel, so the parent is unresolvable
+        // and will stay so. Nothing unexpected to report.
+        console.warn("queueReactionRefresh: Slack token unavailable", error);
+        return;
+      }
+      try {
+        const threadTs = await this.resolveThreadTs(api, channelId, messageTs);
+        inScope = await this.isSubscribedThread(channelId, threadTs);
+      } catch (error) {
+        if (error instanceof SlackRateLimitedError) {
+          // `conversations.history` is 1 rpm, so a busy channel hits this
+          // routinely. Without the parent we cannot tell whether this
+          // reaction belongs to a subscribed thread, and syncing an
+          // unsubscribed one would put a thread in Plot the user never asked
+          // for — so re-run the whole decision once the limiter clears rather
+          // than dropping an event Slack will never send again. The keyed
+          // task coalesces repeat reactions on the same message.
+          const runAt = new Date(Date.now() + error.retryAfterMs);
+          const retry = await this.callback(
+            this.queueReactionRefresh,
+            channelId,
+            messageTs
+          );
+          console.log(
+            `queueReactionRefresh: rate limited on ${error.method}; retrying ${channelId}/${messageTs} at ${runAt.toISOString()}`
+          );
+          // Recorded under a listable prefix so `onChannelDisabled` can find
+          // and cancel this specific scheduled retry: it is keyed per
+          // message, so — unlike the per-channel recurring chains, which
+          // each have one fixed key — there is no single key `onChannelDisabled`
+          // could target directly.
+          await this.set(`reaction-scope-pending:${channelId}:${messageTs}`, true);
+          await this.scheduleTask(
+            `reaction-scope:${channelId}:${messageTs}`,
+            retry,
+            { runAt }
+          );
+          return;
+        }
+        // Unexpected. `resolveThreadTs` already absorbs every Slack-reported
+        // failure except a rate limit (falling back to the message's own ts),
+        // so anything else reaching here is a bug or a store failure — and
+        // every reaction in the workspace reaches this path now that channel
+        // gating is gone, so swallowing it would be both silent and constant.
+        // Rethrow so the platform captures it.
+        throw error;
+      }
     }
+    if (!inScope) return;
 
     await this.scheduleDrain(
       `reaction-refresh:${channelId}`,
@@ -833,8 +1103,6 @@ export class Slack extends Connector<Slack> {
     channelId: string
   ): Promise<{ retry?: string[] } | void> {
     if (ids.length === 0) return;
-    // The channel may have been disabled while ids sat in the backlog.
-    if (!(await this.get<boolean>(`sync_enabled_${channelId}`))) return;
 
     let api: SlackApi;
     try {
@@ -850,20 +1118,7 @@ export class Slack extends Connector<Slack> {
     for (let i = 0; i < ids.length; i++) {
       const messageTs = ids[i]!;
       try {
-        let parentTs = messageTs;
-        try {
-          const { messages } = await api.getConversationHistory(
-            channelId,
-            undefined,
-            messageTs,
-            messageTs
-          );
-          const m = messages.find((x) => x.ts === messageTs);
-          if (m?.thread_ts) parentTs = m.thread_ts;
-        } catch (error) {
-          if (error instanceof SlackRateLimitedError) throw error;
-          // Continue with messageTs — top-level messages match this anyway.
-        }
+        const parentTs = await this.resolveThreadTs(api, channelId, messageTs);
         if (refreshedParents.has(parentTs)) continue;
         await this.refreshSlackThread(api, channelId, parentTs);
         refreshedParents.add(parentTs);
@@ -893,6 +1148,36 @@ export class Slack extends Connector<Slack> {
           error
         );
       }
+    }
+  }
+
+  /**
+   * Resolve the parent `thread_ts` of a message.
+   *
+   * A reaction event carries only the reacted message's own ts, and a reply
+   * has to be handled through its parent — a reply on its own is not a
+   * thread. Falls back to `messageTs`, which is the right answer for a
+   * top-level message and the safe answer when the lookup comes back empty.
+   * A rate limit is rethrown: the caller decides whether to retry the whole
+   * pass or to treat the message as unresolvable.
+   */
+  private async resolveThreadTs(
+    api: SlackApi,
+    channelId: string,
+    messageTs: string
+  ): Promise<string> {
+    try {
+      const { messages } = await api.getConversationHistory(
+        channelId,
+        undefined,
+        messageTs,
+        messageTs
+      );
+      return messages.find((m) => m.ts === messageTs)?.thread_ts ?? messageTs;
+    } catch (error) {
+      if (error instanceof SlackRateLimitedError) throw error;
+      // Continue with messageTs — top-level messages match this anyway.
+      return messageTs;
     }
   }
 
@@ -932,46 +1217,47 @@ export class Slack extends Connector<Slack> {
 
     const { teamId, customEmojiNames } =
       await this.customEmojiContext(channelId);
-    const link = transformSlackThread(
-      messages,
+    const link = await this.buildConversationLink({
       channelId,
+      messages,
+      initialSync: false,
       userInfos,
-      false,
       teamId,
-      customEmojiNames
-    );
-    link.notes = await this.dropSentEchoNotes(link.notes);
-    if (!link.notes || link.notes.length === 0) return;
-    link.meta = {
-      ...link.meta,
-      syncProvider: "slack",
-      syncableId: channelId,
-    };
-    if (messages[0]) link.facets = slackFacets(messages[0], channelId);
+      customEmojiNames,
+      // A refresh is triggered by a reaction, which can name a message of any
+      // age — these are not necessarily the newest messages.
+      advanceConversationHead: false,
+    });
+    if (!link) return;
     await this.tools.integrations.saveLink(link);
   }
 
   /**
-   * Drops notes for Slack messages Plot itself sent (composed via onCreateLink
+   * Drops items for Slack messages Plot itself sent (composed via onCreateLink
    * or replied via onNoteCreated), marked with `sent:<ts>` at write-back time.
-   * Once a thread is composed into a channel the channel is observed, so those
-   * messages come back through the webhook and would round-trip as duplicate
-   * notes. Filtering by note.key (the bare ts) — not the raw messages — keeps
-   * the link/thread identity intact (it still upserts by source). Clears the
-   * marker on first read so a later genuine edit/reaction on the same message
-   * re-syncs.
+   * Those messages come back through the webhook and would round-trip as
+   * duplicate notes.
+   *
+   * `keyOf` reads each item's Slack `ts`: it defaults to `.key` for already-
+   * transformed notes, and callers filtering raw messages pass `(m) => m.ts`.
+   * Filtering items rather than dropping the whole batch keeps the link's
+   * identity intact (it still upserts by source). Clears the marker on first
+   * read so a later genuine edit/reaction on the same message re-syncs.
    */
-  private async dropSentEchoNotes<T>(notes: T[] | undefined): Promise<T[]> {
-    if (!notes) return [];
+  private async dropSentEchoNotes<T>(
+    items: T[] | undefined,
+    keyOf: (item: T) => string | null | undefined = (item) =>
+      (item as { key?: string | null })?.key
+  ): Promise<T[]> {
+    if (!items) return [];
     const kept: T[] = [];
-    for (const n of notes) {
-      const key = (n as { key?: string | null })?.key;
-      const marked = key ? await this.get<boolean>(`sent:${key}`) : false;
-      if (key && marked) {
+    for (const item of items) {
+      const key = keyOf(item);
+      if (key && (await this.get<boolean>(`sent:${key}`))) {
         await this.clear(`sent:${key}`);
         continue;
       }
-      kept.push(n);
+      kept.push(item);
     }
     return kept;
   }
@@ -985,9 +1271,13 @@ export class Slack extends Connector<Slack> {
     const parentTs = (item.message?.thread_ts as string | undefined) ?? messageTs;
     if (!channelId || !parentTs) return;
 
-    // Gate on enabled channels: ignore stars in channels the user hasn't
-    // opted into for Plot sync (v1 scope).
-    if (!(await this.get<boolean>(`sync_enabled_${channelId}`))) return;
+    // Saving a message in Slack subscribes its thread permanently, whatever
+    // channel it lives in — there is no channel selection any more. A direct
+    // conversation is already synced in full and is one link rather than a
+    // set of threads, so it has nothing to record in a per-thread ledger.
+    if (!(await this.isKnownDMChannel(channelId))) {
+      await this.subscribeThread(channelId, parentTs);
+    }
 
     const wasStarred = !!(await this.get<boolean>(
       this.starredKey(channelId, parentTs)
@@ -1016,20 +1306,43 @@ export class Slack extends Connector<Slack> {
         // exist in Plot yet. Fetching + saving is idempotent (saveLink
         // upserts by source) and ensures the thread is saved and marked as
         // the owner's to-do regardless of prior state.
-        const api = await this.getApi(channelId);
+        let api: SlackApi;
+        try {
+          api = await this.getApi(channelId);
+        } catch (error) {
+          // Expected: the connection's token can be gone by the time a queued
+          // event runs. Nothing to apply, and nothing unexpected to report —
+          // kept out of the classifier below so it isn't rethrown as a bug.
+          console.warn("applyStarEvent: Slack token unavailable", error);
+          return;
+        }
         await this.saveStarredThread(api, channelId, parentTs);
+        // Record the anchor here too, not just in onThreadToDo — a star set
+        // directly in Slack (rather than from Plot) needs the same anchor so
+        // a later unstar FROM PLOT targets the message Slack actually has
+        // starred, not wherever the conversation's meta.threadTs has since
+        // moved to. See starAnchorKey.
+        if (await this.isKnownDMChannel(channelId)) {
+          await this.set(this.starAnchorKey(channelId), parentTs);
+        }
       } else {
         const actorId = await this.get<ActorId>("auth_actor_id");
         if (!actorId) {
           console.error("No auth_actor_id; cannot apply star event");
           return;
         }
-        const canonicalUrl = `https://slack.com/app_redirect?channel=${channelId}&message_ts=${parentTs}`;
+        // Resolve the SAME link the star path wrote the to-do onto. A direct
+        // conversation is one permanent link keyed on the person, not a link
+        // per message, so addressing it by the message's canonical URL would
+        // target a source that does not exist and silently clear nothing.
         await this.tools.integrations.setThreadToDo(
-          canonicalUrl,
+          await this.conversationSource(channelId, parentTs),
           actorId,
           false
         );
+        if (await this.isKnownDMChannel(channelId)) {
+          await this.clear(this.starAnchorKey(channelId));
+        }
       }
     } catch (error) {
       if (error instanceof SlackRateLimitedError) {
@@ -1050,10 +1363,27 @@ export class Slack extends Connector<Slack> {
         // an echo and duplicate events keep coalescing onto the keyed task.
         return;
       }
-      console.warn(
-        `applyStarEvent failed for ${channelId}/${parentTs}`,
-        error
-      );
+      if (error instanceof SlackPermanentError) {
+        if (SLACK_AUTH_ERRORS.has(error.slackError)) {
+          // The grant itself is bad; every later event fails the same way.
+          // Left unrecorded so a reconnect can still apply this star.
+          await this.tools.integrations.markNeedsReauth(channelId);
+          return;
+        }
+        // A deleted message, a conversation we were removed from: this star
+        // will never apply. Fall through to record the state so duplicate
+        // events for it short-circuit instead of re-failing.
+        console.warn(
+          `applyStarEvent: skipping ${channelId}/${parentTs}: ${error.method} → ${error.slackError}`
+        );
+      } else {
+        // Unexpected. Every star and reaction in the workspace reaches this
+        // path now that channel gating is gone, so a swallowed bug here would
+        // be both silent and constant. Rethrow so the platform's queue
+        // consumer classifies it and captures it. The state stays unrecorded,
+        // which is what a retry needs.
+        throw error;
+      }
     }
 
     // Record the new state so subsequent duplicate events short-circuit.
@@ -1082,19 +1412,35 @@ export class Slack extends Connector<Slack> {
 
         for (const item of items) {
           if (item.type !== "message") continue;
-          if (item.channel !== channelId) continue;
+
+          // Every saved item counts, wherever it lives. There is no channel
+          // selection any more, and `stars.list` is workspace-wide, so a
+          // channel filter here would both re-walk the same list once per
+          // enabled channel and — because a DM id is never an enabled
+          // channel — never backfill a saved DM message at all.
+          // `channelId` stays the token-bearing channel: Slack user tokens
+          // are workspace-wide, so one client addresses every conversation.
+          const itemChannelId = item.channel;
+          if (!itemChannelId) continue;
 
           const messageTs = item.message?.ts;
           const parentTs = item.message?.thread_ts ?? messageTs;
           if (!parentTs) continue;
 
           const alreadyStarred = await this.get<boolean>(
-            this.starredKey(channelId, parentTs)
+            this.starredKey(itemChannelId, parentTs)
           );
           if (alreadyStarred) continue;
 
           try {
-            await this.saveStarredThread(api, channelId, parentTs);
+            await this.saveStarredThread(api, itemChannelId, parentTs);
+            // Same anchor `applyStarEvent` records for a star set directly in
+            // Slack: without it, unstarring this item FROM PLOT later would
+            // target wherever the conversation's `meta.threadTs` has since
+            // moved to rather than the message Slack actually has starred.
+            if (await this.isKnownDMChannel(itemChannelId)) {
+              await this.set(this.starAnchorKey(itemChannelId), parentTs);
+            }
           } catch (error) {
             if (error instanceof SlackRateLimitedError) throw error;
             if (error instanceof SlackPermanentError) {
@@ -1105,22 +1451,28 @@ export class Slack extends Connector<Slack> {
                 throw error;
               }
               console.warn(
-                `backfillStars: skipping ${channelId}/${parentTs}: ${error.method} → ${error.slackError}`
+                `backfillStars: skipping ${itemChannelId}/${parentTs}: ${error.method} → ${error.slackError}`
               );
               continue;
             }
             console.warn(
-              `backfillStars: failed to save starred thread ${channelId}/${parentTs}`,
+              `backfillStars: failed to save starred thread ${itemChannelId}/${parentTs}`,
               error
             );
             // Continue with other items.
           }
 
-          await this.set(this.starredKey(channelId, parentTs), true);
+          await this.set(this.starredKey(itemChannelId, parentTs), true);
         }
 
         cursor = nextCursor;
       } while (cursor);
+
+      // The whole list walked without a rate limit or a permanent stop, so
+      // this connection never needs the backfill again. Written only here, at
+      // real completion: every early return above leaves it unset so the next
+      // enable retries.
+      await this.set("stars_backfilled", true);
     } catch (error) {
       if (error instanceof SlackRateLimitedError) {
         const runAt = new Date(Date.now() + error.retryAfterMs);
@@ -1185,39 +1537,49 @@ export class Slack extends Connector<Slack> {
 
     const { teamId, customEmojiNames } =
       await this.customEmojiContext(channelId);
-    const link = transformSlackThread(
-      messages,
+    // `initialSync` sets `unread: false, archived: false` on the link. For a
+    // channel thread that is right: the link IS the saved thread, and saving
+    // something is not a reason to notify about it. For a direct conversation
+    // it is not: there is ONE permanent link for the whole conversation, so
+    // the same flags would mark every unread message in it read (for every
+    // user with access) and un-archive it — save one message from someone who
+    // has written five, and the conversation goes read in Plot.
+    const isDirect = await this.isKnownDMChannel(channelId);
+    const link = await this.buildConversationLink({
       channelId,
+      messages,
+      initialSync: !isDirect,
       userInfos,
-      true,
       teamId,
-      customEmojiNames
-    );
-    if (!link.notes || link.notes.length === 0) return;
+      customEmojiNames,
+      // Saving a message is not new inbound content: it re-reads a
+      // conversation Plot may itself have written into. Spending the
+      // `sent:` markers here would let the real inbound echo through later
+      // as a duplicate note.
+      dropSentEchoes: false,
+      // A saved message can be of any age, so it says nothing about where the
+      // conversation currently stands.
+      advanceConversationHead: false,
+    });
+    if (!link) return;
 
     // Mark the thread as the owner's to-do atomically with the save. This
     // replaces the old status="later" + active:true bridge — the connector
     // save path does not run status `active` propagation.
     link.todo = true;
-    link.meta = {
-      ...link.meta,
-      syncProvider: "slack",
-      syncableId: channelId,
-    };
-    if (messages[0]) link.facets = slackFacets(messages[0], channelId);
 
     await this.tools.integrations.saveLink(link);
   }
 
   private async startIncrementalSync(channelId: string): Promise<void> {
-    // Signal-only per-channel drain: Slack delivers one event per message,
-    // so enqueueing an immediate task per event turns a busy channel into a
-    // flood of duplicate passes (each re-fetching the same 15-minute window)
-    // that run concurrently in one worker. scheduleDrain collapses an event
-    // burst into a single pass; an event arriving mid-pass schedules exactly
-    // one follow-up. The window is computed at drain time inside the
-    // handler, so the delayed pass still covers every notified message — and
-    // the webhook path writes no state at all.
+    // Signal-only per-conversation drain: Slack delivers one event per
+    // message, so enqueueing an immediate task per event turns a busy
+    // conversation into a flood of duplicate passes (each re-fetching the
+    // same window) that run concurrently in one worker. scheduleDrain
+    // collapses an event burst into a single pass; an event arriving mid-pass
+    // schedules exactly one follow-up. The window is computed at drain time
+    // inside the handler, so the delayed pass still covers every notified
+    // message — and the webhook path writes no state at all.
     await this.scheduleDrain(
       `incremental-sync:${channelId}`,
       this.drainChannelSync,
@@ -1225,36 +1587,305 @@ export class Slack extends Connector<Slack> {
     );
   }
 
-  /** Drain handler: run one incremental window sync for the channel. */
+  /**
+   * Drain handler: sync the recent window of one direct conversation.
+   *
+   * Only direct conversations reach this path — channel content arrives
+   * thread-at-a-time through the mention/subscription route instead, so there
+   * is no per-channel cursor to keep and the window is derived entirely from
+   * the clock.
+   */
   async drainChannelSync(_ids: string[], channelId: string): Promise<void> {
-    const webhookData = await this.get<any>(`channel_webhook_${channelId}`);
-    if (!webhookData) {
-      console.error("No channel webhook data found");
-      return;
-    }
-
     const nowSec = Date.now() / 1000;
-    const enabledAtStr = await this.get<string>(`enabled_at_${channelId}`);
-    const enabledAt = enabledAtStr ? parseFloat(enabledAtStr) : 0;
-
-    // Fetch from max(enabled_at, now - 15min) so we don't backfill messages
-    // from before the user enabled this channel. The 15-minute cap gives us
-    // slack for delayed webhook delivery without dragging in yesterday.
-    const windowFloor = nowSec - 15 * 60;
-    const oldest = Math.max(enabledAt, windowFloor);
-
-    const incrementalState: SyncState = {
+    // A fixed window gives room for delayed webhook delivery without
+    // dragging in yesterday's conversation.
+    let state: SyncState = {
       channelId,
       latest: nowSec.toString(),
-      oldest: oldest.toString(),
+      oldest: (nowSec - INCREMENTAL_SYNC_WINDOW_SEC).toString(),
     };
 
-    await this.set(`sync_state_${channelId}`, incrementalState);
-    await this.syncBatch(1, "incremental", channelId, false);
+    try {
+      const api = await this.getApi(channelId);
+      for (let page = 0; page < INCREMENTAL_SYNC_MAX_PAGES; page++) {
+        const result = await syncSlackChannel(api, state);
+        if (result.threads.length > 0) {
+          await this.processMessageThreads(result.threads, channelId, false);
+        }
+        state = result.state;
+        if (!state.more) return;
+      }
+      // More than a full window's worth of pages: the remainder is dropped
+      // rather than paged forever against a 1 rpm method. The next message
+      // event opens a fresh window that overlaps this one.
+      console.warn(
+        `drainChannelSync: ${channelId} still had more after ${INCREMENTAL_SYNC_MAX_PAGES} pages`
+      );
+    } catch (error) {
+      if (error instanceof SlackRateLimitedError) {
+        // Re-arm the same coalescing drain past the retry window rather than
+        // dropping the pass: Slack never redelivers the message event that
+        // triggered it.
+        console.log(
+          `drainChannelSync: rate limited on ${error.method}; retrying ${channelId} in ${error.retryAfterMs}ms`
+        );
+        await this.scheduleDrain(
+          `incremental-sync:${channelId}`,
+          this.drainChannelSync,
+          { handlerArgs: [channelId], delayMs: error.retryAfterMs }
+        );
+        return;
+      }
+      if (error instanceof SlackPermanentError) {
+        console.warn(
+          `drainChannelSync stopped for ${channelId}: ${error.method} → ${error.slackError}`
+        );
+        if (SLACK_AUTH_ERRORS.has(error.slackError)) {
+          await this.tools.integrations.markNeedsReauth(channelId);
+        }
+        return;
+      }
+      console.error(`drainChannelSync failed for ${channelId}`, error);
+      throw error;
+    }
   }
 
   private starredKey(channelId: string, threadTs: string): string {
     return `starred:${channelId}:${threadTs}`;
+  }
+
+  /**
+   * Key recording that a direct conversation's permanent link already carries
+   * a head — a preview, an "open in Slack" anchor, a `created`, and the
+   * `meta.threadTs` a to-do star anchors on.
+   *
+   * Paths that re-read a conversation by something other than recency (a
+   * reaction, a saved message) deliberately omit those fields so an old
+   * message cannot rewind them. That is only correct as an UPDATE: on a
+   * CREATE — no head recorded yet — those fields are exactly what the new
+   * link needs, so they're kept. There is no way to ask the platform whether
+   * the link exists, so the connector records this marker itself, on both
+   * paths that can be establishing one: the normal recency-driven sync, and
+   * that same old-message create.
+   *
+   * Not backfilled for conversations synced before this marker existed. A
+   * connector-local list of known DM channel ids exists (`dm_channels`), but
+   * it says nothing about whether any of them already has a link — a
+   * channel can be a known DM the connector has never actually synced a
+   * message for, and stamping this marker for one of those would wrongly
+   * withhold its legitimate first preview/anchor/created on create,
+   * trading this bug for a smaller version of the same one. So an old
+   * conversation's first old-message reaction or save after this ships can
+   * still rewind it exactly as before — but only until its next ordinary
+   * inbound message, which stamps the marker through the normal path above;
+   * a quiet conversation with no new activity stays exposed indefinitely.
+   */
+  private dmHeadKey(channelId: string): string {
+    return `dm_head:${channelId}`;
+  }
+
+  /**
+   * Key for the message actually holding a direct conversation's Slack star.
+   *
+   * A DM's `meta.threadTs` (see `assembleSlackDmLink`) is the conversation's
+   * newest message and MOVES as new messages arrive — `link.meta` merges
+   * key-by-key on every upsert, so the stored value really does advance.
+   * Slack's star, once set, stays on whichever message it was set on. If
+   * unstarring re-read `meta.threadTs` instead of this anchor, a star set
+   * earlier and left in place while the conversation grew would be
+   * unstarred at the WRONG message — `stars.remove` on a never-starred
+   * message either errors or (for the common case) returns `not_starred`,
+   * which is treated as idempotent success, so the mismatch is silent: the
+   * real star is orphaned in Slack forever, and the stale `starredKey` entry
+   * for it would drop a genuine later star of that same message as an echo.
+   *
+   * Scoped to `channelId` alone (no `threadTs`) because a DM channel id
+   * identifies exactly one conversation and so exactly one anchor — unlike a
+   * regular channel, where one id can host many independently-starred
+   * threads. This key is only ever read/written for direct conversations;
+   * a channel thread's `threadTs` is already fixed for the life of that
+   * thread's link and needs no extra bookkeeping.
+   */
+  private starAnchorKey(channelId: string): string {
+    return `star_anchor:${channelId}`;
+  }
+
+  /**
+   * Key for the append-only subscription ledger. A thread lands here the first
+   * time it qualifies for sync — an at-mention, or the user saving it — and is
+   * NEVER removed. Unstarring in Slack or completing the to-do in Plot changes
+   * state, not subscription: a thread that stopped syncing would sit in Plot
+   * permanently misrepresenting what it looks like in Slack.
+   */
+  private subscriptionKey(channelId: string, threadTs: string): string {
+    return `sync_thread:${channelId}:${threadTs}`;
+  }
+
+  private async subscribeThread(
+    channelId: string,
+    threadTs: string
+  ): Promise<void> {
+    await this.set(this.subscriptionKey(channelId, threadTs), true);
+  }
+
+  private async isSubscribedThread(
+    channelId: string,
+    threadTs: string
+  ): Promise<boolean> {
+    return (
+      (await this.get<boolean>(this.subscriptionKey(channelId, threadTs))) ===
+      true
+    );
+  }
+
+  /**
+   * Whether this channel has any subscribed thread at all. A cheap
+   * store-only pre-check for paths that would otherwise pay a rate-limited
+   * API call to find out which thread a message belongs to.
+   */
+  private async hasSubscribedThreads(channelId: string): Promise<boolean> {
+    const keys = await this.tools.store.list(`sync_thread:${channelId}:`);
+    return keys.length > 0;
+  }
+
+  /**
+   * Decide whether a channel message belongs in Plot. A message qualifies when
+   * it mentions the user, or when it replies on a thread already subscribed.
+   * Either way the SLACK THREAD is the unit: a mention buried in a reply pulls
+   * in the whole thread, because a reply without its parent cannot be read.
+   */
+  private async handleChannelMessage(event: {
+    channel?: string;
+    channel_type?: string;
+    ts?: string;
+    thread_ts?: string;
+    text?: string;
+  }): Promise<void> {
+    const channelId = event.channel;
+    const ts = event.ts;
+    if (!channelId || !ts) return;
+
+    // DM/MPIM traffic is the DM webhook's job (see DM_WEBHOOK_SENTINEL), not
+    // this one. Both webhooks are registered from the same authorization, so
+    // they carry identical granted scopes, and the platform fans every
+    // message-shaped event out to every callback whose granted scopes cover
+    // it — regardless of which sentinel registered the callback. Without this
+    // guard, a routine `<!here>` in a group DM would subscribeThread() it
+    // into the append-only channel-thread ledger, which can never be
+    // un-subscribed, permanently duplicating the DM as a second Plot thread.
+    // Checked via `event.channel_type` ("im" / "mpim" / "channel" / "group"),
+    // which Slack stamps on every message event, rather than
+    // `isKnownDMChannel`: that helper trusts `dm_channels`, a once-daily
+    // mirror that can be empty or stale (e.g. before the first
+    // `listDMChannels` run, or for a group DM created since), where
+    // `channel_type` is Slack's own authoritative classification of THIS
+    // event and needs no store lookup.
+    if (event.channel_type === "im" || event.channel_type === "mpim") return;
+    // Fail CLOSED when the field is absent. The consequence of letting a
+    // group DM through is unrecoverable — the ledger is append-only — so an
+    // event that carries no classification falls back to the stale-but-real
+    // DM roster rather than being treated as a channel by default.
+    if (!event.channel_type && (await this.isKnownDMChannel(channelId))) return;
+
+    const threadTs = event.thread_ts || ts;
+
+    if (await this.isSubscribedThread(channelId, threadTs)) {
+      await this.syncSubscribedThread(channelId, threadTs);
+      return;
+    }
+
+    const ctx = await this.cachedMentionContext();
+    if (!ctx) return;
+    if (!mentionsUser(event.text, ctx)) return;
+
+    await this.subscribeThread(channelId, threadTs);
+    await this.syncSubscribedThread(channelId, threadTs);
+  }
+
+  /**
+   * Queue a refresh of one subscribed Slack thread. A burst of replies on the
+   * same thread coalesces into a single `conversations.replies` call, and a
+   * rate-limited id is retried on a later pass rather than being dropped —
+   * webhook events are never redelivered, so dropping one loses the message.
+   */
+  private async syncSubscribedThread(
+    channelId: string,
+    threadTs: string
+  ): Promise<void> {
+    await this.scheduleDrain(
+      `subscribed-thread:${channelId}`,
+      this.drainSubscribedThreads,
+      {
+        ids: [threadTs],
+        handlerArgs: [channelId],
+        delayMs: REACTION_REFRESH_COALESCE_MS,
+        maxAttempts: REACTION_REFRESH_MAX_ATTEMPTS,
+      }
+    );
+  }
+
+  /**
+   * Drain handler: refresh each queued thread.
+   *
+   * Mirrors {@link drainReactionRefresh}'s error handling: a token failure or
+   * a rate limit keeps every not-yet-processed id pending for a later pass
+   * (webhook events are never redelivered, so dropping one loses the
+   * message) instead of silently releasing it; an auth-shaped permanent
+   * error flags the connection for reconnect; any other error is unexpected
+   * and is rethrown so the platform's queue consumer classifies it and, if
+   * genuinely unexpected, captures it to error tracking (see
+   * {@link syncUserGroups} for the same rethrow-for-capture rationale) — the
+   * drain framework itself keeps every id in this pass pending across the
+   * throw, so nothing is lost.
+   */
+  async drainSubscribedThreads(
+    ids: string[],
+    channelId: string
+  ): Promise<{ retry?: string[] } | void> {
+    if (ids.length === 0) return;
+
+    let api: SlackApi;
+    try {
+      api = await this.getApi(channelId);
+    } catch (error) {
+      console.warn("drainSubscribedThreads: Slack token unavailable", error);
+      return { retry: ids };
+    }
+
+    for (let i = 0; i < ids.length; i++) {
+      const threadTs = ids[i]!;
+      try {
+        await this.refreshSlackThread(api, channelId, threadTs);
+      } catch (error) {
+        if (error instanceof SlackRateLimitedError) {
+          // Every remaining id needs the same 1rpm-limited method, so
+          // issuing per-id retries would just re-issue guaranteed-429
+          // calls — stop the pass and retry them all once the limiter
+          // clears (mirrors drainReactionRefresh).
+          console.log(
+            `drainSubscribedThreads: rate limited on ${error.method}; retrying ${
+              ids.length - i
+            } id(s) for ${channelId} later`
+          );
+          return { retry: ids.slice(i) };
+        }
+        if (error instanceof SlackPermanentError) {
+          if (SLACK_AUTH_ERRORS.has(error.slackError)) {
+            await this.tools.integrations.markNeedsReauth(channelId);
+            return { retry: ids.slice(i) };
+          }
+          console.warn(
+            `drainSubscribedThreads: skipping ${channelId}/${threadTs}: ${error.method} → ${error.slackError}`
+          );
+          continue;
+        }
+        console.error(
+          `drainSubscribedThreads failed for ${channelId}/${threadTs}`,
+          error
+        );
+        throw error;
+      }
+    }
   }
 
   async onThreadToDo(
@@ -1265,8 +1896,33 @@ export class Slack extends Connector<Slack> {
   ): Promise<void> {
     const meta = thread.meta ?? {};
     const channelId = meta.channelId as string | undefined;
-    const threadTs = meta.threadTs as string | undefined;
-    if (!channelId || !threadTs) return;
+    if (!channelId) return;
+
+    // `direct` is stamped by assembleSlackDmLink — see starAnchorKey for why
+    // a direct conversation needs the extra anchor bookkeeping below and a
+    // channel thread doesn't.
+    const isDirect = meta.direct === true;
+
+    let threadTs: string | undefined;
+    if (todo) {
+      // Star lands on whichever message meta.threadTs currently names — the
+      // conversation's newest for a DM, the fixed parent for a channel
+      // thread. Record it as this conversation's anchor so a later unstar
+      // targets the SAME message even if the conversation has grown by then.
+      threadTs = meta.threadTs as string | undefined;
+      if (!threadTs) return;
+      if (isDirect) await this.set(this.starAnchorKey(channelId), threadTs);
+    } else {
+      // Unstar must hit the message that was ACTUALLY starred, not wherever
+      // a DM's anchor has since moved to (see starAnchorKey). Falling back to
+      // meta.threadTs covers a channel thread (whose threadTs never moves)
+      // and a DM starred before this anchor existed.
+      threadTs = isDirect
+        ? ((await this.get<string>(this.starAnchorKey(channelId))) ??
+            (meta.threadTs as string | undefined))
+        : (meta.threadTs as string | undefined);
+      if (!threadTs) return;
+    }
 
     // Update local state BEFORE calling Slack so the webhook fired by our
     // own write sees isStarred === wasStarred and doesn't re-propagate.
@@ -1277,6 +1933,7 @@ export class Slack extends Connector<Slack> {
       await api.addStar(channelId, threadTs);
     } else {
       await api.removeStar(channelId, threadTs);
+      if (isDirect) await this.clear(this.starAnchorKey(channelId));
     }
   }
 
@@ -1320,8 +1977,15 @@ export class Slack extends Connector<Slack> {
 
     const ts = result.ts;
     // Echo guard (see onNoteCreated): skip re-importing this message when it
-    // comes back via the now-observed channel's webhook.
+    // comes back via the webhook.
     await this.set(`sent:${ts}`, true);
+
+    // Posting into a channel from Plot is as clear a statement of interest as
+    // an at-mention. Nothing else would bring the replies back: channel
+    // content reaches Plot only through the subscription ledger or a fresh
+    // mention, and a reply to your own post carries neither.
+    await this.subscribeThread(channelId, ts);
+
     const canonicalUrl = `https://slack.com/app_redirect?channel=${channelId}&message_ts=${ts}`;
 
     return {
@@ -1362,6 +2026,10 @@ export class Slack extends Connector<Slack> {
     }
 
     const userIds = recipients.map((r) => r.externalAccountId);
+    // A 1:1 is keyed on the person; a group conversation has no single
+    // counterparty. Same rule the inbound roster applies.
+    const counterpartyUserId =
+      userIds.length === 1 && userIds[0] ? userIds[0] : null;
 
     // Use any enabled channel's token to reach the workspace API.
     const api = await this.getWorkspaceApi(draft.channelId);
@@ -1371,10 +2039,22 @@ export class Slack extends Connector<Slack> {
 
     // Register immediately so a reply from the other side is recognized by
     // the DM webhook handler (see isKnownDMChannel) without waiting for the
-    // next daily listDMChannels run.
+    // next daily listDMChannels run. Record the counterparty in the same
+    // breath: the two are read together, and a 1:1 whose counterparty is
+    // missing would key on the conversation instead of the person until the
+    // next roster refresh — a different, permanent link for the same chat.
     const knownDMChannels = (await this.get<string[]>("dm_channels")) ?? [];
     if (!knownDMChannels.includes(dmChannelId)) {
       await this.set("dm_channels", [...knownDMChannels, dmChannelId]);
+    }
+    const knownConversations =
+      (await this.get<Record<string, { user?: string }>>("dm_conversations")) ??
+      {};
+    if (!(dmChannelId in knownConversations)) {
+      await this.set("dm_conversations", {
+        ...knownConversations,
+        [dmChannelId]: counterpartyUserId ? { user: counterpartyUserId } : {},
+      });
     }
 
     const body = (draft.noteContent ?? draft.title ?? "").trim();
@@ -1387,14 +2067,21 @@ export class Slack extends Connector<Slack> {
 
     const ts = result.ts;
     // Echo guard (see onNoteCreated): skip re-importing this message when it
-    // comes back via the now-observed channel's webhook.
+    // comes back via the DM webhook.
     await this.set(`sent:${ts}`, true);
     const canonicalUrl = `https://slack.com/app_redirect?channel=${dmChannelId}&message_ts=${ts}`;
 
     return {
-      // Match transformSlackThread's sync-in source (see createChannelPost) so
-      // the composed DM thread dedups against its inbound echo / replies.
-      source: canonicalUrl,
+      // A direct conversation has ONE permanent link however it started, so
+      // this has to be keyed exactly as the sync path keys the same
+      // conversation — hence the shared helper rather than a second
+      // construction here. Get this wrong and starting a chat from Plot,
+      // then receiving a reply, leaves two permanent threads for one
+      // conversation.
+      ...slackConversationIdentity({
+        channelId: dmChannelId,
+        counterpartyUserId,
+      }),
       type: "dm",
       title: draft.title,
       status: null,
@@ -1403,9 +2090,22 @@ export class Slack extends Connector<Slack> {
       channelId: draft.channelId,
       meta: {
         syncProvider: "slack",
-        // channelId is the actual DM conversation to post into.
+        // The DM conversation this thread stands for. NOT what the reply path
+        // reads: the platform rebuilds `thread.meta.channelId` from the saved
+        // link ROW's channel_id — the top-level `channelId` below, an enabled
+        // workspace channel — and that overwrite wins. So a reply typed in
+        // Plot before the first inbound sync of this conversation posts to
+        // the workspace channel instead of here; the first inbound sync
+        // rewrites the row's channel_id to the DM and it self-corrects.
+        // Pre-existing behaviour, recorded so this key is not mistaken for
+        // the value the reply path resolves.
         channelId: dmChannelId,
         threadTs: ts,
+        // `direct: true` is what the write-back path keys on to decide that a
+        // reply with no explicit target posts top-level rather than nesting
+        // under this link's anchor message — same as the sync path sets.
+        direct: true,
+        ...(counterpartyUserId ? { profileId: counterpartyUserId } : {}),
         // tokenChannelId is an *enabled* workspace channel (C… / G…) whose
         // OAuth token grants workspace-wide access. DM channel ids (D… / G…
         // for MPIMs) are not registered as "enabled" channels, so the token
@@ -1430,8 +2130,41 @@ export class Slack extends Connector<Slack> {
   // ---- Workspace member sync ----
 
   /**
-   * Queue the once-per-24h workspace-scoped tasks (member sync, custom
-   * emoji sync) at most once per fan-out, instead of once per channel.
+   * Queue the saved-items backfill, at most once per connection.
+   *
+   * `stars.list` is workspace-wide and {@link backfillStars} now saves every
+   * item it finds, so the backfill is a property of the CONNECTION, not of a
+   * channel. Queuing it per enabled channel would re-walk the same list — and
+   * re-save the same items — once per channel on every fan-out.
+   *
+   * `stars_backfilled` is the permanent gate, written by `backfillStars` only
+   * when it completes a full walk. `starsBackfillClaimedAt` covers the window
+   * before that flag exists, the same way {@link queueWorkspaceDailyTasks}
+   * dedupes a fan-out of near-simultaneous `onChannelEnabled` calls; it
+   * expires so a backfill that failed outright is retried by a later enable
+   * rather than being suppressed forever.
+   */
+  private async queueStarBackfill(channelId: string): Promise<void> {
+    if (await this.get<boolean>("stars_backfilled")) return;
+
+    const now = Date.now();
+    const claimedAt = await this.get<number>("starsBackfillClaimedAt");
+    if (
+      claimedAt !== null &&
+      claimedAt !== undefined &&
+      now - claimedAt < WORKSPACE_TASK_CLAIM_TTL_MS
+    ) {
+      return;
+    }
+    await this.set("starsBackfillClaimedAt", now);
+
+    await this.runTask(await this.callback(this.backfillStars, channelId, null));
+  }
+
+  /**
+   * Queue the workspace-scoped work — the two webhook registrations plus the
+   * once-per-24h refreshes (members, custom emoji, user groups, DM roster) —
+   * at most once per fan-out, instead of once per channel.
    *
    * `syncMembers`/`syncCustomEmoji` already no-op internally if run within
    * the last 24h, but that no-op still costs a full queue dispatch + worker
@@ -1447,14 +2180,7 @@ export class Slack extends Connector<Slack> {
    */
   private async queueWorkspaceDailyTasks(channelId: string): Promise<void> {
     const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-    // Short claim window: only long enough to dedupe a fan-out of near-simultaneous
-    // onChannelEnabled calls (e.g. a multi-channel reconnect). NOT a substitute for
-    // the real 24h gate — that's still owned by syncMembers/syncCustomEmoji
-    // themselves, set only on their own success. A claim expiring after a few
-    // minutes means a permanently-failed queued task doesn't silently suppress a
-    // legitimate retry for up to 24h; it just means a fan-out inside the claim
-    // window won't double-queue.
-    const CLAIM_TTL_MS = 5 * 60 * 1000;
+    const CLAIM_TTL_MS = WORKSPACE_TASK_CLAIM_TTL_MS;
     const now = Date.now();
 
     const lastMembersSync = await this.get<number>("membersSyncedAt");
@@ -1481,6 +2207,21 @@ export class Slack extends Connector<Slack> {
       await this.runTask(emojiCallback);
     }
 
+    const lastUserGroupsSync = await this.get<number>("userGroupsSyncedAt");
+    const userGroupsClaimedAt = await this.get<number>("userGroupsSyncClaimedAt");
+    const userGroupsClaimed =
+      userGroupsClaimedAt !== null &&
+      userGroupsClaimedAt !== undefined &&
+      now - userGroupsClaimedAt < CLAIM_TTL_MS;
+    if (
+      (!lastUserGroupsSync || now - lastUserGroupsSync >= ONE_DAY_MS) &&
+      !userGroupsClaimed
+    ) {
+      await this.set("userGroupsSyncClaimedAt", now);
+      const userGroupsCallback = await this.callback(this.syncUserGroups, channelId);
+      await this.runTask(userGroupsCallback);
+    }
+
     // registerDMWebhook is a one-time (not daily) registration, gated by the
     // permanent `dm_webhook_registered` flag rather than a 24h window — but
     // still needs the same short claim to dedupe a fan-out before that flag
@@ -1495,6 +2236,29 @@ export class Slack extends Connector<Slack> {
       await this.set("dmWebhookClaimedAt", now);
       const dmWebhookCallback = await this.callback(this.registerDMWebhook, channelId);
       await this.runTask(dmWebhookCallback);
+    }
+
+    // The mention webhook is the other half of the pair, registered and gated
+    // exactly the same way. Without it nothing observes channel messages at
+    // all, so no at-mention is ever noticed — and since nothing else in this
+    // connector registers a webhook, this is the only place it can happen.
+    const mentionWebhookRegistered = await this.get<boolean>(
+      "mention_webhook_registered"
+    );
+    const mentionWebhookClaimedAt = await this.get<number>(
+      "mentionWebhookClaimedAt"
+    );
+    const mentionWebhookClaimed =
+      mentionWebhookClaimedAt !== null &&
+      mentionWebhookClaimedAt !== undefined &&
+      now - mentionWebhookClaimedAt < CLAIM_TTL_MS;
+    if (!mentionWebhookRegistered && !mentionWebhookClaimed) {
+      await this.set("mentionWebhookClaimedAt", now);
+      const mentionWebhookCallback = await this.callback(
+        this.registerMentionWebhook,
+        channelId
+      );
+      await this.runTask(mentionWebhookCallback);
     }
 
     const lastDMListSync = await this.get<number>("dmChannelsSyncedAt");
@@ -1521,12 +2285,40 @@ export class Slack extends Connector<Slack> {
   private async registerDMWebhook(channelId: string): Promise<void> {
     if (await this.get<boolean>("dm_webhook_registered")) return;
 
+    // The stored Authorization is written when the account is connected. If
+    // it is not readable yet, or the token cannot be resolved this instant,
+    // the registration is merely EARLY, not impossible — so re-arm rather
+    // than return (see `deferWebhookRegistration`).
     const authorization = await this.get<Authorization>("auth");
-    if (!authorization) return;
+    if (!authorization) {
+      await this.deferWebhookRegistration(
+        DM_WEBHOOK_RETRY_KEY,
+        this.registerDMWebhook,
+        channelId,
+        "no stored authorization"
+      );
+      return;
+    }
 
+    // The stored Authorization survives token removal (it is written once at
+    // connect time and never cleared), so its presence does NOT guarantee a
+    // usable token. `createWebhook` does a direct token lookup and throws
+    // when the token is gone, which then fails-and-retries forever on the
+    // webhook queue. Confirm a live token first; `integrations.get()` also
+    // flags the connection for re-auth when the token is missing.
     const token = await this.tools.integrations.get(channelId);
-    if (!token) return;
-    if (!token.scopes?.includes("im:history")) return; // optional scope declined
+    if (!token) {
+      await this.deferWebhookRegistration(
+        DM_WEBHOOK_RETRY_KEY,
+        this.registerDMWebhook,
+        channelId,
+        "no usable token"
+      );
+      return;
+    }
+    // Declining the optional grant is a decision, not a failure — nothing to
+    // retry, so no chain is armed.
+    if (!token.scopes?.includes("im:history")) return;
 
     await this.tools.network.createWebhook(
       { provider: AuthProvider.Slack, authorization },
@@ -1534,6 +2326,100 @@ export class Slack extends Connector<Slack> {
       DM_WEBHOOK_SENTINEL
     );
     await this.set("dm_webhook_registered", true);
+    await this.cancelScheduledTask(DM_WEBHOOK_RETRY_KEY);
+  }
+
+  /**
+   * Re-arm a webhook registration that could not go ahead yet.
+   *
+   * Both registrations are queued only when channels are mirrored, and a
+   * fresh connection is a single burst of that. So an early return on a
+   * condition that will clear on its own would leave the connection
+   * observing NOTHING — silently, and with nothing scheduled to bring it
+   * back. Keyed and recurring: re-scheduling atomically replaces any pending
+   * attempt rather than stacking chains, and the chain is cancelled the
+   * moment the registration takes.
+   */
+  private async deferWebhookRegistration(
+    key: string,
+    handler: (channelId: string) => Promise<void>,
+    channelId: string,
+    reason: string
+  ): Promise<void> {
+    console.warn(`Slack: ${key} deferred (${reason}); will retry`);
+    const retry = await this.callback(handler, channelId);
+    await this.scheduleRecurring(key, retry, {
+      intervalMs: WEBHOOK_REGISTER_RETRY_MS,
+      firstRunAt: new Date(Date.now() + WEBHOOK_REGISTER_RETRY_MS),
+    });
+  }
+
+  /**
+   * Register the single workspace-wide callback that observes channel messages
+   * for at-mentions. Gated by a stored flag so it registers once per
+   * connection however many times channels are mirrored. `channels:history` is
+   * required (not optional), so unlike the DM webhook there is no grant to
+   * decline — but the token is still checked, because a connection whose OAuth
+   * token was cleared would otherwise fail-and-retry forever on the webhook
+   * queue.
+   *
+   * Also caches `slack_user_id` (see {@link cachedMentionContext}) from the
+   * same token lookup. `channelId` here is always a channel currently being
+   * enabled (this runs from the `onChannelEnabled` fan-out), so resolving the
+   * token against it is safe — unlike resolving a token per inbound message
+   * against whatever arbitrary channel the event happened to name, which
+   * would hit `integrations.get()`'s migration fallback and silently
+   * re-enable a channel the user deliberately disabled.
+   */
+  private async registerMentionWebhook(channelId: string): Promise<void> {
+    if (await this.get<boolean>("mention_webhook_registered")) return;
+
+    // Both early exits below re-arm rather than return: this is the ONLY
+    // callback that observes channel messages, so giving up here means the
+    // connection never notices an at-mention again.
+    const authorization = await this.get<Authorization>("auth");
+    if (!authorization) {
+      await this.deferWebhookRegistration(
+        MENTION_WEBHOOK_RETRY_KEY,
+        this.registerMentionWebhook,
+        channelId,
+        "no stored authorization"
+      );
+      return;
+    }
+
+    const token = await this.tools.integrations.get(channelId);
+    if (!token) {
+      await this.deferWebhookRegistration(
+        MENTION_WEBHOOK_RETRY_KEY,
+        this.registerMentionWebhook,
+        channelId,
+        "no usable token"
+      );
+      return;
+    }
+    if (!token.scopes?.includes("channels:history")) {
+      // Required scope, so its absence means a stale or broken grant rather
+      // than a choice — worth retrying in case the user reconnects.
+      await this.deferWebhookRegistration(
+        MENTION_WEBHOOK_RETRY_KEY,
+        this.registerMentionWebhook,
+        channelId,
+        "grant is missing a required scope"
+      );
+      return;
+    }
+
+    const userId = token.provider?.authed_user_id;
+    if (userId) await this.set("slack_user_id", userId);
+
+    await this.tools.network.createWebhook(
+      { provider: AuthProvider.Slack, authorization },
+      this.onSlackWebhook,
+      MENTION_WEBHOOK_SENTINEL
+    );
+    await this.set("mention_webhook_registered", true);
+    await this.cancelScheduledTask(MENTION_WEBHOOK_RETRY_KEY);
   }
 
   /**
@@ -1772,6 +2658,144 @@ export class Slack extends Connector<Slack> {
     });
   }
 
+  // ---- Mention identity ----
+
+  /**
+   * Who counts as "you" for mention detection on this connection: the
+   * connected user plus every user group they belong to.
+   *
+   * Reads ONLY from the store, because it runs on every channel message in
+   * the workspace ({@link handleChannelMessage}) and resolving a token per
+   * message would mean an `integrations.get()` for whatever arbitrary channel
+   * the event happened to name. `slack_user_id` is written by
+   * {@link registerMentionWebhook} — before the webhook that delivers these
+   * events exists — and refreshed on the daily cadence by
+   * {@link syncUserGroups}. The group roster comes from the same daily
+   * refresh; a cold or scope-less cache simply means only direct and
+   * broadcast mentions match.
+   *
+   * A missing identity should be unreachable in steady state, but Slack never
+   * redelivers a dropped event, so a miss is logged rather than silently
+   * swallowed.
+   */
+  private async cachedMentionContext(): Promise<MentionContext | null> {
+    const userId = await this.get<string>("slack_user_id");
+    if (!userId) {
+      console.warn(
+        "cachedMentionContext: no cached Slack identity; dropping mention check"
+      );
+      return null;
+    }
+    const groups = (await this.get<string[]>("slack_user_groups")) ?? [];
+    return { userId, userGroupIds: new Set(groups) };
+  }
+
+  /**
+   * Refresh the cached user-group roster. No-op without the optional
+   * `usergroups:read` grant — the user declined it (checked client-side,
+   * below, before any API call — so a declined grant never reaches the
+   * catch block and never triggers a reauth prompt), or their grant
+   * predates the scope group.
+   *
+   * Gated to run at most once per 24 hours per workspace (connection), then
+   * reschedules itself for the next daily refresh — mirrors
+   * {@link syncCustomEmoji}. The timestamp is written only after a
+   * successful refresh, so a rate-limited or errored pass stays retryable
+   * (picked up again the next time {@link queueWorkspaceDailyTasks} fires,
+   * or sooner for a rate limit — see below) instead of being marked done.
+   *
+   * Error handling follows {@link syncCustomEmoji} for the two expected
+   * classes and deliberately DIVERGES from it on the third — do not copy that
+   * sibling's final branch here:
+   * - a rate limit reschedules itself for after the retry window;
+   * - a permanent error tied to the auth grant itself (revoked/expired token,
+   *   `missing_scope` surfaced by the API despite the client-side check
+   *   above) flags the connection for reauth;
+   * - anything else is unexpected and is RETHROWN, where `syncCustomEmoji`
+   *   warns and returns. Rethrowing lets the platform's queue consumer
+   *   classify it and, if it's not one of the recognized
+   *   transient/rate-limit/auth classes, surface it to error tracking —
+   *   otherwise a genuine bug here would fail silently forever.
+   */
+  async syncUserGroups(channelId: string): Promise<void> {
+    const now = Date.now();
+    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+    const last = await this.get<number>("userGroupsSyncedAt");
+    if (last && now - last < ONE_DAY_MS) return;
+
+    const token = await this.tools.integrations.get(channelId);
+    const userId = token?.provider?.authed_user_id;
+    if (!token || !userId) return;
+
+    // Refresh the cached identity on the daily cadence as well. The mention
+    // router reads it from the store on every inbound channel message and it
+    // is otherwise only ever written when the mention webhook first
+    // registers — one write, at one moment, for the life of the connection.
+    // Written before the optional-scope check below so a connection that
+    // declined the group scope still keeps a fresh identity.
+    await this.set("slack_user_id", userId);
+
+    if (!token.scopes?.includes("usergroups:read")) {
+      // Stamp the marker before returning. A declined optional grant cannot
+      // change without a reconnect, and reconnecting re-runs the enable path
+      // anyway — so leaving it unset only makes the daily fan-out re-queue a
+      // pass that can do nothing but return here again.
+      await this.set("userGroupsSyncedAt", now);
+      return;
+    }
+
+    try {
+      const api = new SlackApi(token.token);
+      await this.set("slack_user_groups", await api.getUserGroupsForUser(userId));
+    } catch (error) {
+      if (error instanceof SlackRateLimitedError) {
+        // Do NOT stamp userGroupsSyncedAt: leaving it unset keeps this pass
+        // retryable. Reschedule sooner than the daily cadence, under the
+        // same per-channel key as the daily chain so the two can never run
+        // in parallel — re-scheduling atomically replaces any pending run.
+        const retry = await this.callback(this.syncUserGroups, channelId);
+        const runAt = new Date(now + error.retryAfterMs);
+        console.log(`Slack: rescheduling syncUserGroups ${channelId} at ${runAt.toISOString()}`);
+        await this.scheduleRecurring(`user-groups-sync:${channelId}`, retry, {
+          intervalMs: ONE_DAY_MS,
+          firstRunAt: runAt,
+        });
+        return;
+      }
+      if (error instanceof SlackPermanentError) {
+        // Not retried; userGroupsSyncedAt intentionally left unset. Only
+        // flag reauth for errors that indicate the auth grant itself is
+        // bad — NOT for a plain missing_scope from a user who simply
+        // declined this optional grant, which is already filtered out
+        // above before any API call is made.
+        console.warn(
+          `syncUserGroups stopped: ${error.method} → ${error.slackError}`
+        );
+        if (SLACK_AUTH_ERRORS.has(error.slackError)) {
+          await this.tools.integrations.markNeedsReauth(channelId);
+        }
+        return;
+      }
+      // Unexpected: rethrow so the platform's queue consumer classifies it
+      // and, if genuinely unexpected, captures it to error tracking. A bare
+      // console.warn here would let a real bug fail silently forever.
+      console.error("syncUserGroups: unexpected error", error);
+      throw error;
+    }
+
+    await this.set("userGroupsSyncedAt", now);
+
+    // Schedule the next daily refresh. Singleton keyed task: re-scheduling
+    // under this per-channel key atomically replaces any pending refresh, so
+    // the daily chain can never accumulate parallel copies even if
+    // syncUserGroups is entered again (onChannelEnabled re-dispatch, recovery).
+    const next = await this.callback(this.syncUserGroups, channelId);
+    await this.scheduleRecurring(`user-groups-sync:${channelId}`, next, {
+      intervalMs: ONE_DAY_MS,
+      firstRunAt: new Date(now + ONE_DAY_MS),
+    });
+  }
+
   // ---- DM/MPIM conversation discovery ----
 
   /**
@@ -1828,12 +2852,19 @@ export class Slack extends Connector<Slack> {
     const api = new SlackApi(token.token);
 
     const ids: string[] = [];
+    // The counterparty of each 1:1, kept alongside the roster so the sync
+    // path can key a conversation on the person without a second API call.
+    // A group conversation has no single counterparty and records `{}`.
+    const conversationsById: Record<string, { user?: string }> = {};
     let cursor: string | undefined;
     try {
       do {
         const { conversations, nextCursor } = await api.getDMConversations(cursor);
         for (const c of conversations as SlackDMConversation[]) {
-          if (c.is_im || c.is_mpim) ids.push(c.id);
+          if (c.is_im || c.is_mpim) {
+            ids.push(c.id);
+            conversationsById[c.id] = c.is_im && c.user ? { user: c.user } : {};
+          }
         }
         cursor = nextCursor;
       } while (cursor);
@@ -1860,6 +2891,7 @@ export class Slack extends Connector<Slack> {
     }
 
     await this.set("dm_channels", ids);
+    await this.set("dm_conversations", conversationsById);
     await this.set("dmChannelsSyncedAt", now);
 
     const next = await this.callback(this.listDMChannels, channelId);
@@ -1892,7 +2924,18 @@ export class Slack extends Connector<Slack> {
   async onNoteCreated(note: Note, thread: Thread): Promise<NoteWriteBackResult | void> {
     const meta = thread.meta ?? {};
     const channelId = meta.channelId as string;
-    const threadTs = meta.threadTs as string | undefined;
+    const reNoteKey = meta.reNoteKey as string | undefined;
+    // A direct conversation is one permanent Plot thread with no lasting
+    // parent message to nest a reply under — `threadTs` is just a to-do
+    // star's anchor (see starAnchorKey) and, for a DM, moves as the
+    // conversation grows. Reply to the note being answered when there is
+    // one, otherwise post top-level. Channel threads keep Slack's own
+    // threading, where `threadTs` IS a stable parent.
+    // `direct` is stamped by assembleSlackDmLink, so it covers group DMs too —
+    // a `D…` prefix check alone would miss them, and MPIM ids are not
+    // distinguishable from private channels by prefix.
+    const isDirect = meta.direct === true;
+    const replyTs = reNoteKey ?? (isDirect ? undefined : (meta.threadTs as string | undefined));
     // For dm threads, tokenChannelId is an enabled workspace channel
     // whose OAuth token grants workspace access. Falls back to channelId for
     // regular channel threads where the channel IS the enabled resource.
@@ -1906,7 +2949,7 @@ export class Slack extends Connector<Slack> {
     const api = await this.getWorkspaceApi(tokenChannelId);
 
     const body = note.content ?? "";
-    const result = await api.postMessage(channelId, body, threadTs);
+    const result = await api.postMessage(channelId, body, replyTs);
     if (!result?.ts) return;
 
     // Echo guard: skip re-importing this message when it comes back via the
@@ -2129,8 +3172,8 @@ export class Slack extends Connector<Slack> {
 
   /** Returns the channel ids of all currently-enabled channels. */
   private async listEnabledChannelIds(): Promise<string[]> {
-    const keys = await this.tools.store.list("sync_enabled_");
-    return keys.map((key) => key.substring("sync_enabled_".length));
+    const keys = await this.tools.store.list("token_channel_");
+    return keys.map((key) => key.substring("token_channel_".length));
   }
 }
 
