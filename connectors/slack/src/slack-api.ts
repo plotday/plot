@@ -3,6 +3,7 @@ import type {
   Action,
   NewLinkWithNotes,
   NewActor,
+  NewContact,
   NewReactions,
 } from "@plotday/twister/plot";
 import { slackNameToUnicode } from "./slack-emoji";
@@ -297,6 +298,22 @@ export class SlackApi {
     };
   }
 
+  /**
+   * Ids of the user groups `userId` belongs to. Requires the `usergroups:read`
+   * scope; callers must check the grant before calling, since a missing scope
+   * surfaces as a permanent error that would flag the whole connection.
+   */
+  public async getUserGroupsForUser(userId: string): Promise<string[]> {
+    const data = await this.call("usergroups.list", { include_users: "true" });
+    const groups = (data.usergroups ?? []) as Array<{
+      id: string;
+      users?: string[];
+    }>;
+    return groups
+      .filter((group) => group.users?.includes(userId))
+      .map((group) => group.id);
+  }
+
   public async getConversationHistory(
     channelId: string,
     cursor?: string,
@@ -569,7 +586,7 @@ export function slackUserInfoFromUser(user: SlackUser): SlackUserInfo {
 }
 
 /**
- * Converts a Slack user ID to a NewActor. Always returns an actor: with no
+ * Converts a Slack user ID to a NewContact. Always returns a contact: with no
  * resolvable name or email it falls back to the raw user id as the name.
  *
  * That fallback is a healing placeholder, not poison. `users.info` being
@@ -579,8 +596,14 @@ export function slackUserInfoFromUser(user: SlackUser): SlackUserInfo {
  * crediting the connection itself. The API treats a contact whose name equals
  * its own account id as unresolved and replaces it with the real name as soon
  * as `users.info` succeeds, so the id never sticks.
+ *
+ * Declared return type is `NewContact` (the contact-shaped half of the
+ * `NewActor` union), not `NewActor` — every branch below already returns a
+ * contact shape, so widening to the precise type lets callers that need a
+ * guaranteed `name`/`email` (e.g. deriving a DM title or `accessContacts`)
+ * use this directly instead of duplicating the fallback logic.
  */
-function slackUserToNewActor(userId: string, info?: SlackUserInfo): NewActor {
+export function slackUserToNewActor(userId: string, info?: SlackUserInfo): NewContact {
   const source = {
     accountId: userId,
     ...(info?.handle ? { descriptor: `@${info.handle}` } : {}),
@@ -735,14 +758,6 @@ export function transformSlackThread(
     notes: [],
     preview: firstText || null,
     ...(initialSync ? { unread: false, archived: false } : {}),
-    // Opt into sequential auto-threading, keyed on the channel. A no-op
-    // unless the connection enabled it. 1:1 DMs (channel id "D…") read as one
-    // continuous conversation, so fold every message into a single running
-    // thread; channels and group DMs use the LLM continuation check.
-    autoThread: {
-      key: channelId,
-      mode: channelId.startsWith("D") ? "fold" : "sequential",
-    },
   };
 
   // Create Notes for all messages (including first). Reactions live
