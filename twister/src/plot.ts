@@ -184,6 +184,8 @@ export enum ActionType {
   thread = "thread",
   /** Structured plan of operations for user approval */
   plan = "plan",
+  /** Realtime voice-or-text conversation with the twist */
+  chat = "chat",
 }
 
 /**
@@ -345,6 +347,27 @@ export type Action =
        * server-side BEFORE the callback is invoked.
        */
       results?: PlanOperationResult[];
+    }
+  | {
+      /**
+       * Starts a realtime conversation with the twist — spoken, typed, or
+       * both. The conversation's turns are written into the thread as notes.
+       */
+      type: ActionType.chat;
+      /** Display text for the chat button */
+      title: string;
+      /**
+       * Fallback URL for clients that predate chat support. Such clients
+       * coerce unknown action types to `external` and open this instead, so
+       * it must be a working link to the thread. The runtime fills it in.
+       */
+      url: string;
+      /**
+       * Token for the twist method that returns the session's
+       * {@link NewChatSpec}. Resolved when the user taps, not when the note
+       * was written, so a stale note still opens a current conversation.
+       */
+      callback: Callback;
     };
 
 /**
