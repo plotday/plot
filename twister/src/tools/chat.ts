@@ -50,6 +50,11 @@ export type NewChatSpec = Pick<ChatSpec, "instructions" | "onEnded"> &
 /** One completed turn of a conversation, and the note it became. */
 export type ChatTurn = {
   role: "user" | "agent";
+  /**
+   * May be truncated for a very large transcript. {@link ChatTurn.noteId}
+   * always addresses the complete note, so read it directly for the
+   * verbatim text of a specific turn.
+   */
   content: string;
   at: Date;
   /** The note this turn was written to. */
