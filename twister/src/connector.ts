@@ -401,6 +401,22 @@ export abstract class Connector<TSelf> extends Twist<TSelf> {
   readonly fixedChannels?: boolean;
 
   /**
+   * Whether this connector's channels are internal detail rather than a user
+   * choice. When `true`, channels are still reported from `getChannels()` and
+   * mirrored so links can carry channel attribution (names shown on threads,
+   * compose targets), but the connect/edit modal renders no channel picker and
+   * enabling or disabling a channel is not a supported operation.
+   *
+   * Use for connectors whose sync scope is decided by rules rather than by
+   * channel selection — e.g. a chat connector that syncs direct messages plus
+   * anything that mentions you, wherever it happens.
+   *
+   * Distinct from {@link fixedChannels}, which still exposes a picker and only
+   * hides the "sync new {channels}" affordance.
+   */
+  readonly hiddenChannels?: boolean;
+
+  /**
    * Whether this connector supports the platform's sequential auto-threading —
    * folding a conversation that arrives as a run of separate top-level messages
    * into a single thread. Set `true` for conversational connectors (chat,
