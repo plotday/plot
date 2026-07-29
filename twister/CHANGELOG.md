@@ -1,5 +1,17 @@
 # @plotday/twister
 
+## 0.89.0
+
+### Added
+
+- `store.getMany()`, `store.listEntries()` and `store.clearMany()` — bulk read and delete counterparts to `setMany()`.
+
+### Changed
+
+- `listEntries(prefix)` returns matching keys **with** their values in one round-trip. The storage backend already reads the values during the prefix scan; `list()` simply discards them. Pair it with `clearMany()` and a drain costs two round-trips regardless of key count.
+- `getMany(keys)` reads many known keys at once. Results are positionally aligned with the requested keys, with `null` for misses, so `keys[i]` ↔ `values[i]` is always safe to zip.
+- `clearMany(keys)` deletes many keys atomically.
+
 ## 0.88.0
 
 ### Added
