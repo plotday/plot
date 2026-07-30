@@ -1437,12 +1437,12 @@ describe("cancellationWasSelfInitiatedFn", () => {
     ).toBe(false);
   });
 
-  it("does not conclude self-initiated from a sparse payload (no organizer or attendees)", () => {
-    // Google only guarantees id/status/updated on a cancelled event. Absence of
-    // attendees is "unknown", not "solo" — never suppress on missing data.
+  it("reports 'unknown' for a sparse payload (no organizer or attendees)", () => {
+    // Google only guarantees id/status on a cancelled event. Absence of
+    // attendees is "unknown", not "solo" — never conclude from missing data.
     expect(
       cancellationWasSelfInitiatedFn({ id: "e", status: "cancelled" })
-    ).toBe(false);
+    ).toBeNull();
   });
 });
 
@@ -1531,6 +1531,222 @@ describe("processCalendarEventsFn — self-initiated cancellations", () => {
     };
 
     await processCalendarEventsFn(host, [event], calendarId, false);
+
+    const saved = host.savedLinks.flat();
+    expect(saved).toHaveLength(1);
+    expect(saved[0].unread).toBe(false);
+  });
+});
+
+describe("processCalendarEventsFn — sparse cancelled occurrences", () => {
+  // The Calendar API only guarantees `id`, `recurringEventId` and
+  // `originalStartTime` on a cancelled exception, so the instance payload
+  // carries none of the organizer/attendee signal the self-initiated check
+  // needs. Whether the user could have cancelled the occurrence is a property
+  // of the SERIES, so it has to be resolved from the recurring master.
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const calendarId = "user@example.com";
+  const futureStart = () => new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+  /** A cancelled exception with only the fields Google guarantees. */
+  function sparseCancelledInstance(masterId: string, start: Date) {
+    return {
+      id: `${masterId}_${start.toISOString()}`,
+      recurringEventId: masterId,
+      originalStartTime: { dateTime: start.toISOString() },
+      status: "cancelled" as const,
+      updated: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Stub fetch so `events/<id>` GETs resolve to `masters[id]` (or the given
+   * status when absent) and everything else returns an empty events page.
+   * Returns the mock so tests can assert on call counts.
+   */
+  function stubFetchWithMasters(
+    masters: Record<string, object>,
+    missingStatus = 404
+  ) {
+    const fetchMock = vi.fn(async (url: string | URL) => {
+      const href = typeof url === "string" ? url : url.toString();
+      const match = href.match(/\/events\/([^?]+)/);
+      if (match) {
+        const id = decodeURIComponent(match[1]);
+        const master = masters[id];
+        if (!master) {
+          return new Response("not found", { status: missingStatus });
+        }
+        return new Response(JSON.stringify(master), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return makeEventsResponse([]);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  function seedHost() {
+    const host = makeFakeHost({ calendarId });
+    host.store.set(
+      `first_sync_at_${calendarId}`,
+      new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+    );
+    return host;
+  }
+
+  it("marks the cancellation read when the recurring master is self-organized", async () => {
+    const host = seedHost();
+    const start = futureStart();
+    stubFetchWithMasters({
+      "master-self": {
+        id: "master-self",
+        iCalUID: "series@google.com",
+        status: "confirmed",
+        summary: "Church",
+        organizer: { email: "user@example.com", self: true },
+      },
+    });
+
+    await processCalendarEventsFn(
+      host,
+      [sparseCancelledInstance("master-self", start)],
+      calendarId,
+      false
+    );
+
+    const saved = host.savedLinks.flat();
+    expect(saved).toHaveLength(1);
+    // Still annotates the series with the cancellation …
+    expect(
+      saved[0].notes?.some((n) =>
+        (n as { key?: string }).key?.startsWith("cancellation-")
+      )
+    ).toBe(true);
+    // … but does not flip it unread for the person who cancelled it.
+    expect(saved[0].unread).toBe(false);
+  });
+
+  it("keeps the cancellation unread when someone else organizes the series", async () => {
+    const host = seedHost();
+    const start = futureStart();
+    stubFetchWithMasters({
+      "master-other": {
+        id: "master-other",
+        iCalUID: "series@google.com",
+        status: "confirmed",
+        summary: "Standup",
+        organizer: { email: "boss@example.com", self: false },
+        attendees: [
+          { email: "user@example.com", self: true },
+          { email: "boss@example.com", organizer: true },
+        ],
+      },
+    });
+
+    await processCalendarEventsFn(
+      host,
+      [sparseCancelledInstance("master-other", start)],
+      calendarId,
+      false
+    );
+
+    const saved = host.savedLinks.flat();
+    expect(saved).toHaveLength(1);
+    expect(saved[0].unread).toBeUndefined();
+  });
+
+  it("keeps the cancellation unread when the master cannot be fetched", async () => {
+    const host = seedHost();
+    const start = futureStart();
+    stubFetchWithMasters({}, 500);
+
+    await processCalendarEventsFn(
+      host,
+      [sparseCancelledInstance("master-gone", start)],
+      calendarId,
+      false
+    );
+
+    const saved = host.savedLinks.flat();
+    expect(saved).toHaveLength(1);
+    expect(saved[0].unread).toBeUndefined();
+  });
+
+  it("fetches each master once per page of events", async () => {
+    const host = seedHost();
+    const start = futureStart();
+    const fetchMock = stubFetchWithMasters({
+      "master-self": {
+        id: "master-self",
+        iCalUID: "series@google.com",
+        status: "confirmed",
+        organizer: { email: "user@example.com", self: true },
+      },
+    });
+
+    await processCalendarEventsFn(
+      host,
+      [
+        sparseCancelledInstance("master-self", start),
+        sparseCancelledInstance(
+          "master-self",
+          new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000)
+        ),
+        sparseCancelledInstance(
+          "master-self",
+          new Date(start.getTime() + 14 * 24 * 60 * 60 * 1000)
+        ),
+      ],
+      calendarId,
+      false
+    );
+
+    const eventGets = fetchMock.mock.calls.filter(([url]) =>
+      String(url).includes("/events/master-self")
+    );
+    expect(eventGets).toHaveLength(1);
+
+    const saved = host.savedLinks.flat();
+    expect(saved).toHaveLength(1);
+    expect(saved[0].unread).toBe(false);
+  });
+
+  it("keeps the read intent when the master arrives in the same page", async () => {
+    // Cancelling an occurrence also bumps the master, so both land in one
+    // incremental page. The master is the link that carries `schedules`, and
+    // merging must not drop the occurrence link's read intent.
+    const host = seedHost();
+    const start = futureStart();
+    stubFetchWithMasters({});
+
+    const master = {
+      id: "master-self",
+      iCalUID: "series@google.com",
+      status: "confirmed" as const,
+      summary: "Church",
+      updated: new Date().toISOString(),
+      start: { dateTime: start.toISOString() },
+      end: { dateTime: new Date(start.getTime() + 3_600_000).toISOString() },
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=SU"],
+      organizer: { email: "user@example.com", self: true },
+    };
+    const cancelled = {
+      ...sparseCancelledInstance("master-self", start),
+      // Both links must resolve to the same canonical source to be coalesced,
+      // and the point of this test is the merge — so give the instance the
+      // series iCalUID and enough signal to conclude self-initiated on its own.
+      iCalUID: "series@google.com",
+      organizer: { email: "user@example.com", self: true },
+    };
+
+    // Master first — the ordering that previously discarded `unread`.
+    await processCalendarEventsFn(host, [master, cancelled], calendarId, false);
 
     const saved = host.savedLinks.flat();
     expect(saved).toHaveLength(1);

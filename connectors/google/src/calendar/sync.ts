@@ -364,32 +364,103 @@ export function cancellationIsForPastEventFn(
  *     you are the organizer of your own solo appointments.
  *  2. The user is the only invitee. A single-participant event can only be
  *     cancelled by that participant. We require POSITIVE evidence here — a
- *     populated attendee list containing only the user — because Google
- *     guarantees only `id`/`status`/`updated` on a cancelled event, so an
- *     *absent* attendee list means "unknown", not "solo".
+ *     populated attendee list containing only the user — because a cancelled
+ *     event's payload is sparse, so an *absent* attendee list means "unknown",
+ *     not "solo".
  *
  * A non-self organizer is decisive the other way: someone else controls the
  * event, so its cancellation should still notify the user (their meeting was
- * cancelled by the host). When neither signal is present (sparse payloads, e.g.
- * most cancelled recurring instances) we return false and the cancellation
- * notifies exactly as before — best-effort suppression that never hides a real
- * "someone else cancelled your meeting".
+ * cancelled by the host).
+ *
+ * Returns `null` when the payload carries neither signal. That is not the same
+ * as "someone else did it": the Calendar API only guarantees `id` on a deleted
+ * event and `id`/`recurringEventId`/`originalStartTime` on a cancelled
+ * exception, so "no signal" is the *normal* shape of a cancellation and callers
+ * need to tell it apart so they can look the answer up elsewhere (see
+ * {@link occurrenceCancellationWasSelfInitiatedFn}).
  */
-export function cancellationWasSelfInitiatedFn(event: GoogleEvent): boolean {
-  // Someone else organizes it → their action; keep notifying the user.
-  if (event.organizer && event.organizer.self !== true) return false;
-  // The user organizes it → only the organizer can cancel → self-initiated.
-  if (event.organizer?.self === true) return true;
+export function cancellationWasSelfInitiatedFn(
+  event: GoogleEvent
+): boolean | null {
+  // An organizer is decisive either way: only the organizer's deletion cancels
+  // an event, so `self` answers the question on its own.
+  if (event.organizer) return event.organizer.self === true;
 
   // No organizer signal: conclude self-initiated only from positive evidence
   // that the user is the sole invitee.
   const attendees = event.attendees ?? [];
-  if (attendees.length === 0) return false;
+  if (attendees.length === 0) return null;
   const hasSelf = attendees.some((att) => att.self === true);
   const hasOther = attendees.some(
     (att) => att.self !== true && att.email && !att.resource
   );
   return hasSelf && !hasOther;
+}
+
+/**
+ * Fetch a single event by id. Returns null on any failure (deleted event,
+ * missing scope, transient error) — callers treat "unknown" as "keep the
+ * existing behaviour", so a lookup must never fail a sync batch.
+ */
+export async function fetchEventFn(
+  host: CalendarSyncHost,
+  calendarId: string,
+  eventId: string
+): Promise<GoogleEvent | null> {
+  try {
+    const api = await getApiFn(host, calendarId);
+    return (await api.call(
+      "GET",
+      `https://www.googleapis.com/calendar/v3/calendars/` +
+        `${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`
+    )) as GoogleEvent | null;
+  } catch (error) {
+    console.warn(
+      `[GoogleCalendar] could not fetch event ${eventId} ` +
+        `(calendar=${calendarId}): ${error}`
+    );
+    return null;
+  }
+}
+
+/**
+ * Whether a cancelled recurring-event *instance* was cancelled by the user.
+ *
+ * A cancelled exception is the sparsest payload the Calendar API produces —
+ * only `id`, `recurringEventId` and `originalStartTime` are guaranteed — so
+ * {@link cancellationWasSelfInitiatedFn} almost always reports "unknown" for
+ * one, and every self-cancelled occurrence of a personal recurring event used
+ * to notify its own owner.
+ *
+ * Who can cancel an occurrence is a property of the SERIES, not of the
+ * exception, so resolve it from the recurring master instead: the master
+ * carries the organizer and attendee list even when the exception doesn't.
+ *
+ * `masterCache` memoizes the lookup for the duration of one page of events, so
+ * a series with several cancelled occurrences in the same sync costs one extra
+ * request rather than one per occurrence. Anything inconclusive resolves to
+ * `false` — the cancellation notifies, as it did before.
+ */
+export async function occurrenceCancellationWasSelfInitiatedFn(
+  host: CalendarSyncHost,
+  calendarId: string,
+  event: GoogleEvent,
+  masterCache?: Map<string, GoogleEvent | null>
+): Promise<boolean> {
+  const fromInstance = cancellationWasSelfInitiatedFn(event);
+  if (fromInstance !== null) return fromInstance;
+
+  const masterId = event.recurringEventId;
+  if (!masterId) return false;
+
+  let master = masterCache?.get(masterId);
+  if (master === undefined) {
+    master = await fetchEventFn(host, calendarId, masterId);
+    masterCache?.set(masterId, master);
+  }
+  if (!master) return false;
+
+  return cancellationWasSelfInitiatedFn(master) === true;
 }
 
 /**
@@ -435,7 +506,14 @@ export async function prepareEventInstanceFn(
    * dominant cost of a backfill pass, and enough on a busy calendar to exhaust
    * the worker's per-invocation subrequest budget.
    */
-  pendingWrites: [key: string, value: NewScheduleOccurrence][]
+  pendingWrites: [key: string, value: NewScheduleOccurrence][],
+  /**
+   * Per-page memo of recurring masters fetched to decide whether a cancelled
+   * occurrence was self-initiated (see
+   * {@link occurrenceCancellationWasSelfInitiatedFn}). Omitting it just means
+   * every cancelled occurrence pays its own lookup.
+   */
+  masterCache?: Map<string, GoogleEvent | null>
 ): Promise<NewLinkWithNotes | null> {
   const originalStartTime =
     event.originalStartTime?.dateTime || event.originalStartTime?.date;
@@ -540,6 +618,13 @@ export async function prepareEventInstanceFn(
       created: cancelFirstSeen,
     };
 
+    const selfInitiated = await occurrenceCancellationWasSelfInitiatedFn(
+      host,
+      calendarId,
+      event,
+      masterCache
+    );
+
     return {
       type: "event",
       title: undefined,
@@ -561,9 +646,9 @@ export async function prepareEventInstanceFn(
       // this only if the master's thread already exists, and skip it otherwise.
       updateOnly: true,
       // Don't flip the thread unread when the user cancelled the occurrence
-      // themselves. Cancelled instances are usually sparse (no organizer /
-      // attendees), so this rarely fires — best-effort, never over-suppresses.
-      ...(cancellationWasSelfInitiatedFn(event) ? { unread: false } : {}),
+      // themselves — resolved from the recurring master, since the cancelled
+      // instance itself carries no organizer/attendee data.
+      ...(selfInitiated ? { unread: false } : {}),
     };
   }
 
@@ -651,6 +736,9 @@ export async function processCalendarEventsFn(
   // Occurrence buffers accumulated across this page and flushed in ONE
   // setMany below, rather than a storage round-trip per occurrence.
   const pendingWrites: [key: string, value: NewScheduleOccurrence][] = [];
+  // Recurring masters fetched to judge whether a cancelled occurrence was
+  // self-initiated — one lookup per series per page, not per occurrence.
+  const masterCache = new Map<string, GoogleEvent | null>();
   type LinkWithSource = NewLinkWithNotes & { source: string };
   const addLink = (link: LinkWithSource) => {
     const existing = linksBySource.get(link.source) as
@@ -667,6 +755,13 @@ export async function processCalendarEventsFn(
     if (link.notes?.length) {
       existing.notes = [...(existing.notes || []), ...link.notes];
     }
+    // Read/archived intent is merged outside the metadata block below, which
+    // only runs for the link that contributes the schedule. Cancelled-occurrence
+    // links carry no `schedules`, so a series whose master lands in the same
+    // page — the usual shape, since cancelling an occurrence also bumps the
+    // master — would otherwise silently discard their `unread: false`.
+    if (link.unread !== undefined) existing.unread = link.unread;
+    if (link.archived !== undefined) existing.archived = link.archived;
     if (link.schedules && !existing.schedules) {
       existing.schedules = link.schedules;
       existing.title = link.title ?? existing.title;
@@ -680,8 +775,6 @@ export async function processCalendarEventsFn(
       existing.author = link.author ?? existing.author;
       existing.created = link.created ?? existing.created;
       existing.meta = { ...(existing.meta || {}), ...(link.meta || {}) };
-      if (link.unread !== undefined) existing.unread = link.unread;
-      if (link.archived !== undefined) existing.archived = link.archived;
       // Never let the merge LOWER an already-set priority. Recurring-event
       // instance links carry no priority; when an instance is coalesced
       // before its master in the same batch, this floor ensures the
@@ -729,7 +822,8 @@ export async function processCalendarEventsFn(
           event,
           calendarId,
           initialSync,
-          pendingWrites
+          pendingWrites,
+          masterCache
         );
         if (instanceLink) addLink(instanceLink as LinkWithSource);
       } else {
@@ -849,7 +943,8 @@ export async function processCalendarEventsFn(
             ],
             // Record the cancellation (archive the schedule, add the note) but
             // don't flip the thread unread when the user cancelled it themselves.
-            ...(initialSync || cancellationWasSelfInitiatedFn(event)
+            // A `null` verdict (payload too sparse to tell) keeps notifying.
+            ...(initialSync || cancellationWasSelfInitiatedFn(event) === true
               ? { unread: false }
               : {}),
             ...(initialSync ? { archived: false } : {}),
