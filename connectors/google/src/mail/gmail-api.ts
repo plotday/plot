@@ -127,6 +127,23 @@ export function isGmailRateLimitError(error: unknown): boolean {
 }
 
 /**
+ * True when a {@link GmailApiError} says the entity is gone: an HTTP 404. For a
+ * thread or message fetch this is TERMINAL, not a blip — the id no longer
+ * resolves in the mailbox because it was permanently deleted, or because it was
+ * a draft (Gmail replaces the draft message on every autosave and purges it
+ * outright on discard, so a draft's ids routinely die inside the history
+ * window). Retrying can never succeed, so callers drop the id instead of
+ * carrying it in a pending set, and log it quietly rather than as an error.
+ *
+ * Note the caller's context decides the meaning: `history.list` also answers
+ * 404, and there it means the history window expired and a full re-sync is
+ * needed — those call sites handle the status themselves.
+ */
+export function isGmailNotFoundError(error: unknown): boolean {
+  return error instanceof GmailApiError && error.status === 404;
+}
+
+/**
  * In-process retry budget for {@link GmailApi.call}. Kept small and short so a
  * brief blip (a momentary 429, a 5xx, a dropped connection) is absorbed inside
  * the current execution without risking the worker's wall-clock budget. Sustained
@@ -1517,6 +1534,10 @@ async function syncGmailChannelIncremental(
       const thread = await api.getThread(threadId);
       threads.push(thread);
     } catch (error) {
+      if (isGmailNotFoundError(error)) {
+        logVanishedThread(threadId);
+        continue;
+      }
       console.error(`Failed to fetch thread ${threadId}:`, error);
     }
   }
@@ -1622,7 +1643,11 @@ async function syncGmailChannelFull(
         try {
           return await api.getThread(threadRef.id);
         } catch (error) {
-          console.error(`Failed to fetch thread ${threadRef.id}:`, error);
+          if (isGmailNotFoundError(error)) {
+            logVanishedThread(threadRef.id);
+          } else {
+            console.error(`Failed to fetch thread ${threadRef.id}:`, error);
+          }
           return null;
         }
       }
@@ -1658,6 +1683,40 @@ async function syncGmailChannelFull(
 export const MAX_HISTORY_PAGES_PER_PASS = 20;
 
 /**
+ * Logs a thread that no longer exists in the mailbox. Deliberately NOT
+ * `console.error`: a vanished thread is an ordinary outcome of a mailbox
+ * changing under us (a deleted message, a discarded draft), not a fault, and
+ * the connector's log is the author-facing surface.
+ */
+function logVanishedThread(threadId: string): void {
+  console.log(
+    `[gmail] thread ${threadId} no longer exists in the mailbox; skipping`
+  );
+}
+
+/**
+ * True when a history record's message is a draft. Gmail issues a fresh message
+ * id on every draft autosave and deletes the previous one (and discarding a
+ * draft purges it outright, without a trip through Trash), so draft ids churn
+ * constantly and are frequently gone before an incremental pass can fetch them.
+ * Drafts are also skipped when notes are built, and the Draft channel is off by
+ * default — so unless the user actually syncs Drafts, a draft change is work we
+ * would throw away even when the fetch succeeds.
+ */
+function isDraftMessage(message: { labelIds?: string[] }): boolean {
+  return message.labelIds?.includes("DRAFT") ?? false;
+}
+
+/**
+ * Result of one `threads.get` during an incremental pass. `gone` (404) is
+ * terminal and dropped; `failed` is retryable and carried forward.
+ */
+type ThreadFetchOutcome =
+  | { status: "ok"; thread: GmailThread }
+  | { status: "gone" }
+  | { status: "failed" };
+
+/**
  * Mailbox-wide incremental sync. Calls the Gmail History API without a
  * `labelId` filter, so it returns every change in the mailbox since
  * `historyId` — including replies in existing threads that don't carry the
@@ -1675,12 +1734,22 @@ export const MAX_HISTORY_PAGES_PER_PASS = 20;
  * window) but must re-attempt the failed IDs on a subsequent sync by passing
  * them back via `retryThreadIds` — otherwise the cursor would move past
  * changes we never ingested, permanently losing that mail.
+ *
+ * A thread that answers 404 is the exception: it no longer exists, so it is
+ * dropped rather than returned as failed. Reporting it as failed sent every
+ * vanished thread around the retry ladder — one wasted `threads.get` and one
+ * logged error per pass, a stolen slot in the per-pass budget, and finally a
+ * "its change may be lost" warning about a thread we never had.
+ *
+ * Pass `includeDrafts` when the Draft channel is enabled; otherwise draft
+ * messages are skipped entirely (see {@link isDraftMessage}).
  */
 export async function syncGmailMailboxIncremental(
   api: GmailApi,
   historyId: string,
   retryThreadIds: string[] = [],
-  maxThreads: number = Infinity
+  maxThreads: number = Infinity,
+  options: { includeDrafts?: boolean } = {}
 ): Promise<
   | { expired: true }
   | {
@@ -1730,6 +1799,10 @@ export async function syncGmailMailboxIncremental(
     for (const entry of historyResult.history) {
       lastReadRecordId = entry.id;
       for (const added of entry.messagesAdded ?? []) {
+        // Draft autosave churn: skipped unless the user syncs Drafts. Only
+        // applied to added messages — a LABEL change on a draft (starring,
+        // archiving) is the user acting on the thread, so those still sync.
+        if (!options.includeDrafts && isDraftMessage(added.message)) continue;
         changedThreadIds.add(added.message.threadId);
       }
       for (const labeled of entry.labelsAdded ?? []) {
@@ -1760,23 +1833,31 @@ export async function syncGmailMailboxIncremental(
 
   // Fetch a bounded number of threads in flight; results (and the failed
   // list) keep `toFetch` order — retry ids first — so downstream processing
-  // is deterministic.
+  // is deterministic. Each fetch resolves to one of three outcomes, because
+  // "gone" and "failed" must not be conflated: only a failure is worth
+  // retrying.
   const fetched = await mapWithConcurrency(
     toFetch,
     THREAD_FETCH_CONCURRENCY,
-    async (threadId): Promise<GmailThread | null> => {
+    async (threadId): Promise<ThreadFetchOutcome> => {
       try {
-        return await api.getThread(threadId);
+        return { status: "ok", thread: await api.getThread(threadId) };
       } catch (error) {
+        if (isGmailNotFoundError(error)) {
+          logVanishedThread(threadId);
+          return { status: "gone" };
+        }
         console.error(`Failed to fetch thread ${threadId}:`, error);
-        return null;
+        return { status: "failed" };
       }
     }
   );
-  const threads = fetched.filter(
-    (thread): thread is GmailThread => thread !== null
+  const threads = fetched.flatMap((outcome) =>
+    outcome.status === "ok" ? [outcome.thread] : []
   );
-  const failedThreadIds = toFetch.filter((_, i) => fetched[i] === null);
+  const failedThreadIds = toFetch.filter(
+    (_, i) => fetched[i].status === "failed"
+  );
 
   return {
     expired: false,
