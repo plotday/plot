@@ -1,0 +1,53 @@
+{
+  "name": "@plotday/connector-hubspot",
+  "plotTwistId": "bce04476-8b19-4b9e-9350-11da3a44e0f8",
+  "displayName": "HubSpot",
+  "description": "Track contacts and deals, with tasks and follow-ups alongside everything else.",
+  "logoUrl": "https://api.iconify.design/logos/hubspot.svg",
+  "publisher": "Plot",
+  "publisherUrl": "https://plot.day",
+  "author": "Plot <team@plot.day> (https://plot.day)",
+  "license": "MIT",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "@plotday/connector": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "deploy": "plot deploy",
+    "lint": "plot lint",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@plotday/twister": "workspace:^"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.8"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/plotday/plot.git",
+    "directory": "connectors/hubspot"
+  },
+  "homepage": "https://plot.day",
+  "bugs": {
+    "url": "https://github.com/plotday/plot/issues"
+  },
+  "keywords": [
+    "plot",
+    "connector",
+    "hubspot",
+    "crm"
+  ]
+}
