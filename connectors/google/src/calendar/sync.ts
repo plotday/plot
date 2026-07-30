@@ -132,6 +132,22 @@ export const SYNC_LOCK_TTL_MS = 2 * 60 * 60 * 1000;
 // Pure helpers (no host state)
 // ---------------------------------------------------------------------------
 
+/** Suffix Google appends to natively-created events' iCalUID. */
+const GOOGLE_ICALUID_SUFFIX = "@google.com";
+
+/**
+ * Return both the `@google.com`-suffixed and bare forms of a Google iCalUID.
+ * Meeting-notes connectors (e.g. Fellow) that read the same event's UID via
+ * their own Google integration sometimes report it with the suffix trimmed,
+ * so both forms must be registered as aliases or the bundle-onto-event-thread
+ * lookup (an exact string match against `sources`) silently misses.
+ */
+function icalUidVariants(uid: string): string[] {
+  return uid.endsWith(GOOGLE_ICALUID_SUFFIX)
+    ? [uid, uid.slice(0, -GOOGLE_ICALUID_SUFFIX.length)]
+    : [uid, `${uid}${GOOGLE_ICALUID_SUFFIX}`];
+}
+
 /**
  * Build the canonical identifiers for a calendar event. The first element is
  * the connector-native source (preserves existing thread.key dedup across
@@ -148,7 +164,9 @@ export function buildEventSources(opts: {
   const sources: string[] = [];
   const primaryId = iCalUID ?? eventId ?? fallbackId;
   if (primaryId) sources.push(`google-calendar:${primaryId}`);
-  if (iCalUID) sources.push(`icaluid:${iCalUID}`);
+  if (iCalUID) {
+    for (const uid of icalUidVariants(iCalUID)) sources.push(`icaluid:${uid}`);
+  }
   if (eventId) sources.push(`google-event:${eventId}`);
   return sources;
 }

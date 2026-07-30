@@ -10,6 +10,7 @@ import type { NewLinkWithNotes } from "@plotday/twister";
 import type { Thread } from "@plotday/twister";
 import type { CalendarSyncHost } from "./sync";
 import {
+  buildEventSources,
   cancelEventWithApiFn,
   cancellationWasSelfInitiatedFn,
   extractRSVPParamsFn,
@@ -142,6 +143,32 @@ function makeFakeHost(overrides?: {
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+describe("buildEventSources", () => {
+  it("emits both the @google.com-suffixed and bare forms of a native iCalUID", () => {
+    const sources = buildEventSources({ iCalUID: "abc123@google.com", eventId: "evt1" });
+    expect(sources).toEqual([
+      "google-calendar:abc123@google.com",
+      "icaluid:abc123@google.com",
+      "icaluid:abc123",
+      "google-event:evt1",
+    ]);
+  });
+
+  it("emits both forms when the iCalUID has no @google.com suffix", () => {
+    const sources = buildEventSources({ iCalUID: "abc123" });
+    expect(sources).toEqual([
+      "google-calendar:abc123",
+      "icaluid:abc123",
+      "icaluid:abc123@google.com",
+    ]);
+  });
+
+  it("omits icaluid aliases entirely when there is no iCalUID", () => {
+    const sources = buildEventSources({ eventId: "evt1", fallbackId: "fb1" });
+    expect(sources).toEqual(["google-calendar:evt1", "google-event:evt1"]);
+  });
+});
 
 describe("runSyncBatch", () => {
   afterEach(() => {
