@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { Tag } from "@plotday/twister";
 import { HubSpot, buildDealStatuses } from "./hubspot";
 import type { HubSpotObject, HubSpotPipeline } from "./hubspot-api";
 
@@ -105,14 +106,24 @@ function makeDeal(id: string): HubSpotObject {
 
 /** Store seed that skips hub-id and owner-map fetches in sync paths. */
 function seededMaps() {
+  const ada = {
+    name: "Ada Lovelace",
+    email: "ada@example.com",
+    accountId: "user:77",
+    ownerId: "9",
+  };
   return {
     hub_id: "424242",
-    owners_map: {
-      "owner:9": { name: "Ada Lovelace", email: "ada@example.com", accountId: "user:77" },
-      "user:77": { name: "Ada Lovelace", email: "ada@example.com", accountId: "user:77" },
-    },
+    hub_user_id: "77",
+    owners_map: { "owner:9": ada, "user:77": ada },
   };
 }
+
+const ADA_CONTACT = {
+  name: "Ada Lovelace",
+  email: "ada@example.com",
+  source: { accountId: "user:77" },
+};
 
 function setAPI(hs: HubSpot, api: Record<string, unknown>) {
   (hs as unknown as { getAPI: unknown }).getAPI = vi
@@ -436,7 +447,7 @@ describe("engagements as notes on parent threads", () => {
     expect(saveLink).not.toHaveBeenCalled();
   });
 
-  it("renders tasks as bolded subject notes with a completion marker", async () => {
+  it("syncs record-scoped tasks as to-do notes tagged for the assignee", async () => {
     const store = makeStore({
       ...seededMaps(),
       sync_state_tasks: seedState({ initialSync: false }),
@@ -448,7 +459,8 @@ describe("engagements as notes on parent threads", () => {
       {
         hs_task_subject: "Follow up <soon>",
         hs_task_body: "<p>details</p>",
-        hs_task_status: "COMPLETED",
+        hs_task_status: "NOT_STARTED",
+        hubspot_owner_id: "9",
       },
       { deals: { results: [{ id: "d1", type: "task_to_deal" }] } }
     );
@@ -463,9 +475,80 @@ describe("engagements as notes on parent threads", () => {
     const note = saveLink.mock.calls[0][0].notes[0];
     expect(note.key).toBe("task-tk1");
     expect(note.content).toBe(
-      "<p><strong>Follow up &lt;soon&gt; ✅</strong></p><p>details</p>"
+      "<p><strong>Follow up &lt;soon&gt;</strong></p><p>details</p>"
     );
     expect(note.contentType).toBe("html");
+    // Open task: assignee holds Todo; Done is explicitly cleared so a
+    // task reopened in HubSpot clears the stale checked state on re-sync.
+    expect(note.tags).toEqual({
+      [Tag.Todo]: [ADA_CONTACT],
+      [Tag.Done]: [],
+    });
+  });
+
+  it("marks completed record-scoped tasks done, attributed to the assignee", async () => {
+    const store = makeStore({
+      ...seededMaps(),
+      sync_state_tasks: seedState({ initialSync: false }),
+    });
+    const saveLink = vi.fn().mockResolvedValue("t1");
+    const hs = makeHubSpot({ store, integrations: { saveLink } });
+    const task = makeObject(
+      "tk1",
+      {
+        hs_task_subject: "Follow up",
+        hs_task_status: "COMPLETED",
+        hubspot_owner_id: "9",
+      },
+      { deals: { results: [{ id: "d1", type: "task_to_deal" }] } }
+    );
+    setAPI(hs, {
+      listObjects: vi.fn().mockResolvedValue({ results: [task] }),
+      batchReadObjects: vi.fn().mockResolvedValue([makeDeal("d1")]),
+    });
+
+    await callSyncBatch(hs, "tasks");
+
+    const note = saveLink.mock.calls[0][0].notes[0];
+    expect(note.tags).toEqual({
+      [Tag.Todo]: [ADA_CONTACT],
+      [Tag.Done]: [ADA_CONTACT],
+    });
+  });
+
+  it("syncs standalone tasks (no associations) as their own task threads", async () => {
+    const store = makeStore({
+      ...seededMaps(),
+      sync_state_tasks: seedState({ initialSync: false }),
+    });
+    const saveLink = vi.fn().mockResolvedValue("t1");
+    const hs = makeHubSpot({ store, integrations: { saveLink } });
+    const task = makeObject("tk2", {
+      hs_task_subject: "Prep quarterly review",
+      hs_task_body: "<p>agenda</p>",
+      hs_task_status: "IN_PROGRESS",
+      hs_timestamp: "2026-08-15T12:00:00Z",
+      hubspot_owner_id: "9",
+      hs_created_by_user_id: "77",
+    });
+    setAPI(hs, {
+      listObjects: vi.fn().mockResolvedValue({ results: [task] }),
+      batchReadObjects: vi.fn().mockResolvedValue([]),
+    });
+
+    await callSyncBatch(hs, "tasks");
+
+    expect(saveLink).toHaveBeenCalledTimes(1);
+    const link = saveLink.mock.calls[0][0];
+    expect(link.source).toBe("hubspot:424242:task:tk2");
+    expect(link.type).toBe("task");
+    expect(link.title).toBe("Prep quarterly review");
+    expect(link.status).toBe("IN_PROGRESS");
+    expect(link.preview).toBe("Due 2026-08-15");
+    expect(link.assignee).toEqual(ADA_CONTACT);
+    expect(link.notes).toEqual([
+      expect.objectContaining({ key: "description", content: "<p>agenda</p>" }),
+    ]);
   });
 });
 
@@ -662,18 +745,143 @@ describe("write-backs", () => {
     expect(result).toEqual({ externalContent: "updated body" });
   });
 
-  it("onNoteUpdated ignores task-keyed notes (tasks are synced read-only)", async () => {
+  it("checking a task note done in Plot completes the HubSpot task", async () => {
     const hs = makeHubSpot({ store: makeStore(seededMaps()) });
-    const updateObject = vi.fn();
-    setAPI(hs, { updateObject });
+    const getObject = vi.fn().mockResolvedValue(
+      makeObject("tk1", { hs_task_status: "IN_PROGRESS", hubspot_owner_id: "9" })
+    );
+    const updateObject = vi.fn().mockResolvedValue(makeObject("tk1", {}));
+    setAPI(hs, { getObject, updateObject });
 
-    const result = await hs.onNoteUpdated(
-      { key: "task-tk1", content: "edited" } as never,
+    await hs.onNoteUpdated(
+      {
+        key: "task-tk1",
+        content: "whatever",
+        tags: { [Tag.Done]: ["actor-1"], [Tag.Todo]: ["actor-1"] },
+        tagActors: { "actor-1": { source: { accountId: "user:77" } } },
+      } as never,
       { meta: { hubspotObjectType: "deals", hubspotRecordId: "d1" } } as never
     );
 
+    // Status flips to COMPLETED; assignee already matches (owner id 9),
+    // so only the status is written.
+    expect(updateObject).toHaveBeenCalledWith("tasks", "tk1", {
+      hs_task_status: "COMPLETED",
+    });
+  });
+
+  it("un-checking a completed task note reopens it without clobbering open statuses", async () => {
+    const hs = makeHubSpot({ store: makeStore(seededMaps()) });
+    const getObject = vi.fn().mockResolvedValue(
+      makeObject("tk1", { hs_task_status: "COMPLETED", hubspot_owner_id: "9" })
+    );
+    const updateObject = vi.fn().mockResolvedValue(makeObject("tk1", {}));
+    setAPI(hs, { getObject, updateObject });
+
+    await hs.onNoteUpdated(
+      { key: "task-tk1", tags: { [Tag.Done]: [], [Tag.Todo]: [] } } as never,
+      { meta: {} } as never
+    );
+
+    expect(updateObject).toHaveBeenCalledWith("tasks", "tk1", {
+      hs_task_status: "NOT_STARTED",
+    });
+  });
+
+  it("writes nothing when the task note's state already matches HubSpot", async () => {
+    const hs = makeHubSpot({ store: makeStore(seededMaps()) });
+    const getObject = vi.fn().mockResolvedValue(
+      makeObject("tk1", { hs_task_status: "WAITING", hubspot_owner_id: "9" })
+    );
+    const updateObject = vi.fn();
+    setAPI(hs, { getObject, updateObject });
+
+    await hs.onNoteUpdated(
+      {
+        key: "task-tk1",
+        tags: { [Tag.Done]: [], [Tag.Todo]: ["actor-1"] },
+        tagActors: { "actor-1": { source: { accountId: "user:77" } } },
+      } as never,
+      { meta: {} } as never
+    );
+
     expect(updateObject).not.toHaveBeenCalled();
-    expect(result).toBeUndefined();
+  });
+
+  it("reassigning a task note's Todo tag moves the HubSpot task to the new owner", async () => {
+    const store = makeStore(seededMaps());
+    // Second owner in the map: Grace, owner id 12 / user id 88.
+    const grace = {
+      name: "Grace Hopper",
+      email: "grace@example.com",
+      accountId: "user:88",
+      ownerId: "12",
+    };
+    (store.map.get("owners_map") as Record<string, unknown>)["user:88"] = grace;
+    (store.map.get("owners_map") as Record<string, unknown>)["owner:12"] = grace;
+    const hs = makeHubSpot({ store });
+    const getObject = vi.fn().mockResolvedValue(
+      makeObject("tk1", { hs_task_status: "NOT_STARTED", hubspot_owner_id: "9" })
+    );
+    const updateObject = vi.fn().mockResolvedValue(makeObject("tk1", {}));
+    setAPI(hs, { getObject, updateObject });
+
+    await hs.onNoteUpdated(
+      {
+        key: "task-tk1",
+        tags: { [Tag.Done]: [], [Tag.Todo]: ["actor-2"] },
+        tagActors: { "actor-2": { source: { accountId: "user:88" } } },
+      } as never,
+      { meta: {} } as never
+    );
+
+    expect(updateObject).toHaveBeenCalledWith("tasks", "tk1", {
+      hubspot_owner_id: "12",
+    });
+  });
+
+  it("surfaces a delivery error when the Todo assignee is not a HubSpot user", async () => {
+    const hs = makeHubSpot({ store: makeStore(seededMaps()) });
+    const getObject = vi.fn().mockResolvedValue(
+      makeObject("tk1", { hs_task_status: "NOT_STARTED", hubspot_owner_id: "9" })
+    );
+    const updateObject = vi.fn();
+    // Owner refresh on unknown assignee also returns nothing new.
+    const listAllOwners = vi.fn().mockResolvedValue([]);
+    setAPI(hs, { getObject, updateObject, listAllOwners });
+
+    const result = await hs.onNoteUpdated(
+      {
+        key: "task-tk1",
+        tags: { [Tag.Done]: [], [Tag.Todo]: ["actor-3"] },
+        tagActors: { "actor-3": { source: { accountId: "user:999" } } },
+      } as never,
+      { meta: {} } as never
+    );
+
+    expect(updateObject).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      deliveryError: {
+        code: "invalid_recipient",
+        message: "Assignee is not a HubSpot user",
+      },
+    });
+  });
+
+  it("onLinkUpdated writes a standalone task thread's status straight back", async () => {
+    const hs = makeHubSpot({ store: makeStore(seededMaps()) });
+    const updateObject = vi.fn().mockResolvedValue(makeObject("tk2", {}));
+    setAPI(hs, { updateObject });
+
+    await hs.onLinkUpdated({
+      type: "task",
+      status: "COMPLETED",
+      meta: { hubspotRecordId: "tk2" },
+    } as never);
+
+    expect(updateObject).toHaveBeenCalledWith("tasks", "tk2", {
+      hs_task_status: "COMPLETED",
+    });
   });
 });
 

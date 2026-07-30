@@ -5,8 +5,18 @@ Syncs HubSpot CRM records into Plot:
 - **Contacts**, **companies**, and **deals** become threads. Deals carry the
   portal's pipeline stages as statuses (prefixed with the pipeline name when
   the portal has more than one) and show the deal owner as the assignee.
-- **Note** and **task** engagements appear as notes on each associated
-  record's thread, attributed to the HubSpot user who created them.
+- **Note engagements** appear as notes on each associated record's thread,
+  attributed to the HubSpot user who created them.
+- **Task engagements** sync by where they naturally sit:
+  - Tasks associated with a record become **to-do notes** on that record's
+    thread — tagged to-do for the assignee (so they land on their list) and
+    checked off when completed. Checking one done in Plot completes the task
+    in HubSpot, un-checking reopens it, and reassigning the to-do moves the
+    task to the new owner.
+  - Standalone tasks (created in HubSpot's Tasks queue with no associated
+    record) become their own threads, with statuses mirroring HubSpot's
+    (To do / In progress / Waiting / Deferred / Done) that write back on
+    change.
 - **Notes you add in Plot** are written back to HubSpot as note engagements
   on the record, and edits to notes sync back too.
 - **Deal stage changes in Plot** are written back to HubSpot.
@@ -31,6 +41,8 @@ HubSpot's search-index lag.
 
 - Records deleted or archived in HubSpot are not detected (the search API
   only returns live records), so their threads remain in Plot.
-- Task engagements sync read-only: completing or editing a HubSpot task from
-  Plot is not written back.
+- Editing a task note's *text* in Plot is not written back (the note folds
+  the task's subject and body into one block that can't be split apart
+  reliably); completion and assignee changes are. The next sync restores
+  HubSpot's wording.
 - New records can't be created from Plot yet.

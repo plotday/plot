@@ -1,8 +1,10 @@
 import {
   type Link,
   type NewLinkWithNotes,
+  type NewTags,
   type Note,
   type NoteWriteBackResult,
+  Tag,
   type Thread,
 } from "@plotday/twister";
 import type { NewContact } from "@plotday/twister/plot";
@@ -99,6 +101,18 @@ const SEARCH_INDEX_LAG_MS = 60 * 1000;
 
 const HUBSPOT_LOGO = "https://api.iconify.design/logos/hubspot.svg";
 
+/**
+ * Statuses for the standalone `task` link type, mapped 1:1 from HubSpot's
+ * `hs_task_status` values so write-back needs no translation.
+ */
+const TASK_STATUSES = [
+  { status: "NOT_STARTED", label: "To do", icon: "todo" as StatusIcon, todo: true as const },
+  { status: "IN_PROGRESS", label: "In progress", icon: "inProgress" as StatusIcon },
+  { status: "WAITING", label: "Waiting", icon: "blocked" as StatusIcon },
+  { status: "DEFERRED", label: "Deferred", icon: "backlog" as StatusIcon },
+  { status: "COMPLETED", label: "Done", done: true as const, icon: "done" as StatusIcon },
+];
+
 type SyncState = {
   after: string | null;
   batchNumber: number;
@@ -112,6 +126,12 @@ type OwnerEntry = {
   email: string | null;
   /** Canonical platform identity for this person (see resolveOwnerEntry). */
   accountId: string;
+  /**
+   * The HubSpot owner id for this person — the value `hubspot_owner_id`
+   * properties take on write-back (assignee changes PATCH this, whichever
+   * id space the Plot-side actor resolved through).
+   */
+  ownerId: string;
 };
 
 /** True when a HubSpot API error means the entity no longer exists. */
@@ -187,6 +207,9 @@ export class HubSpot extends Connector<HubSpot> {
       const api = new HubSpotAPI(token.token);
       const info = await api.getAccessTokenInfo();
       await this.set("hub_id", String(info.hub_id));
+      if (info.user_id != null) {
+        await this.set("hub_user_id", String(info.user_id));
+      }
       return info.hub_domain || info.user || null;
     } catch {
       return null;
@@ -194,16 +217,39 @@ export class HubSpot extends Connector<HubSpot> {
   }
 
   /**
-   * The portal (hub) id qualifying `source` keys and record URLs. Cached
-   * at connect time by getAccountName; fetched lazily as a fallback.
+   * The portal (hub) id qualifying `source` keys and record URLs, plus
+   * the connecting user's id (Done-tag attribution fallback). Cached at
+   * connect time by getAccountName; fetched lazily as a fallback.
    */
-  private async getHubId(api: HubSpotAPI): Promise<string> {
-    const stored = await this.get<string>("hub_id");
-    if (stored) return stored;
+  private async getHubInfo(
+    api: HubSpotAPI
+  ): Promise<{ hubId: string; userId: string | null }> {
+    const storedHub = await this.get<string>("hub_id");
+    if (storedHub) {
+      return { hubId: storedHub, userId: await this.get<string>("hub_user_id") };
+    }
     const info = await api.getAccessTokenInfo();
     const hubId = String(info.hub_id);
     await this.set("hub_id", hubId);
-    return hubId;
+    const userId = info.user_id != null ? String(info.user_id) : null;
+    if (userId) await this.set("hub_user_id", userId);
+    return { hubId, userId };
+  }
+
+  private async getHubId(api: HubSpotAPI): Promise<string> {
+    return (await this.getHubInfo(api)).hubId;
+  }
+
+  /**
+   * The connecting user as an actor — the Done-tag attribution fallback
+   * for completed tasks with no resolvable assignee or creator (HubSpot
+   * records no "completed by").
+   */
+  private async connectionOwnerActor(): Promise<NewContact | null> {
+    const api = await this.getAPI();
+    const info = await this.getHubInfo(api);
+    if (info.userId == null) return null;
+    return this.resolveAuthor(`user:${info.userId}`);
   }
 
   // ---- Channel Lifecycle ----
@@ -261,6 +307,17 @@ export class HubSpot extends Connector<HubSpot> {
             logo: HUBSPOT_LOGO,
             statuses: [],
             defaultCreateThreads: "actionable",
+          },
+          // Standalone tasks only — tasks associated with a record sync as
+          // to-do notes on that record's thread instead (see
+          // saveEngagementsOnParents).
+          {
+            type: "task",
+            label: "Task",
+            sharingModel: "channel" as const,
+            logo: HUBSPOT_LOGO,
+            statuses: TASK_STATUSES,
+            supportsAssignee: true,
           },
         ],
       },
@@ -672,6 +729,22 @@ export class HubSpot extends Connector<HubSpot> {
     }
 
     for (const engagement of engagements) {
+      const hasAssociations = RECORD_TYPES.some(
+        (recordType) =>
+          (engagement.associations?.[recordType]?.results ?? []).length > 0
+      );
+
+      // A task with no record associations is a top-level to-do in
+      // HubSpot's Tasks queue — sync it as its own thread. (A note without
+      // associations has no record to give it context; skip those.)
+      if (!hasAssociations) {
+        if (type === "tasks") {
+          const link = await this.convertTaskToLink(api, engagement, initialSync);
+          await this.tools.integrations.saveLink(link);
+        }
+        continue;
+      }
+
       const note = await this.buildEngagementNote(type, engagement);
       if (!note) continue;
 
@@ -722,18 +795,97 @@ export class HubSpot extends Connector<HubSpot> {
 
     const subject = p.hs_task_subject || "Untitled Task";
     const completed = p.hs_task_status === "COMPLETED";
+
+    // The task's to-do state rides on note tags, not text: the assignee
+    // holds Tag.Todo (so it lands on their to-do list) and completed
+    // tasks carry Tag.Done (rendered checked-off). Both keys are always
+    // set explicitly — an empty actor list REMOVES the tag on re-sync, so
+    // a task reopened or reassigned in HubSpot clears the stale state in
+    // Plot (omitting a key would leave it untouched).
+    const assignee = await this.resolveOwnerContact(p.hubspot_owner_id);
+    const tags: NewTags = {
+      [Tag.Todo]: assignee ? [assignee] : [],
+      [Tag.Done]: [],
+    };
+    if (completed) {
+      // HubSpot records no "completed by" — attribute to the assignee,
+      // else the creator, else the connecting user.
+      const completer =
+        assignee ?? author ?? (await this.connectionOwnerActor());
+      if (completer) tags[Tag.Done] = [completer];
+    }
+
     // For tasks, hs_timestamp is the due date — use createdAt for the
     // note's timestamp instead.
     const content =
-      `<p><strong>${escapeHtml(subject)}${completed ? " ✅" : ""}</strong></p>` +
-      (p.hs_task_body ?? "");
+      `<p><strong>${escapeHtml(subject)}</strong></p>` + (p.hs_task_body ?? "");
     return {
       key: `task-${engagement.id}`,
       content,
       contentType: "html" as const,
       created: new Date(engagement.createdAt),
       author,
+      tags,
     } as NonNullable<NewLinkWithNotes["notes"]>[number];
+  }
+
+  /**
+   * Convert a standalone task (no record associations) into its own
+   * thread — a top-level to-do from HubSpot's Tasks queue. Statuses
+   * mirror `hs_task_status` verbatim (see TASK_STATUSES), so status
+   * write-back needs no translation.
+   */
+  private async convertTaskToLink(
+    api: HubSpotAPI,
+    task: HubSpotObject,
+    initialSync: boolean
+  ): Promise<NewLinkWithNotes> {
+    const hubId = await this.getHubId(api);
+    const p = task.properties;
+    const author = await this.resolveUserAuthor(p.hs_created_by_user_id);
+    const assignee = await this.resolveOwnerContact(p.hubspot_owner_id);
+
+    // hs_timestamp is the task's due date.
+    const due = p.hs_timestamp ? new Date(p.hs_timestamp) : null;
+    const preview =
+      due && !Number.isNaN(due.getTime())
+        ? `Due ${due.toISOString().slice(0, 10)}`
+        : null;
+
+    const body = p.hs_task_body;
+    return {
+      source: `hubspot:${hubId}:task:${task.id}`,
+      type: "task",
+      title: p.hs_task_subject || "Untitled Task",
+      created: new Date(task.createdAt),
+      status: p.hs_task_status ?? null,
+      author,
+      ...(assignee ? { assignee } : {}),
+      channelId: CHANNEL_ID,
+      meta: {
+        hubspotObjectType: "tasks",
+        hubspotRecordId: task.id,
+        syncProvider: "hubspot",
+        channelId: CHANNEL_ID,
+      },
+      // Tasks have no per-record page in the HubSpot app — link to the
+      // portal's Tasks queue.
+      sourceUrl: `https://app.hubspot.com/tasks/${hubId}`,
+      preview,
+      notes: body
+        ? [
+            {
+              key: "description",
+              content: body,
+              contentType: "html" as const,
+              created: new Date(task.createdAt),
+              author,
+            } as NonNullable<NewLinkWithNotes["notes"]>[number],
+          ]
+        : [],
+      ...(initialSync ? { unread: false } : {}),
+      ...(initialSync ? { archived: false } : {}),
+    };
   }
 
   // ---- Author Attribution ----
@@ -772,6 +924,7 @@ export class HubSpot extends Connector<HubSpot> {
         email: owner.email ?? null,
         accountId:
           owner.userId != null ? `user:${owner.userId}` : `owner:${owner.id}`,
+        ownerId: owner.id,
       };
       map[`owner:${owner.id}`] = entry;
       if (owner.userId != null) map[`user:${owner.userId}`] = entry;
@@ -892,10 +1045,23 @@ export class HubSpot extends Connector<HubSpot> {
    * writes the same pipeline id back — a no-op).
    */
   async onLinkUpdated(link: Link): Promise<void> {
-    if (link.type !== "deal" || !link.status) return;
+    if (!link.status) return;
 
     const recordId = link.meta?.hubspotRecordId as string | undefined;
     if (!recordId) return;
+
+    // Standalone-task threads: statuses are hs_task_status values
+    // verbatim, so completing (or re-opening) the thread in Plot writes
+    // the status straight back.
+    if (link.type === "task") {
+      const api = await this.getAPI();
+      await api.updateObject("tasks", recordId, {
+        hs_task_status: link.status,
+      });
+      return;
+    }
+
+    if (link.type !== "deal") return;
 
     const api = await this.getAPI();
     const properties: Record<string, string> = { dealstage: link.status };
@@ -944,14 +1110,17 @@ export class HubSpot extends Connector<HubSpot> {
   }
 
   /**
-   * Push a local edit of a note back to HubSpot. Only `note-<id>` keys
-   * write back — task engagements (`task-<id>`) are synced read-only, so
-   * edits to them stay in Plot until the next sync-in restores them.
+   * Push a local note change back to HubSpot. `note-<id>` keys write
+   * their edited body back; `task-<id>` keys write their to-do state
+   * back (see writeBackTaskNote).
    */
   async onNoteUpdated(
     note: Note,
     thread: Thread
   ): Promise<NoteWriteBackResult | void> {
+    const taskMatch = note.key?.match(/^task-(.+)$/);
+    if (taskMatch) return this.writeBackTaskNote(taskMatch[1], note);
+
     if (!note.key?.startsWith("note-")) return;
     const recordId = thread.meta?.hubspotRecordId as string | undefined;
     if (!recordId) return;
@@ -966,6 +1135,79 @@ export class HubSpot extends Connector<HubSpot> {
     return {
       externalContent: updated.properties?.hs_note_body ?? body,
     };
+  }
+
+  /**
+   * Write back to-do state changes on a record-scoped task note: checking
+   * the note done in Plot completes the HubSpot task, un-checking it
+   * reopens it, and reassigning the Todo tag moves the task to the new
+   * owner. The current status is read first so reopening restores
+   * NOT_STARTED without clobbering an IN_PROGRESS/WAITING/DEFERRED task
+   * that was never completed, and so an unchanged state writes nothing.
+   *
+   * Content edits are NOT written back — the note folds hs_task_subject
+   * and hs_task_body into one HTML block that can't be split apart
+   * reliably, so the next sync-in restores HubSpot's version.
+   */
+  private async writeBackTaskNote(
+    taskId: string,
+    note: Note
+  ): Promise<NoteWriteBackResult | void> {
+    const api = await this.getAPI();
+    let current;
+    try {
+      current = await api.getObject("tasks", taskId, [
+        "hs_task_status",
+        "hubspot_owner_id",
+      ]);
+    } catch (error) {
+      if (isNotFound(error)) return; // deleted upstream
+      throw error;
+    }
+
+    const properties: Record<string, string> = {};
+    const wantDone = (note.tags?.[Tag.Done] ?? []).length > 0;
+    const isDone = current.properties.hs_task_status === "COMPLETED";
+    if (wantDone && !isDone) properties.hs_task_status = "COMPLETED";
+    if (!wantDone && isDone) properties.hs_task_status = "NOT_STARTED";
+
+    let deliveryError: NoteWriteBackResult["deliveryError"];
+    const todoActors = note.tags?.[Tag.Todo] ?? [];
+    if (todoActors.length > 0) {
+      const accountId = note.tagActors?.[todoActors[0]]?.source?.accountId;
+      const ownerId = accountId
+        ? await this.ownerIdForAccountId(accountId)
+        : null;
+      if (!ownerId) {
+        deliveryError = {
+          code: "invalid_recipient",
+          message: "Assignee is not a HubSpot user",
+        };
+      } else if (ownerId !== current.properties.hubspot_owner_id) {
+        properties.hubspot_owner_id = ownerId;
+      }
+    }
+
+    if (Object.keys(properties).length > 0) {
+      await api.updateObject("tasks", taskId, properties);
+    }
+    if (deliveryError) return { deliveryError };
+  }
+
+  /** Map a tag actor's platform accountId back to a HubSpot owner id. */
+  private async ownerIdForAccountId(accountId: string): Promise<string | null> {
+    const api = await this.getAPI();
+    let map = await this.getOwnerMap(api);
+    let entry = map[accountId];
+    if (!entry && !this.ownersRefreshed) {
+      this.ownersRefreshed = true;
+      map = await this.getOwnerMap(api, true);
+      entry = map[accountId];
+    }
+    if (entry?.ownerId) return entry.ownerId;
+    // owner:<id> account ids carry the owner id directly.
+    const m = accountId.match(/^owner:(.+)$/);
+    return m ? m[1] : null;
   }
 }
 
