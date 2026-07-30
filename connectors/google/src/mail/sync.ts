@@ -1058,7 +1058,8 @@ export async function selfHealCheckFn(host: GmailSyncHost): Promise<void> {
           api,
           incremental.historyId,
           pending.map((p) => p.id),
-          MAX_INCREMENTAL_THREADS_PER_BATCH
+          MAX_INCREMENTAL_THREADS_PER_BATCH,
+          { includeDrafts: enabled.has("DRAFT") }
         );
         if (result.expired) {
           // History window expired; reseed cursor (same fallback as
@@ -1300,7 +1301,8 @@ export async function incrementalSyncBatchFn(
       api,
       state.historyId,
       pending.map((p) => p.id),
-      MAX_INCREMENTAL_THREADS_PER_BATCH
+      MAX_INCREMENTAL_THREADS_PER_BATCH,
+      { includeDrafts: enabled.has("DRAFT") }
     );
     if (result.expired) {
       // Recover by reseeding from the watch's most recent historyId.
