@@ -807,6 +807,22 @@ export class Slack extends Connector<Slack> {
         // and rewinding what this one just wrote.
         await this.set(this.dmHeadKey(channelId), true);
       }
+      // Anchor the conversation for the daily sweep. A direct conversation is
+      // never `threaded`: this one permanent link flattens Slack's reply
+      // threads into a running conversation, so the CONVERSATION cursor is the
+      // only cursor that describes it. Keyed on the conversation id in both
+      // positions — there is no thread root to key on.
+      //
+      // Only when these messages ARE the conversation head. A reaction or a
+      // save can name a message of any age, and an anchor rewound to an older
+      // `newest` would make the sweep declare the conversation read on a
+      // cursor that has not actually reached its latest message.
+      if (advanceConversationHead) {
+        const dmAnchor = deriveReadAnchor(kept, { direct: true, at: Date.now() });
+        if (dmAnchor) {
+          await this.set(this.readAnchorKey(channelId, channelId), dmAnchor);
+        }
+      }
       return link;
     }
 
@@ -833,17 +849,37 @@ export class Slack extends Connector<Slack> {
       syncableId: channelId,
     };
     if (messages[0]) link.facets = slackFacets(messages[0], channelId);
-    // Apply Slack's per-thread read cursor. `deriveReadAnchor` tells us
-    // whether this link is governed by the thread cursor at all: a root-only
-    // channel message lives purely in the channel timeline, so only the daily
-    // sweep's `conversations.info` can speak for it.
+    // Apply Slack's per-thread read cursor, and record what still needs
+    // settling. `deriveReadAnchor` tells us which cursor governs this link: a
+    // root-only channel message lives purely in the channel timeline, so only
+    // the daily sweep's `conversations.info` can speak for it.
     //
     // Read from THIS response, never from a cache: the parent's
     // `unread_count` is computed after the reply we are saving landed, so a
     // genuine new-message unread can never be suppressed by a stale cursor.
+    //
+    // The anchor's EXISTENCE is the transition gate — it means "not yet marked
+    // read for this `newest` ts". Deleting it on a successful mark-read is
+    // what makes a later manual "mark unread" in Plot stick: the sweep has
+    // nothing left to act on until new content recreates the anchor.
+    //
+    // `initialSync` already asserts read (it sets `unread: false`), so those
+    // links need no anchor at all — the sweep would only re-assert what is
+    // already true.
+    const threadTs =
+      (link.meta?.threadTs as string | undefined) ?? messages[0]?.ts;
     const anchor = deriveReadAnchor(messages, { direct: false, at: Date.now() });
-    if (anchor?.threaded && threadReadVerdict(messages[0]) === "read") {
-      link.unread = false;
+    if (anchor && threadTs) {
+      const anchorKey = this.readAnchorKey(channelId, threadTs);
+      const read =
+        link.unread === false ||
+        (anchor.threaded && threadReadVerdict(messages[0]) === "read");
+      if (read) {
+        link.unread = false;
+        await this.clear(anchorKey);
+      } else {
+        await this.set(anchorKey, anchor);
+      }
     }
     return link;
   }
@@ -1735,6 +1771,18 @@ export class Slack extends Connector<Slack> {
    */
   private subscriptionKey(channelId: string, threadTs: string): string {
     return `sync_thread:${channelId}:${threadTs}`;
+  }
+
+  /**
+   * Key for one link's read anchor. Keyed on the thread root (the same id
+   * `subscriptionKey` uses) so a new reply REPLACES the anchor rather than
+   * accumulating one per message.
+   *
+   * A direct conversation is one permanent link, so it anchors on the
+   * conversation id in both positions.
+   */
+  private readAnchorKey(channelId: string, threadTs: string): string {
+    return `read_anchor:${channelId}:${threadTs}`;
   }
 
   private async subscribeThread(

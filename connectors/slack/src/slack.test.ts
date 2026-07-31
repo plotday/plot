@@ -3784,3 +3784,125 @@ describe("buildConversationLink — thread read cursor", () => {
     expect(link?.unread).not.toBe(true);
   });
 });
+
+describe("read anchors", () => {
+  const parent = {
+    type: "message",
+    ts: "1700000000.000001",
+    thread_ts: "1700000000.000001",
+    user: "U1",
+    text: "parent",
+  };
+  const reply = {
+    type: "message",
+    ts: "1700000002.000000",
+    thread_ts: "1700000000.000001",
+    user: "U2",
+    text: "reply",
+  };
+
+  async function build(messages: unknown[]) {
+    const store = makeStore();
+    const slack = makeSlack({
+      store,
+      integrationsGet: vi.fn(),
+      createWebhook: vi.fn(),
+    });
+    vi.spyOn(
+      slack as unknown as { isKnownDMChannel: (c: string) => Promise<boolean> },
+      "isKnownDMChannel"
+    ).mockResolvedValue(false);
+    vi.spyOn(
+      slack as unknown as {
+        customEmojiContext: (c: string) => Promise<{ teamId?: string }>;
+      },
+      "customEmojiContext"
+    ).mockResolvedValue({});
+    const link = await (slack as unknown as {
+      buildConversationLink: (o: unknown) => Promise<{ unread?: boolean } | null>;
+    }).buildConversationLink({ channelId: "C1", messages, initialSync: false });
+    return { store, link };
+  }
+
+  const KEY = "read_anchor:C1:1700000000.000001";
+
+  it("writes an anchor for a link it could not mark read", async () => {
+    const { store } = await build([parent]);
+    const anchor = store.map.get(KEY) as { newest: string; threaded: boolean };
+    expect(anchor.newest).toBe("1700000000.000001");
+    expect(anchor.threaded).toBe(false);
+  });
+
+  it("marks a threaded link's anchor threaded so the sweep skips it", async () => {
+    const { store } = await build([parent, reply]);
+    expect((store.map.get(KEY) as { threaded: boolean }).threaded).toBe(true);
+  });
+
+  it("deletes the anchor once the link is marked read", async () => {
+    const { store, link } = await build([{ ...parent, unread_count: 0 }, reply]);
+    expect(link?.unread).toBe(false);
+    expect(store.map.has(KEY)).toBe(false);
+  });
+
+  it("keys the anchor on the thread root, so a new reply replaces it", async () => {
+    const { store } = await build([parent, reply]);
+    expect([...store.map.keys()]).toEqual([KEY]);
+    expect((store.map.get(KEY) as { newest: string }).newest).toBe(
+      "1700000002.000000"
+    );
+  });
+
+  it("does not write an anchor when there is nothing to save", async () => {
+    const { store } = await build([]);
+    expect([...store.map.keys()]).toEqual([]);
+  });
+
+  it("anchors a direct conversation on the conversation id, never threaded", async () => {
+    const store = makeStore();
+    const slack = makeSlack({
+      store,
+      integrationsGet: vi.fn(),
+      createWebhook: vi.fn(),
+    });
+    vi.spyOn(
+      slack as unknown as { isKnownDMChannel: (c: string) => Promise<boolean> },
+      "isKnownDMChannel"
+    ).mockResolvedValue(true);
+    vi.spyOn(
+      slack as unknown as {
+        customEmojiContext: (c: string) => Promise<{ teamId?: string }>;
+      },
+      "customEmojiContext"
+    ).mockResolvedValue({});
+    vi.spyOn(
+      slack as unknown as {
+        dmCounterpartyUserId: (c: string) => Promise<string | null>;
+      },
+      "dmCounterpartyUserId"
+    ).mockResolvedValue("U2");
+
+    await (slack as unknown as {
+      buildConversationLink: (o: unknown) => Promise<unknown>;
+    }).buildConversationLink({
+      channelId: "D1",
+      messages: [
+        { type: "message", ts: "1700000000.000001", user: "U2", text: "hi" },
+        {
+          type: "message",
+          ts: "1700000002.000000",
+          thread_ts: "1700000000.000001",
+          user: "U2",
+          text: "threaded",
+        },
+      ],
+      initialSync: false,
+    });
+
+    const anchor = store.map.get("read_anchor:D1:D1") as {
+      newest: string;
+      threaded: boolean;
+    };
+    expect(anchor.newest).toBe("1700000002.000000");
+    expect(anchor.threaded).toBe(false);
+  });
+});
