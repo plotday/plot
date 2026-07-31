@@ -2067,16 +2067,31 @@ export class Slack extends Connector<Slack> {
    *
    * `channelId` is only used to resolve a token; Slack tokens are
    * workspace-wide, and the conversations to sweep come from the anchors.
+   *
+   * Gated to run at most once per 24 hours per WORKSPACE (like `syncMembers`,
+   * placed the same way — before the `try`, so a redundant call skips the
+   * `finally` below too and never arms a chain of its own). The sweep itself
+   * is workspace-scoped (`listEntries("read_anchor:")`, no channel filter),
+   * but the caller, `queueWorkspaceDailyTasks`, dispatches it once per
+   * ENABLED CHANNEL, and Slack auto-observes new channels as the user
+   * composes into them. Without this guard, every newly-enabled channel would
+   * arm its own daily recurring chain (`read-state-sync:<channelId>` is keyed
+   * per channel, so `scheduleRecurring` cannot dedupe them against each
+   * other) — N chains sweeping the same anchors once a day each means N times
+   * the `conversations.info` calls and N duplicate writes per anchor that
+   * actually resolves.
    */
   async reconcileReadState(channelId: string): Promise<void> {
-    let scheduleDaily = true;
+    const now = Date.now();
+    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+    const lastReadSync = await this.get<number>("readStateSyncedAt");
+    if (lastReadSync && now - lastReadSync < ONE_DAY_MS) return;
+
     try {
       const entries = await this.tools.store.listEntries<SlackReadAnchor>(
         "read_anchor:"
       );
       if (entries.length === 0) return;
-
-      const now = Date.now();
 
       // Drop anything past retention before spending an API call on it.
       const expired = entries.filter(
@@ -2111,7 +2126,9 @@ export class Slack extends Connector<Slack> {
         return;
       }
 
-      for (const [conversationId, anchors] of byConversation) {
+      const conversations = [...byConversation];
+      for (let i = 0; i < conversations.length; i++) {
+        const [conversationId, anchors] = conversations[i]!;
         let lastRead: string | null;
         try {
           ({ lastRead } = await api.getConversationInfo(conversationId));
@@ -2120,15 +2137,36 @@ export class Slack extends Connector<Slack> {
             // Every remaining conversation needs the same method, so carrying
             // on would just re-issue guaranteed-429s. Anchors are durable —
             // tomorrow's pass (or the retry below) picks up exactly where this
-            // one stopped.
+            // one stopped. `conversations.length - i` is what's actually left
+            // — this one included, since it never got resolved — not the
+            // conversation-count total the map started with.
+            const remaining = conversations.length - i;
             console.log(
-              `reconcileReadState: rate limited on ${error.method}; ${
-                byConversation.size
-              } conversation(s) left for a later pass`
+              `reconcileReadState: rate limited on ${error.method}; ${remaining} conversation(s) left for a later pass`
             );
             return;
           }
           if (error instanceof SlackPermanentError) {
+            if (error.slackError === "missing_scope") {
+              // The optional `dms` scope group was declined at connect time.
+              // That is a user decision, not a broken connection — mirrors
+              // `onThreadRead`'s handling of the same error, so a user who
+              // opted out of DM sync doesn't get a spurious reconnect prompt
+              // while the channels behind this DM in `byConversation` go
+              // unswept.
+              console.warn(
+                `reconcileReadState: skipping ${conversationId}: ${error.method} → missing_scope`
+              );
+              continue;
+            }
+            if (error.slackError === "no_permission") {
+              // This conversation specifically is unreachable (e.g. the user
+              // was removed from it) — not evidence the token itself is dead.
+              console.warn(
+                `reconcileReadState: skipping ${conversationId}: ${error.method} → no_permission`
+              );
+              continue;
+            }
             if (SLACK_AUTH_ERRORS.has(error.slackError)) {
               await this.tools.integrations.markNeedsReauth(channelId);
               return;
@@ -2153,6 +2191,10 @@ export class Slack extends Connector<Slack> {
           // save outright when the item's date predates the plan's sync
           // history limit. Title/preview/notes are omitted so the upsert
           // preserves whatever is stored rather than rewriting content.
+          // `author: null` documents that this upsert is genuinely
+          // authorless — it only flips `unread`, never introduces content —
+          // and silences `saveLink`'s development-time unattributed-link
+          // warning that would otherwise fire on every reconciled link.
           await this.tools.integrations.saveLink({
             // Reuse the connector's own source helper — a reconcile upsert
             // that guessed the key would create a second, empty thread
@@ -2161,6 +2203,7 @@ export class Slack extends Connector<Slack> {
             channelId: conversationId,
             type: (await this.isKnownDMChannel(conversationId)) ? "dm" : "thread",
             unread: false,
+            author: null,
           });
           resolved.push(key);
         }
@@ -2183,12 +2226,16 @@ export class Slack extends Connector<Slack> {
       console.error("reconcileReadState: unexpected error", error);
       throw error;
     } finally {
-      if (scheduleDaily) {
-        const daily = await this.callback(this.reconcileReadState, channelId);
-        await this.scheduleRecurring(`read-state-sync:${channelId}`, daily, {
-          intervalMs: 24 * 60 * 60 * 1000,
-        });
-      }
+      // Unconditional: nothing in this function suppresses the daily
+      // reschedule (unlike `syncMembers`, which stops its own chain on a
+      // permanent error) — even a dead-token pass is worth retrying
+      // tomorrow, since the user may have reauthed by then. The top-of-
+      // function guard above is what stops a REDUNDANT chain from ever being
+      // armed; this always re-arms the one chain that got past it.
+      const daily = await this.callback(this.reconcileReadState, channelId);
+      await this.scheduleRecurring(`read-state-sync:${channelId}`, daily, {
+        intervalMs: ONE_DAY_MS,
+      });
     }
   }
 

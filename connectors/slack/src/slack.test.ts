@@ -4212,6 +4212,112 @@ describe("reconcileReadState", () => {
     expect(store.map.has("read_anchor:C1:1700000000.000001")).toBe(true);
     expect(store.map.has("read_anchor:C2:1700000000.000003")).toBe(true);
   });
+
+  it("skips a conversation whose optional dms scope was declined, without abandoning the rest", async () => {
+    const { slack, store, api, saveLink, markNeedsReauth } = setup(
+      {
+        "read_anchor:C1:1700000000.000001": anchor(),
+        "read_anchor:C2:1700000000.000003": anchor({ newest: "1700000000.000003" }),
+      },
+      "1700000005.000000"
+    );
+    // missing_scope is a member of SLACK_AUTH_ERRORS too, but a declined
+    // optional scope group is a user decision, not a broken connection —
+    // mirrors onThreadRead's handling of the same error.
+    api.getConversationInfo
+      .mockRejectedValueOnce(
+        new SlackPermanentError("conversations.info", "missing_scope")
+      )
+      .mockResolvedValue({ lastRead: "1700000005.000000" });
+
+    await slack.reconcileReadState("C1");
+
+    expect(markNeedsReauth).not.toHaveBeenCalled();
+    expect(saveLink).toHaveBeenCalledTimes(1);
+    expect(store.map.has("read_anchor:C1:1700000000.000001")).toBe(true);
+    expect(store.map.has("read_anchor:C2:1700000000.000003")).toBe(false);
+  });
+
+  it("skips a conversation the token can no longer reach (no_permission), without abandoning the rest", async () => {
+    const { slack, store, api, saveLink, markNeedsReauth } = setup(
+      {
+        "read_anchor:C1:1700000000.000001": anchor(),
+        "read_anchor:C2:1700000000.000003": anchor({ newest: "1700000000.000003" }),
+      },
+      "1700000005.000000"
+    );
+    // no_permission on THIS conversation means the user lost access to it
+    // specifically — not evidence the token itself is dead.
+    api.getConversationInfo
+      .mockRejectedValueOnce(
+        new SlackPermanentError("conversations.info", "no_permission")
+      )
+      .mockResolvedValue({ lastRead: "1700000005.000000" });
+
+    await slack.reconcileReadState("C1");
+
+    expect(markNeedsReauth).not.toHaveBeenCalled();
+    expect(saveLink).toHaveBeenCalledTimes(1);
+    expect(store.map.has("read_anchor:C1:1700000000.000001")).toBe(true);
+    expect(store.map.has("read_anchor:C2:1700000000.000003")).toBe(false);
+  });
+
+  it("resolves a DM anchor to the DM identity source, never an app_redirect URL", async () => {
+    // The DM anchor key (`read_anchor:D1:D1`) parses to a threadTs of "D1" —
+    // a non-timestamp fed straight into conversationSource(). If
+    // isKnownDMChannel ever returned false here, the sweep would synthesise
+    // a bogus app_redirect URL and create a brand-new, empty thread instead
+    // of updating the real DM link.
+    const { slack, saveLink } = setup(
+      { "read_anchor:D1:D1": anchor() },
+      "1700000005.000000"
+    );
+    vi.spyOn(
+      slack as unknown as { isKnownDMChannel: (c: string) => Promise<boolean> },
+      "isKnownDMChannel"
+    ).mockResolvedValue(true);
+
+    await slack.reconcileReadState("C1");
+
+    expect(saveLink).toHaveBeenCalledTimes(1);
+    const saved = saveLink.mock.calls[0][0];
+    expect(saved.type).toBe("dm");
+    expect(saved.source).not.toMatch(/^https:\/\/slack\.com\/app_redirect/);
+    expect(saved.source).toBe("slack:chat:D1");
+  });
+
+  it("does no work on a second invocation within 24h of the last sweep", async () => {
+    // The anchor stays behind the channel cursor (verdict "unread"), so it
+    // survives the first pass — proving the second call's silence comes from
+    // the top-of-function guard, not from there being nothing left to sweep.
+    const { slack, api } = setup(
+      { "read_anchor:C1:1700000005.000000": anchor({ newest: "1700000005.000000" }) },
+      "1700000000.000001"
+    );
+
+    await slack.reconcileReadState("C1");
+    expect(api.getConversationInfo).toHaveBeenCalledTimes(1);
+
+    await slack.reconcileReadState("C1");
+    expect(api.getConversationInfo).toHaveBeenCalledTimes(1);
+  });
+
+  it("arms a fresh 24h chain for a second channel once the guard has passed", async () => {
+    // Sanity check on the other side of the same guard: once 24h have
+    // elapsed (simulated by advancing the mocked clock), a differently-keyed
+    // invocation is free to sweep again.
+    const { slack, api } = setup(
+      { "read_anchor:C1:1700000005.000000": anchor({ newest: "1700000005.000000" }) },
+      "1700000000.000001"
+    );
+
+    await slack.reconcileReadState("C1");
+    expect(api.getConversationInfo).toHaveBeenCalledTimes(1);
+
+    vi.spyOn(Date, "now").mockReturnValue(NOW + 24 * 60 * 60 * 1000 + 1);
+    await slack.reconcileReadState("C2");
+    expect(api.getConversationInfo).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("onThreadRead", () => {
