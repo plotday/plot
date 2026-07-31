@@ -834,28 +834,31 @@ export class Slack extends Connector<Slack> {
         // and rewinding what this one just wrote.
         await this.set(this.dmHeadKey(channelId), true);
       }
-      // Anchor the conversation for the daily sweep. A direct conversation is
-      // never `threaded`: this one permanent link flattens Slack's reply
-      // threads into a running conversation, so the CONVERSATION cursor is the
-      // only cursor that describes it. Keyed on the conversation id in both
-      // positions — there is no thread root to key on.
-      //
-      // Only when these messages ARE the conversation head. A reaction or a
-      // save can name a message of any age, and an anchor rewound to an older
-      // `newest` would make the sweep declare the conversation read on a
-      // cursor that has not actually reached its latest message.
-      //
-      // Only when the link is NOT already read. `assembleSlackDmLink` sets
-      // `unread: false` for `initialSync`, which already asserts read — an
-      // anchor for it could only ever re-assert what is already true, and
-      // would outlive a later manual "mark unread" in Plot, letting the sweep
-      // silently revert it once Slack's cursor caught up.
-      if (advanceConversationHead && link.unread !== false) {
-        const dmAnchor = deriveReadAnchor(kept, { direct: true, at: Date.now() });
-        if (dmAnchor) {
-          await this.set(this.readAnchorKey(channelId, channelId), dmAnchor);
-        }
-      }
+      // Anchor the conversation for the daily sweep via the shared helper
+      // below (see `applyReadAnchor`). A direct conversation is never
+      // `threaded`: this one permanent link flattens Slack's reply threads
+      // into a running conversation, so the CONVERSATION cursor is the only
+      // cursor that describes it, and it is keyed on the conversation id in
+      // both positions — there is no thread root to key on. There is no
+      // live, cursor-informed "read" verdict for a DM (the channel cursor is
+      // settled only by the daily `reconcileReadState` sweep), so `read` is
+      // always `false` here; the helper's write gate
+      // (`advanceConversationHead && link.unread !== false`) still applies,
+      // covering both "these messages are not the conversation head" (a
+      // reaction or save naming an older message, which must not rewind the
+      // anchor) and "the link is already read" (`assembleSlackDmLink` sets
+      // `unread: false` for `initialSync`, so an anchor for it could only
+      // ever re-assert what is already true and would outlive a later manual
+      // "mark unread" in Plot).
+      await this.applyReadAnchor({
+        channelId,
+        anchorId: channelId,
+        messages: kept,
+        direct: true,
+        link,
+        read: false,
+        advanceConversationHead,
+      });
       return link;
     }
 
@@ -882,39 +885,102 @@ export class Slack extends Connector<Slack> {
       syncableId: channelId,
     };
     if (messages[0]) link.facets = slackFacets(messages[0], channelId);
-    // Apply Slack's per-thread read cursor, and record what still needs
-    // settling. `deriveReadAnchor` tells us which cursor governs this link: a
-    // root-only channel message lives purely in the channel timeline, so only
-    // the daily sweep's `conversations.info` can speak for it.
+    // Apply Slack's per-thread read cursor via the same shared helper the DM
+    // branch above uses (see `applyReadAnchor`). A root-only channel message
+    // has no thread cursor of its own — only the daily sweep's
+    // `conversations.info` can speak for it — so `threaded` and the read
+    // verdict below are both false, and the helper's write gate
+    // (`advanceConversationHead && link.unread !== false`) is what stops a
+    // stale anchor from being recreated when nothing new actually arrived
+    // (e.g. `refreshSlackThread`'s reaction refresh, which re-fetches with
+    // `advanceConversationHead: false`).
     //
     // Read from THIS response, never from a cache: the parent's
     // `unread_count` is computed after the reply we are saving landed, so a
     // genuine new-message unread can never be suppressed by a stale cursor.
-    //
-    // The anchor's EXISTENCE is the transition gate — it means "not yet marked
-    // read for this `newest` ts". Deleting it on a successful mark-read is
-    // what makes a later manual "mark unread" in Plot stick: the sweep has
-    // nothing left to act on until new content recreates the anchor.
     //
     // `initialSync` already asserts read (it sets `unread: false`), so those
     // links need no anchor at all — the sweep would only re-assert what is
     // already true.
     const threadTs =
       (link.meta?.threadTs as string | undefined) ?? messages[0]?.ts;
-    const anchor = deriveReadAnchor(messages, { direct: false, at: Date.now() });
-    if (anchor && threadTs) {
-      const anchorKey = this.readAnchorKey(channelId, threadTs);
+    if (threadTs) {
+      const threaded = Boolean(
+        deriveReadAnchor(messages, { direct: false, at: Date.now() })?.threaded
+      );
       const read =
         link.unread === false ||
-        (anchor.threaded && threadReadVerdict(messages[0]) === "read");
-      if (read) {
-        link.unread = false;
-        await this.clear(anchorKey);
-      } else {
-        await this.set(anchorKey, anchor);
-      }
+        (threaded && threadReadVerdict(messages[0]) === "read");
+      await this.applyReadAnchor({
+        channelId,
+        anchorId: threadTs,
+        messages,
+        direct: false,
+        link,
+        read,
+        advanceConversationHead,
+      });
     }
     return link;
+  }
+
+  /**
+   * Settle one link's read-anchor bookkeeping: mark it read (and drop the
+   * anchor) when the caller already has a cursor-backed verdict, or decide
+   * whether an anchor still needs to be (re)written to track it.
+   *
+   * The anchor's EXISTENCE is the transition gate for
+   * {@link reconcileReadState}: present means "not yet marked read for this
+   * `newest` ts". Deleting it on a successful mark-read is what makes a later
+   * manual "mark unread" in Plot stick — the sweep has nothing left to act on
+   * until new content recreates the anchor.
+   *
+   * Shared by both {@link buildConversationLink} branches (direct
+   * conversation and channel thread) so one gating rule governs both writes.
+   * They used to each inline their own version of this and drifted apart: the
+   * channel-thread copy wrote an anchor unconditionally whenever the verdict
+   * wasn't "read", even on a `refreshSlackThread` reaction refresh that asked
+   * `advanceConversationHead: false` — a root-only message has no thread
+   * cursor, so that verdict is always "unknown", and the anchor was
+   * recreated with the same `newest` even though no new content had arrived,
+   * letting the next sweep re-assert read over a user's manual unread.
+   *
+   * `advanceConversationHead` gates the WRITE only, never the read-clear:
+   * solid evidence that a cursor already says read is safe to act on no
+   * matter why the caller fetched these messages, but recreating a "not yet
+   * read" anchor is only valid when the caller is reporting the
+   * conversation's actual current head.
+   */
+  private async applyReadAnchor(opts: {
+    channelId: string;
+    /** Thread root ts, or the conversation id for a direct conversation. */
+    anchorId: string;
+    messages: SlackMessage[];
+    direct: boolean;
+    link: { unread?: boolean };
+    /** Did a cursor say this link is read? */
+    read: boolean;
+    advanceConversationHead: boolean;
+  }): Promise<void> {
+    const {
+      channelId,
+      anchorId,
+      messages,
+      direct,
+      link,
+      read,
+      advanceConversationHead,
+    } = opts;
+    const anchorKey = this.readAnchorKey(channelId, anchorId);
+    if (read) {
+      link.unread = false;
+      await this.clear(anchorKey);
+      return;
+    }
+    if (advanceConversationHead && link.unread !== false) {
+      const anchor = deriveReadAnchor(messages, { direct, at: Date.now() });
+      if (anchor) await this.set(anchorKey, anchor);
+    }
   }
 
   /**

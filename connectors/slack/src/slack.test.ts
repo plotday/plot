@@ -3949,6 +3949,53 @@ describe("read anchors", () => {
     expect(link?.unread).toBe(false);
     expect(store.map.has("read_anchor:D1:D1")).toBe(false);
   });
+
+  it("does not recreate a channel-thread anchor on a reaction refresh (advanceConversationHead: false)", async () => {
+    // Regression test: `refreshSlackThread` re-fetches with
+    // `advanceConversationHead: false` for a reaction refresh. A root-only
+    // channel message has no thread cursor of its own, so the read verdict
+    // is "unknown" — that must NOT fall through to rewriting the anchor,
+    // since no new content actually arrived.
+    const store = makeStore({
+      "read_anchor:C1:1700000000.000001": {
+        newest: "1700000000.000001",
+        threaded: false,
+        at: 1000,
+      },
+    });
+    const slack = makeSlack({
+      store,
+      integrationsGet: vi.fn(),
+      createWebhook: vi.fn(),
+    });
+    vi.spyOn(
+      slack as unknown as { isKnownDMChannel: (c: string) => Promise<boolean> },
+      "isKnownDMChannel"
+    ).mockResolvedValue(false);
+    vi.spyOn(
+      slack as unknown as {
+        customEmojiContext: (c: string) => Promise<{ teamId?: string }>;
+      },
+      "customEmojiContext"
+    ).mockResolvedValue({});
+
+    await (slack as unknown as {
+      buildConversationLink: (o: unknown) => Promise<unknown>;
+    }).buildConversationLink({
+      channelId: "C1",
+      messages: [parent],
+      initialSync: false,
+      advanceConversationHead: false,
+    });
+
+    const anchorSetCalls = store.set.mock.calls.filter(
+      (call) => call[0] === "read_anchor:C1:1700000000.000001"
+    );
+    expect(anchorSetCalls).toHaveLength(0);
+    expect(
+      (store.map.get("read_anchor:C1:1700000000.000001") as { at: number }).at
+    ).toBe(1000);
+  });
 });
 
 describe("reconcileReadState", () => {
