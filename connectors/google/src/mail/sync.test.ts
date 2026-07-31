@@ -16,6 +16,7 @@ import {
   onCreateLinkFn,
   onNoteCreatedFn,
   onNoteReactionChangedFn,
+  drainPendingRsvpsFn,
   processEmailThreadsFn,
   REACTION_SEND_DELAY_MS,
   sendReactionEmailFn,
@@ -91,6 +92,7 @@ function makeHost(): { host: GmailSyncHost; store: Map<string, unknown> } {
         saveNote: vi.fn(async () => null),
         channelSyncCompleted: vi.fn(async () => {}),
         setThreadToDo: vi.fn(async () => {}),
+        archiveLinks: vi.fn(async () => {}),
       },
       files: { read: vi.fn() },
       network: { createWebhook: vi.fn(), deleteWebhook: vi.fn() },
@@ -1145,6 +1147,104 @@ describe("processEmailThreadsFn — attendee responses fold onto the event", () 
       (n) => (n as { key?: string }).key
     );
     expect(keys).toEqual(["rsvp-orphan-msg-1"]);
+  });
+
+  it("records a pending retry when the event has not synced yet", async () => {
+    const { host, store } = makeHost();
+    captureSaves(host, { noteId: null });
+
+    await processEmailThreadsFn(
+      host,
+      [rsvpThread("rsvp-pending", replyIcs("DECLINED"))],
+      false,
+      "INBOX"
+    );
+
+    expect(store.get("pending-rsvp:rsvp-pending")).toMatchObject({
+      threadId: "rsvp-pending",
+    });
+  });
+
+  it("does not track a conversation that also carries real correspondence", async () => {
+    const { host, store } = makeHost();
+    captureSaves(host, { noteId: null });
+
+    await processEmailThreadsFn(
+      host,
+      [
+        rsvpThread("rsvp-mixed", replyIcs("DECLINED"), {
+          withPlainReply: true,
+        }),
+      ],
+      false,
+      "INBOX"
+    );
+
+    // Archiving later must never hide a human reply, so a mixed conversation
+    // is left alone entirely.
+    expect(store.get("pending-rsvp:rsvp-mixed")).toBeUndefined();
+  });
+});
+
+describe("drainPendingRsvpsFn — retract once the event arrives", () => {
+  /** Seeds one pending entry and the Gmail thread the retry re-reads. */
+  function seedPending(
+    host: GmailSyncHost,
+    store: Map<string, unknown>,
+    opts: { firstSeen?: string } = {}
+  ) {
+    const gmailThread = rsvpThread("rsvp-late", replyIcs("ACCEPTED"));
+    store.set("pending-rsvp:rsvp-late", {
+      threadId: "rsvp-late",
+      channelId: "INBOX",
+      firstSeen: opts.firstSeen ?? new Date().toISOString(),
+    });
+    (host.tools.store.list as ReturnType<typeof vi.fn>).mockImplementation(
+      async (prefix: string) =>
+        [...store.keys()].filter((k) => k.startsWith(prefix))
+    );
+    vi.spyOn(GmailApi.prototype, "getThread").mockResolvedValue(gmailThread);
+  }
+
+  it("folds the response and archives the standalone email thread", async () => {
+    const { host, store } = makeHost();
+    const { notes } = captureSaves(host, { noteId: "N" });
+    seedPending(host, store);
+
+    await drainPendingRsvpsFn(host);
+
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toMatchObject({
+      thread: { source: "icaluid:uid-rsvp@google.com" },
+    });
+    expect(host.tools.integrations.archiveLinks).toHaveBeenCalledWith({
+      meta: { threadId: "rsvp-late" },
+    });
+    expect(store.has("pending-rsvp:rsvp-late")).toBe(false);
+  });
+
+  it("keeps the entry and archives nothing while the event is still missing", async () => {
+    const { host, store } = makeHost();
+    captureSaves(host, { noteId: null });
+    seedPending(host, store);
+
+    await drainPendingRsvpsFn(host);
+
+    expect(host.tools.integrations.archiveLinks).not.toHaveBeenCalled();
+    expect(store.has("pending-rsvp:rsvp-late")).toBe(true);
+  });
+
+  it("gives up on an entry older than the retry window", async () => {
+    const { host, store } = makeHost();
+    captureSaves(host, { noteId: "N" });
+    seedPending(host, store, {
+      firstSeen: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+
+    await drainPendingRsvpsFn(host);
+
+    expect(host.tools.integrations.archiveLinks).not.toHaveBeenCalled();
+    expect(store.has("pending-rsvp:rsvp-late")).toBe(false);
   });
 });
 
