@@ -30,6 +30,12 @@ function makeStore(initial: Record<string, unknown> = {}) {
     list: vi.fn(async (prefix: string) =>
       [...map.keys()].filter((k) => k.startsWith(prefix))
     ),
+    listEntries: vi.fn(async (prefix: string) =>
+      [...map.entries()].filter(([k]) => k.startsWith(prefix))
+    ),
+    clearMany: vi.fn(async (keys: string[]) => {
+      for (const key of keys) map.delete(key);
+    }),
   };
 }
 
@@ -3942,5 +3948,198 @@ describe("read anchors", () => {
 
     expect(link?.unread).toBe(false);
     expect(store.map.has("read_anchor:D1:D1")).toBe(false);
+  });
+});
+
+describe("reconcileReadState", () => {
+  const NOW = 1_700_000_000_000;
+
+  function setup(anchors: Record<string, unknown>, lastRead: string | null) {
+    const store = makeStore(anchors);
+    const saveLink = vi.fn().mockResolvedValue("thread-1");
+    const tools = {
+      store,
+      integrations: { get: vi.fn(), saveLink },
+      network: { createWebhook: vi.fn() },
+      files: {},
+    };
+    const slack = new Slack(
+      "twist-instance-1" as never,
+      { getTools: () => tools } as never
+    );
+    const api = { getConversationInfo: vi.fn().mockResolvedValue({ lastRead }) };
+    vi.spyOn(
+      slack as unknown as { getApi: (c: string) => Promise<unknown> },
+      "getApi"
+    ).mockResolvedValue(api);
+    vi.spyOn(
+      slack as unknown as { isKnownDMChannel: (c: string) => Promise<boolean> },
+      "isKnownDMChannel"
+    ).mockResolvedValue(false);
+    // The `finally` re-arms the daily chain; neither the callbacks nor the
+    // tasks tool is in the test tool shed, so both are stubbed.
+    vi.spyOn(
+      slack as unknown as { callback: (...a: unknown[]) => Promise<unknown> },
+      "callback"
+    ).mockResolvedValue("cb-token");
+    vi.spyOn(
+      slack as unknown as { scheduleRecurring: (...a: unknown[]) => Promise<void> },
+      "scheduleRecurring"
+    ).mockResolvedValue(undefined);
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    return { slack, store, saveLink, api };
+  }
+
+  const anchor = (over: Partial<{ newest: string; threaded: boolean; at: number }> = {}) => ({
+    newest: "1700000000.000001",
+    threaded: false,
+    at: NOW,
+    ...over,
+  });
+
+  it("marks a root-only link read once the channel cursor passes it", async () => {
+    const { slack, store, saveLink } = setup(
+      { "read_anchor:C1:1700000000.000001": anchor() },
+      "1700000005.000000"
+    );
+
+    await slack.reconcileReadState("C1");
+
+    expect(saveLink).toHaveBeenCalledTimes(1);
+    const saved = saveLink.mock.calls[0][0];
+    expect(saved.unread).toBe(false);
+    expect(saved.channelId).toBe("C1");
+    expect(store.map.has("read_anchor:C1:1700000000.000001")).toBe(false);
+  });
+
+  it("never sends `created` on the reconcile upsert", async () => {
+    const { slack, saveLink } = setup(
+      { "read_anchor:C1:1700000000.000001": anchor() },
+      "1700000005.000000"
+    );
+
+    await slack.reconcileReadState("C1");
+
+    // saveLink drops an `unread: false` save whose date predates the plan's
+    // sync-history limit, so a reconcile upsert must carry no date at all.
+    expect(saveLink.mock.calls[0][0]).not.toHaveProperty("created");
+    expect(saveLink.mock.calls[0][0]).not.toHaveProperty("schedules");
+  });
+
+  it("does not rewrite content on the reconcile upsert", async () => {
+    const { slack, saveLink } = setup(
+      { "read_anchor:C1:1700000000.000001": anchor() },
+      "1700000005.000000"
+    );
+
+    await slack.reconcileReadState("C1");
+
+    const saved = saveLink.mock.calls[0][0];
+    expect(saved).not.toHaveProperty("title");
+    expect(saved).not.toHaveProperty("preview");
+    expect(saved).not.toHaveProperty("notes");
+  });
+
+  it("leaves a link alone while the channel cursor is still behind it", async () => {
+    const { slack, store, saveLink } = setup(
+      { "read_anchor:C1:1700000005.000000": anchor({ newest: "1700000005.000000" }) },
+      "1700000000.000001"
+    );
+
+    await slack.reconcileReadState("C1");
+
+    expect(saveLink).not.toHaveBeenCalled();
+    expect(store.map.has("read_anchor:C1:1700000005.000000")).toBe(true);
+  });
+
+  it("skips threaded anchors — the channel cursor does not speak for them", async () => {
+    const { slack, store, saveLink } = setup(
+      { "read_anchor:C1:1700000000.000001": anchor({ threaded: true }) },
+      "1700000005.000000"
+    );
+
+    await slack.reconcileReadState("C1");
+
+    expect(saveLink).not.toHaveBeenCalled();
+    expect(store.map.has("read_anchor:C1:1700000000.000001")).toBe(true);
+  });
+
+  it("abstains when Slack returns no cursor", async () => {
+    const { slack, store, saveLink } = setup(
+      { "read_anchor:C1:1700000000.000001": anchor() },
+      null
+    );
+
+    await slack.reconcileReadState("C1");
+
+    expect(saveLink).not.toHaveBeenCalled();
+    expect(store.map.has("read_anchor:C1:1700000000.000001")).toBe(true);
+  });
+
+  it("issues one conversations.info per conversation, not per anchor", async () => {
+    const { slack, api } = setup(
+      {
+        "read_anchor:C1:1700000000.000001": anchor(),
+        "read_anchor:C1:1700000000.000002": anchor({ newest: "1700000000.000002" }),
+        "read_anchor:C2:1700000000.000003": anchor({ newest: "1700000000.000003" }),
+      },
+      "1700000005.000000"
+    );
+
+    await slack.reconcileReadState("C1");
+
+    expect(api.getConversationInfo).toHaveBeenCalledTimes(2);
+  });
+
+  it("drops anchors past the retention window without marking them read", async () => {
+    const stale = NOW - 31 * 24 * 60 * 60 * 1000;
+    const { slack, store, saveLink } = setup(
+      { "read_anchor:C1:1700000000.000001": anchor({ at: stale }) },
+      "1700000000.000000"
+    );
+
+    await slack.reconcileReadState("C1");
+
+    expect(saveLink).not.toHaveBeenCalled();
+    expect(store.map.has("read_anchor:C1:1700000000.000001")).toBe(false);
+  });
+
+  it("stops the pass and keeps every remaining anchor when Slack rate limits", async () => {
+    const { slack, store, api } = setup(
+      {
+        "read_anchor:C1:1700000000.000001": anchor(),
+        "read_anchor:C2:1700000000.000003": anchor({ newest: "1700000000.000003" }),
+      },
+      "1700000005.000000"
+    );
+    api.getConversationInfo.mockRejectedValue(
+      new SlackRateLimitedError("conversations.info", 60_000)
+    );
+
+    await slack.reconcileReadState("C1");
+
+    expect(store.map.has("read_anchor:C1:1700000000.000001")).toBe(true);
+    expect(store.map.has("read_anchor:C2:1700000000.000003")).toBe(true);
+  });
+
+  it("skips one unreachable conversation without abandoning the rest", async () => {
+    const { slack, store, api, saveLink } = setup(
+      {
+        "read_anchor:C1:1700000000.000001": anchor(),
+        "read_anchor:C2:1700000000.000003": anchor({ newest: "1700000000.000003" }),
+      },
+      "1700000005.000000"
+    );
+    api.getConversationInfo
+      .mockRejectedValueOnce(
+        new SlackPermanentError("conversations.info", "channel_not_found")
+      )
+      .mockResolvedValue({ lastRead: "1700000005.000000" });
+
+    await slack.reconcileReadState("C1");
+
+    expect(saveLink).toHaveBeenCalledTimes(1);
+    expect(store.map.has("read_anchor:C1:1700000000.000001")).toBe(true);
+    expect(store.map.has("read_anchor:C2:1700000000.000003")).toBe(false);
   });
 });
