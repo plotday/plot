@@ -3907,9 +3907,70 @@ describe("read anchors", () => {
     const anchor = store.map.get("read_anchor:D1:D1") as {
       newest: string;
       threaded: boolean;
+      title?: string | null;
     };
     expect(anchor.newest).toBe("1700000002.000000");
     expect(anchor.threaded).toBe(false);
+    // No `userInfos` was passed, so assembleSlackDmLink omits `title` (see
+    // its own comment on why — the raw Slack user id would otherwise
+    // permanently rename a real person's thread). Nothing else supplied one
+    // here, so the anchor genuinely has none to carry.
+    expect(anchor.title).toBeUndefined();
+  });
+
+  it("carries a DM anchor's previously-stored title forward when the new link has none", async () => {
+    // assembleSlackDmLink omits `title` whenever `users.info` was
+    // unavailable — a real, recurring window, not an edge case. The anchor
+    // must not lose a title it already had just because a later sync landed
+    // in that window; reconcileReadState needs it to survive an
+    // archived-priority upsert (see SlackReadAnchor's doc comment).
+    const store = makeStore({
+      "read_anchor:D1:D1": {
+        newest: "1699999999.000000",
+        threaded: false,
+        at: 1000,
+        title: "Alice Example",
+      },
+    });
+    const slack = makeSlack({
+      store,
+      integrationsGet: vi.fn(),
+      createWebhook: vi.fn(),
+    });
+    vi.spyOn(
+      slack as unknown as { isKnownDMChannel: (c: string) => Promise<boolean> },
+      "isKnownDMChannel"
+    ).mockResolvedValue(true);
+    vi.spyOn(
+      slack as unknown as {
+        customEmojiContext: (c: string) => Promise<{ teamId?: string }>;
+      },
+      "customEmojiContext"
+    ).mockResolvedValue({});
+    vi.spyOn(
+      slack as unknown as {
+        dmCounterpartyUserId: (c: string) => Promise<string | null>;
+      },
+      "dmCounterpartyUserId"
+    ).mockResolvedValue("U2");
+
+    await (slack as unknown as {
+      buildConversationLink: (o: unknown) => Promise<unknown>;
+    }).buildConversationLink({
+      channelId: "D1",
+      // No userInfos passed — assembleSlackDmLink omits `title` on this link.
+      messages: [
+        { type: "message", ts: "1700000000.000001", user: "U2", text: "hi again" },
+      ],
+      initialSync: false,
+    });
+
+    const anchor = store.map.get("read_anchor:D1:D1") as {
+      newest: string;
+      title?: string | null;
+    };
+    expect(anchor.newest).toBe("1700000000.000001");
+    expect(anchor.title).toBe("Alice Example");
   });
 
   it("leaves no anchor for a DM's initial sync — the link is already read", async () => {
@@ -4038,7 +4099,14 @@ describe("reconcileReadState", () => {
     return { slack, store, saveLink, api, markNeedsReauth };
   }
 
-  const anchor = (over: Partial<{ newest: string; threaded: boolean; at: number }> = {}) => ({
+  const anchor = (
+    over: Partial<{
+      newest: string;
+      threaded: boolean;
+      at: number;
+      title: string | null;
+    }> = {}
+  ) => ({
     newest: "1700000000.000001",
     threaded: false,
     at: NOW,
@@ -4058,6 +4126,28 @@ describe("reconcileReadState", () => {
     expect(saved.unread).toBe(false);
     expect(saved.channelId).toBe("C1");
     expect(store.map.has("read_anchor:C1:1700000000.000001")).toBe(false);
+  });
+
+  it("sends the anchor's title on the reconcile upsert, so an archived-priority thread keeps its real title", async () => {
+    const { slack, saveLink } = setup(
+      { "read_anchor:C1:1700000000.000001": anchor({ title: "Real title" }) },
+      "1700000005.000000"
+    );
+
+    await slack.reconcileReadState("C1");
+
+    expect(saveLink.mock.calls[0][0].title).toBe("Real title");
+  });
+
+  it("omits `title` entirely when the anchor has none — never worse than today", async () => {
+    const { slack, saveLink } = setup(
+      { "read_anchor:C1:1700000000.000001": anchor() },
+      "1700000005.000000"
+    );
+
+    await slack.reconcileReadState("C1");
+
+    expect(saveLink.mock.calls[0][0]).not.toHaveProperty("title");
   });
 
   it("never sends `created` on the reconcile upsert", async () => {

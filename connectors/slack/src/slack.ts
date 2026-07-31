@@ -957,6 +957,12 @@ export class Slack extends Connector<Slack> {
    * matter why the caller fetched these messages, but recreating a "not yet
    * read" anchor is only valid when the caller is reporting the
    * conversation's actual current head.
+   *
+   * Also carries the link's `title` onto the anchor (see `SlackReadAnchor`
+   * for why `reconcileReadState` needs it). `assembleSlackDmLink` deliberately
+   * omits `title` when `users.info` was unavailable, so a link with no title
+   * here does not mean "no title exists" — it falls back to whatever title
+   * is already on the stored anchor rather than dropping it for that window.
    */
   private async applyReadAnchor(opts: {
     channelId: string;
@@ -964,7 +970,7 @@ export class Slack extends Connector<Slack> {
     anchorId: string;
     messages: SlackMessage[];
     direct: boolean;
-    link: { unread?: boolean };
+    link: { unread?: boolean; title?: string | null };
     /** Did a cursor say this link is read? */
     read: boolean;
     advanceConversationHead: boolean;
@@ -985,7 +991,12 @@ export class Slack extends Connector<Slack> {
       return;
     }
     if (advanceConversationHead && link.unread !== false) {
-      const anchor = deriveReadAnchor(messages, { direct, at: Date.now() });
+      let title = link.title;
+      if (!title) {
+        const existing = await this.get<SlackReadAnchor>(anchorKey);
+        title = existing?.title ?? undefined;
+      }
+      const anchor = deriveReadAnchor(messages, { direct, at: Date.now(), title });
       if (anchor) await this.set(anchorKey, anchor);
     }
   }
@@ -2193,15 +2204,38 @@ export class Slack extends Connector<Slack> {
           const threadTs = key.slice(
             `read_anchor:${conversationId}:`.length
           );
-          // Minimal upsert. `created` is omitted deliberately: `saveLink`
-          // reads `unread === false` as the initial-sync signal and DROPS the
-          // save outright when the item's date predates the plan's sync
-          // history limit. Title/preview/notes are omitted so the upsert
-          // preserves whatever is stored rather than rewriting content.
+          // Minimal upsert. `created` and `schedules` are omitted
+          // deliberately: `saveLink` reads `unread === false` as the
+          // initial-sync signal and DROPS the save outright when the item's
+          // date predates the plan's sync history limit. `preview` and
+          // `notes` are omitted too, so the upsert preserves whatever
+          // content is stored rather than rewriting it — `preview`'s
+          // platform default derives from the notes, so with none supplied
+          // it resolves to null and COALESCE falls through to the stored
+          // value.
+          //
+          // `title` is the one field that must be RE-SENT, not omitted:
+          // `upsert_thread` takes an "archived" code path whenever the
+          // user's `thread_priority` row points at an archived priority
+          // (they archived the focus this thread was filed under) or is
+          // missing, and on that path the platform's title default is the
+          // literal string "Untitled" — never null — so an omitted title
+          // there always loses to it, destroying the thread's real title.
+          // Sending `title` also re-writes it on the normal, non-archived
+          // path, which is harmless: a channel thread's title is derived
+          // deterministically from its root message and a DM's is the
+          // counterparty name, so both are re-sent unchanged by every
+          // ordinary sync anyway — this isn't a new source of truth, just
+          // re-asserting the same value. Sourced from the anchor (carried
+          // there by `applyReadAnchor`, since this upsert has no access to
+          // the live Slack message) and omitted here when the anchor has
+          // none — never worse than today's behaviour.
+          //
           // `author: null` documents that this upsert is genuinely
-          // authorless — it only flips `unread`, never introduces content —
-          // and silences `saveLink`'s development-time unattributed-link
-          // warning that would otherwise fire on every reconciled link.
+          // authorless — it only flips `unread` (and now `title`), never
+          // introduces new content — and silences `saveLink`'s
+          // development-time unattributed-link warning that would otherwise
+          // fire on every reconciled link.
           await this.tools.integrations.saveLink({
             // Reuse the connector's own source helper — a reconcile upsert
             // that guessed the key would create a second, empty thread
@@ -2211,6 +2245,7 @@ export class Slack extends Connector<Slack> {
             type: (await this.isKnownDMChannel(conversationId)) ? "dm" : "thread",
             unread: false,
             author: null,
+            ...(anchor.title ? { title: anchor.title } : {}),
           });
           resolved.push(key);
         }

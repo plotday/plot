@@ -88,11 +88,22 @@ export function threadReadVerdict(
  * governs: a channel link holding real thread replies is settled by the thread
  * cursor on the live path, everything else by the channel cursor in the daily
  * sweep. `at` is the write time, for the retention drop.
+ *
+ * `title` rides along so `reconcileReadState`'s upsert can re-send it —
+ * `upsert_thread` takes an "archived" code path whenever the user's
+ * `thread_priority` row points at an archived priority (or is missing), and
+ * on that path the platform's title default is the literal string
+ * "Untitled", never null, so an upsert that omitted `title` there would
+ * destroy the thread's real one. `undefined`/`null` when the link that wrote
+ * this anchor had no title to carry (see `applyReadAnchor` in slack.ts,
+ * which falls back to a previously-stored anchor's title rather than losing
+ * it in that case).
  */
 export type SlackReadAnchor = {
   newest: string;
   threaded: boolean;
   at: number;
+  title?: string | null;
 };
 
 /**
@@ -101,10 +112,14 @@ export type SlackReadAnchor = {
  * A direct conversation is never `threaded`: its link flattens Slack's reply
  * threads into one running conversation, so the conversation cursor is the
  * only cursor that describes it.
+ *
+ * `title` is accepted rather than inferred from `messages`: only the caller
+ * has the link (and, for the carry-forward case, the previously-stored
+ * anchor) to source it from.
  */
 export function deriveReadAnchor(
   messages: SlackMessage[],
-  opts: { direct: boolean; at: number }
+  opts: { direct: boolean; at: number; title?: string | null }
 ): SlackReadAnchor | null {
   let newest: string | null = null;
   let threaded = false;
@@ -115,5 +130,5 @@ export function deriveReadAnchor(
     }
   }
   if (!newest) return null;
-  return { newest, threaded, at: opts.at };
+  return { newest, threaded, at: opts.at, title: opts.title };
 }
