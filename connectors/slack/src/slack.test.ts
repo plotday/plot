@@ -3711,3 +3711,76 @@ describe("onNoteCreated reply targeting", () => {
     expect(postMessage).toHaveBeenCalledWith("C123", "ack", "100.0");
   });
 });
+
+describe("buildConversationLink — thread read cursor", () => {
+  function buildSlack() {
+    const store = makeStore();
+    const slack = makeSlack({
+      store,
+      integrationsGet: vi.fn(),
+      createWebhook: vi.fn(),
+    });
+    vi.spyOn(
+      slack as unknown as { isKnownDMChannel: (c: string) => Promise<boolean> },
+      "isKnownDMChannel"
+    ).mockResolvedValue(false);
+    vi.spyOn(
+      slack as unknown as {
+        customEmojiContext: (c: string) => Promise<{ teamId?: string }>;
+      },
+      "customEmojiContext"
+    ).mockResolvedValue({});
+    return { slack, store };
+  }
+
+  const parent = {
+    type: "message",
+    ts: "1700000000.000001",
+    thread_ts: "1700000000.000001",
+    user: "U1",
+    text: "parent",
+  };
+  const reply = {
+    type: "message",
+    ts: "1700000002.000000",
+    thread_ts: "1700000000.000001",
+    user: "U2",
+    text: "reply",
+  };
+
+  async function build(messages: unknown[]) {
+    const { slack } = buildSlack();
+    return (slack as unknown as {
+      buildConversationLink: (o: unknown) => Promise<{ unread?: boolean } | null>;
+    }).buildConversationLink({
+      channelId: "C1",
+      messages,
+      initialSync: false,
+    });
+  }
+
+  it("marks the link read when the thread's own cursor says read", async () => {
+    const link = await build([{ ...parent, unread_count: 0 }, reply]);
+    expect(link?.unread).toBe(false);
+  });
+
+  it("leaves unread alone when the thread cursor says unread", async () => {
+    const link = await build([{ ...parent, unread_count: 2 }, reply]);
+    expect(link).not.toHaveProperty("unread");
+  });
+
+  it("abstains when the parent carries no thread cursor", async () => {
+    const link = await build([parent, reply]);
+    expect(link).not.toHaveProperty("unread");
+  });
+
+  it("abstains on a root-only link — the channel cursor is the sweep's job", async () => {
+    const link = await build([{ ...parent, unread_count: 0 }]);
+    expect(link).not.toHaveProperty("unread");
+  });
+
+  it("never sets unread true, even when the thread is unread in Slack", async () => {
+    const link = await build([{ ...parent, unread_count: 5 }, reply]);
+    expect(link?.unread).not.toBe(true);
+  });
+});

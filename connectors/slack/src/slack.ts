@@ -46,6 +46,10 @@ import { assembleSlackDmLink, slackConversationIdentity } from "./slack-dm";
 import { unicodeToSlackName } from "./slack-emoji";
 import { slackFacets } from "./slack-facets";
 import { mentionsUser, type MentionContext } from "./slack-mentions";
+import {
+  deriveReadAnchor,
+  threadReadVerdict,
+} from "./slack-read-state";
 
 /**
  * Slack integration source.
@@ -829,6 +833,18 @@ export class Slack extends Connector<Slack> {
       syncableId: channelId,
     };
     if (messages[0]) link.facets = slackFacets(messages[0], channelId);
+    // Apply Slack's per-thread read cursor. `deriveReadAnchor` tells us
+    // whether this link is governed by the thread cursor at all: a root-only
+    // channel message lives purely in the channel timeline, so only the daily
+    // sweep's `conversations.info` can speak for it.
+    //
+    // Read from THIS response, never from a cache: the parent's
+    // `unread_count` is computed after the reply we are saving landed, so a
+    // genuine new-message unread can never be suppressed by a stale cursor.
+    const anchor = deriveReadAnchor(messages, { direct: false, at: Date.now() });
+    if (anchor?.threaded && threadReadVerdict(messages[0]) === "read") {
+      link.unread = false;
+    }
     return link;
   }
 
