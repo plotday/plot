@@ -55,10 +55,12 @@ import {
   extractCalendarReplies,
   formatFromHeader,
   getHeader,
+  hasCalendarPart,
   isGmailRateLimitError,
   isSendableGmailReaction,
   mapWithConcurrency,
   parseEmailAddresses,
+  resolveIcsByMessage,
   syncGmailChannel,
   syncGmailMailboxIncremental,
   transformGmailThread,
@@ -1469,9 +1471,34 @@ export async function processEmailThreadsFn(
   // per-call save fan-out. Threads are independent — all per-thread state
   // keys (`sent:`, `unread:`, `starred:`) are keyed by thread/message id —
   // so ordering across threads carries no meaning.
-  await mapWithConcurrency(transformed, SAVE_CONCURRENCY, (item) =>
-    saveTransformedThread(host, item, initialSync)
+  // Calendar bodies for the whole batch. Gmail stores every calendar part as
+  // a separate attachment, so reading one costs an extra API call — done once
+  // here, ahead of the save fan-out, and skipped entirely for the
+  // overwhelmingly common batch that carries no calendar mail at all.
+  const icsByMessage = await resolveBatchIcsFn(
+    host,
+    transformed.flatMap(({ thread }) => thread.messages ?? [])
   );
+
+  await mapWithConcurrency(transformed, SAVE_CONCURRENCY, (item) =>
+    saveTransformedThread(host, item, initialSync, icsByMessage)
+  );
+}
+
+/**
+ * Reads the iCalendar bodies for a batch of messages. Resolving an API client
+ * is itself a token round-trip, so a batch with no calendar part at all skips
+ * straight to an empty map. A batch whose connection has no usable token
+ * degrades the same way: the conversations sync as plain email.
+ */
+async function resolveBatchIcsFn(
+  host: GmailSyncHost,
+  messages: GmailMessage[]
+): Promise<Map<string, string>> {
+  if (!messages.some(hasCalendarPart)) return new Map();
+  const api = await getApiAnyFn(host);
+  if (!api) return new Map();
+  return resolveIcsByMessage(api, messages);
 }
 
 /**
@@ -1483,7 +1510,8 @@ export async function processEmailThreadsFn(
 async function saveTransformedThread(
   host: GmailSyncHost,
   { thread, plot: plotThread, channelId }: TransformedGmailThread,
-  initialSync: boolean
+  initialSync: boolean,
+  icsByMessage: Map<string, string>
 ): Promise<void> {
   try {
     if (!plotThread.notes || plotThread.notes.length === 0) return;
@@ -1516,7 +1544,7 @@ async function saveTransformedThread(
     // note was folded away — otherwise a mixed conversation gets its preview
     // and classification from an RSVP notification that no longer has a note.
     const foldedMessageIds = new Set<string>();
-    const replies = extractCalendarReplies(thread.messages ?? []);
+    const replies = extractCalendarReplies(thread.messages ?? [], icsByMessage);
     if (replies.length > 0) {
       for (const reply of replies) {
         // A miss means the calendar event has not synced yet (saveNote returns
@@ -1601,7 +1629,10 @@ async function saveTransformedThread(
 
     // Bundle onto the calendar event's thread when this conversation relates
     // to one (a Plot-sent reply chain, or an ICS update/cancellation).
-    const calBundle = classifyCalendarThread(thread.messages ?? []);
+    const calBundle = classifyCalendarThread(
+      thread.messages ?? [],
+      icsByMessage
+    );
     if (calBundle) {
       plotThread.sources = [
         ...(plotThread.sources ?? []),

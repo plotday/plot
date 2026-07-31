@@ -792,13 +792,99 @@ function icsProp(ics: string, name: string): string | null {
 }
 
 /**
+ * MIME types an iCalendar part is delivered under. Google and Exchange use
+ * `text/calendar`; a sizeable minority of senders use `application/ics`.
+ */
+const CALENDAR_MIME_TYPES = new Set(["text/calendar", "application/ics"]);
+
+/**
+ * True when a payload part carries an iCalendar body. A few senders label the
+ * part `application/octet-stream` (or even `text/plain`) and only the `.ics`
+ * filename gives it away, so the filename is consulted as well.
+ */
+function isCalendarPart(part: GmailMessagePart): boolean {
+  const mimeType = (part.mimeType ?? "").split(";")[0].trim().toLowerCase();
+  if (CALENDAR_MIME_TYPES.has(mimeType)) return true;
+  return /\.ics$/i.test(part.filename ?? "");
+}
+
+/**
+ * True when a message carries a calendar part. Lets a caller skip the cost of
+ * resolving an API client for a batch of ordinary mail.
+ */
+export function hasCalendarPart(message: GmailMessage): boolean {
+  return findCalendarPart(message.payload) !== null;
+}
+
+/** First calendar part anywhere in the payload tree, or null. */
+function findCalendarPart(part: GmailMessagePart): GmailMessagePart | null {
+  if (isCalendarPart(part)) return part;
+  for (const child of part.parts ?? []) {
+    const found = findCalendarPart(child);
+    if (found) return found;
+  }
+  return null;
+}
+
+/**
+ * Reads each message's iCalendar body, keyed by message id.
+ *
+ * Gmail treats a calendar part as an attachment even when the sender inlined
+ * it: it synthesizes a filename (`invite.ics`) and moves the body out to
+ * `attachmentId`, leaving `body.data` empty. The ICS behind an invitation,
+ * update, cancellation or RSVP is therefore absent from the payload
+ * `messages.get` returns, and reading it costs a second
+ * `messages.attachments.get` call — which is why this step is separate from
+ * the pure parsing that consumes it.
+ *
+ * Ordinary mail issues no request: a message with no calendar part is skipped
+ * before any fetch. A fetch that fails leaves the message out of the map
+ * rather than aborting the pass, so the conversation degrades to syncing as a
+ * plain email.
+ */
+export async function resolveIcsByMessage(
+  api: Pick<GmailApi, "getAttachment">,
+  messages: GmailMessage[]
+): Promise<Map<string, string>> {
+  const resolved = new Map<string, string>();
+
+  for (const message of messages) {
+    const calendarPart = findCalendarPart(message.payload);
+    if (!calendarPart) continue;
+
+    // Inline body: rare in practice, but free when it happens.
+    if (calendarPart.body?.data) {
+      resolved.set(message.id, decodeBase64Url(calendarPart.body.data));
+      continue;
+    }
+
+    const attachmentId = calendarPart.body?.attachmentId;
+    if (!attachmentId) continue;
+
+    try {
+      const { data } = await api.getAttachment(message.id, attachmentId);
+      if (data) resolved.set(message.id, decodeBase64Url(data));
+    } catch (error) {
+      console.warn(
+        `[gmail] could not read the calendar part of message ${message.id}:`,
+        error
+      );
+    }
+  }
+
+  return resolved;
+}
+
+/**
  * Classify a Gmail conversation's relationship to a calendar event for bundling.
  * Two signals: our own `X-Plot-Event-UID` header (a Plot-sent reply chain), or a
- * `text/calendar` part (invitation/update/cancellation/RSVP). Only updates,
+ * calendar part (invitation/update/cancellation/RSVP), whose body arrives
+ * pre-read in `icsByMessage` (see {@link resolveIcsByMessage}). Only updates,
  * cancellations, and reply chains bundle; bare invites and RSVPs are skipped.
  */
 export function classifyCalendarThread(
-  messages: GmailMessage[]
+  messages: GmailMessage[],
+  icsByMessage: Map<string, string>
 ): { uid: string; kind: "reply" | "update" | "cancel" } | null {
   // 1. Reply chain — our header on any message.
   for (const m of messages) {
@@ -807,7 +893,7 @@ export function classifyCalendarThread(
   }
   // 2. Calendar-system ICS.
   for (const m of messages) {
-    const ics = findPartContent(m.payload, "text/calendar");
+    const ics = icsByMessage.get(m.id);
     if (!ics) continue;
     const uid = icsProp(ics, "UID");
     if (!uid) continue;
@@ -926,21 +1012,22 @@ function commentFromBody(message: GmailMessage): string | null {
 /**
  * Extract every attendee response carried by a Gmail conversation.
  *
- * A descriptor is produced for each message whose payload holds a
- * `text/calendar` part with `METHOD:REPLY`, a `UID`, an `ATTENDEE` with a
- * decided `PARTSTAT`, and a resolvable attendee address. `NEEDS-ACTION`
- * yields nothing — there is no response to report.
+ * A descriptor is produced for each message whose calendar body — read ahead
+ * of time by {@link resolveIcsByMessage} — carries `METHOD:REPLY`, a `UID`, an
+ * `ATTENDEE` with a decided `PARTSTAT`, and a resolvable attendee address.
+ * `NEEDS-ACTION` yields nothing — there is no response to report.
  *
  * Every reply message is returned rather than only the first, so a
  * conversation carrying a revised response stays correct.
  */
 export function extractCalendarReplies(
-  messages: GmailMessage[]
+  messages: GmailMessage[],
+  icsByMessage: Map<string, string>
 ): CalendarReply[] {
   const replies: CalendarReply[] = [];
 
   for (const message of messages) {
-    const ics = findPartContent(message.payload, "text/calendar");
+    const ics = icsByMessage.get(message.id);
     if (!ics) continue;
     if ((icsProp(ics, "METHOD") ?? "").toUpperCase() !== "REPLY") continue;
 

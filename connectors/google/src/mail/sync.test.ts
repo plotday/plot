@@ -129,7 +129,11 @@ function forwardDraft(overrides: Partial<CreateLinkDraft> = {}): CreateLinkDraft
   } as CreateLinkDraft;
 }
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  registeredIcs.clear();
+});
 
 describe("onCreateLinkFn — draft.forward", () => {
   it("builds and sends a native Gmail forward of the source message", async () => {
@@ -815,7 +819,48 @@ function part(
   };
 }
 
-/** A single-message GmailThread carrying a `text/calendar` ICS part. */
+/**
+ * ICS bodies keyed by the attachment id Gmail would hand out for them.
+ *
+ * Gmail never leaves a calendar part inline: it synthesizes a filename
+ * (`invite.ics`) and moves the body out to `attachmentId`, so reading the ICS
+ * takes a second `messages.attachments.get` call. Fixtures below build that
+ * real shape and register the body here, and {@link serveIcsAttachments}
+ * stubs `fetch` to return it — so these tests exercise the same two-step read
+ * production performs rather than a payload shape Gmail never produces.
+ */
+const registeredIcs = new Map<string, string>();
+
+/** Stubs `fetch` so `messages.attachments.get` serves the registered bodies. */
+function serveIcsAttachments(): void {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string) => {
+      const attachmentId = url.split("/attachments/")[1]?.split("?")[0];
+      const ics = attachmentId ? registeredIcs.get(attachmentId) : undefined;
+      if (!ics) return new Response(null, { status: 404 });
+      return new Response(
+        JSON.stringify({ data: b64url(ics), size: ics.length }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    })
+  );
+}
+
+/** A calendar part shaped the way Gmail really delivers one. */
+function icsAttachmentPart(ics: string): GmailMessagePart {
+  const attachmentId = `att-${registeredIcs.size + 1}`;
+  registeredIcs.set(attachmentId, ics);
+  serveIcsAttachments();
+  return {
+    mimeType: "text/calendar",
+    filename: "invite.ics",
+    headers: [],
+    body: { size: ics.length, attachmentId },
+  };
+}
+
+/** A single-message GmailThread carrying a calendar ICS part. */
 function calendarUpdateThread(threadId: string, ics: string): GmailThread {
   const message: GmailMessage = {
     id: `${threadId}-msg-1`,
@@ -833,7 +878,7 @@ function calendarUpdateThread(threadId: string, ics: string): GmailThread {
       ],
       parts: [
         part("text/plain", { data: "The event has been updated." }),
-        part("text/calendar", { data: ics }),
+        icsAttachmentPart(ics),
       ],
     }),
   };
@@ -928,7 +973,7 @@ function rsvpThread(
       ],
       parts: [
         part("text/plain", { data: "Beth Round has declined this invitation." }),
-        part("text/calendar", { data: ics }),
+        icsAttachmentPart(ics),
       ],
     }),
   };
