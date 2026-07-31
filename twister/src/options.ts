@@ -23,6 +23,7 @@ export type TextDef = {
   default: string;
   placeholder?: string;
   secure?: boolean; // Encrypted at rest, masked in UI, never returned to clients
+  required?: boolean; // Blocks form submission while empty (secure fields are always required)
   helpText?: string; // Help text displayed below the input field
   helpUrl?: string; // URL for a "Learn more" link shown after helpText
 };

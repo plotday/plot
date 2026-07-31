@@ -56,6 +56,61 @@ export type ListActionItemsParams = {
   archived?: boolean;
 };
 
+/**
+ * Payload Fellow POSTs to the webhook URL for `ai_note.generated` /
+ * `ai_note.shared_to_channel` events. Carries the AI-generated notes content
+ * directly via `ai_notes` — this is the ONLY place that content is available.
+ * The `/notes` list endpoint's `content_markdown` field renders the note's
+ * agenda/manual content but never includes the AI-generated summary, so
+ * consumers must read `ai_notes` from this payload rather than re-fetching
+ * the note via the API. `id` is the note id (matches `FellowNote.id`);
+ * `event_id` is the calendar event identifier (matches `FellowNote.event_guid`).
+ */
+export type FellowAiNoteWebhook = {
+  event_type: "ai_note.generated" | "ai_note.shared_to_channel";
+  id: string;
+  event_id: string | null;
+  event_title: string | null;
+  event_start: string | null;
+  recap_url: string | null;
+  ai_notes: string | null;
+};
+
+/**
+ * Payload Fellow POSTs to the webhook URL for an `action_item.assigned`
+ * event. Unlike `ai_note.*` events, this carries the full action item —
+ * including `note_id`, which is `null` for a standalone action item created
+ * directly in Fellow (not attached to a meeting note).
+ */
+export type FellowActionItemAssignedWebhook = {
+  event_type: "action_item.assigned";
+  id: string;
+  text: string;
+  assignees: Array<{ id: string; full_name: string; email: string }>;
+  completion_type: string | null;
+  status: FellowActionItem["status"];
+  due_date: string | null;
+  note_id: string | null;
+  ai_generated: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+/** Payload Fellow POSTs to the webhook URL for an `action_item.completed` event. */
+export type FellowActionItemCompletedWebhook = {
+  event_type: "action_item.completed";
+  id: string;
+  text: string;
+  assignee_id: string | null;
+  assignee_name: string | null;
+  assignee_email: string | null;
+  note_id: string | null;
+  due_date: string | null;
+  done: boolean;
+  wont_do: boolean;
+  ai_generated: boolean;
+};
+
 export class FellowAPI {
   private baseUrl: string;
 
@@ -83,7 +138,11 @@ export class FellowAPI {
       );
     }
 
-    return response.json() as Promise<T>;
+    // Some endpoints (e.g. complete/archive) return no body on success;
+    // JSON.parse("") would throw, so treat an empty body as `undefined`
+    // rather than a malformed response.
+    const text = await response.text();
+    return (text ? JSON.parse(text) : undefined) as T;
   }
 
   async listNotes(params?: ListNotesParams): Promise<{
@@ -145,6 +204,16 @@ export class FellowAPI {
       data: result.action_items.data,
       nextCursor: result.action_items.page_info.cursor,
     };
+  }
+
+  /** Marks an action item done (`completed: true`) or reopens it (`false`). */
+  async completeActionItem(id: string, completed: boolean): Promise<void> {
+    await this.request<void>(`/action_item/${id}/complete`, { completed });
+  }
+
+  /** Archives an action item (marks it "won't do"). Not reversible via the API. */
+  async archiveActionItem(id: string): Promise<void> {
+    await this.request<void>(`/action_item/${id}/archive`);
   }
 
   async createWebhook(
