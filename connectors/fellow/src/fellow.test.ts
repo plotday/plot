@@ -98,7 +98,146 @@ describe("getChannels", () => {
   });
 });
 
+/**
+ * The platform re-stamps `initial_sync_started_at` (clearing any prior
+ * `initial_sync_completed_at`) on EVERY channel enable, so the "Syncing…"
+ * indicator turns back on each time. Any path through onChannelEnabled /
+ * syncBatch that returns without reaching `channelSyncCompleted` therefore
+ * leaves the connection spinning until the stuck-sync watchdog gives up and
+ * mislabels a healthy connection "Reconnect".
+ */
+describe("initial sync completion is signalled on every exit path", () => {
+  it("signals completion when the history range was already covered (early return)", async () => {
+    const store = makeStore({
+      [`sync_history_min_${channelId}`]: "2026-01-01T00:00:00.000Z",
+    });
+    const channelSyncCompleted = vi.fn().mockResolvedValue(undefined);
+    const fellow = makeFellow({ store, integrations: { channelSyncCompleted } });
+    const startBatchSync = vi.fn().mockResolvedValue(undefined);
+    (fellow as unknown as { startBatchSync: unknown }).startBatchSync = startBatchSync;
+
+    await fellow.onChannelEnabled({ id: channelId, title: "Meeting Notes" } as never, {
+      // Narrower than the stored min ⇒ already covered ⇒ early return.
+      syncHistoryMin: new Date("2026-06-01T00:00:00Z"),
+    } as never);
+
+    expect(startBatchSync).not.toHaveBeenCalled();
+    expect(channelSyncCompleted).toHaveBeenCalledWith(channelId);
+  });
+
+  it("does not persist the history marker until the backfill actually finishes", async () => {
+    const store = makeStore();
+    const fellow = makeFellow({ store });
+    (fellow as unknown as { startBatchSync: unknown }).startBatchSync = vi
+      .fn()
+      .mockResolvedValue(undefined);
+    (fellow as unknown as { callback: unknown }).callback = vi.fn().mockResolvedValue("cb");
+    (fellow as unknown as { runTask: unknown }).runTask = vi.fn().mockResolvedValue(undefined);
+
+    await fellow.onChannelEnabled({ id: channelId, title: "Meeting Notes" } as never, {
+      syncHistoryMin: new Date("2026-01-01T00:00:00Z"),
+    } as never);
+
+    // Writing it here would arm the early return above for a sync that then
+    // died mid-chain, permanently short-circuiting every later re-enable.
+    expect(store.map.has(`sync_history_min_${channelId}`)).toBe(false);
+  });
+
+  it("persists the history marker once the last page is reached", async () => {
+    const store = makeStore({
+      [`sync_state_${channelId}`]: {
+        cursor: null,
+        batchNumber: 2,
+        notesProcessed: 5,
+        initialSync: true,
+        syncHistoryMin: "2026-01-01T00:00:00.000Z",
+      },
+    });
+    const fellow = makeFellow({ store });
+    (fellow as unknown as { getAPI: unknown }).getAPI = vi.fn().mockReturnValue({
+      listNotes: vi.fn().mockResolvedValue({ data: [], nextCursor: null }),
+      listActionItems: vi.fn().mockResolvedValue({ data: [] }),
+    });
+
+    await (
+      fellow as unknown as { syncBatch: (id: string, initial?: boolean) => Promise<void> }
+    ).syncBatch(channelId, true);
+
+    expect(store.map.get(`sync_history_min_${channelId}`)).toBe(
+      "2026-01-01T00:00:00.000Z"
+    );
+  });
+
+  it("signals completion when the batch task is redelivered after the state was cleared", async () => {
+    const store = makeStore(); // no sync_state_ ⇒ chain already finished
+    const channelSyncCompleted = vi.fn().mockResolvedValue(undefined);
+    const fellow = makeFellow({ store, integrations: { channelSyncCompleted } });
+
+    await (
+      fellow as unknown as { syncBatch: (id: string, initial?: boolean) => Promise<void> }
+    ).syncBatch(channelId, true);
+
+    expect(channelSyncCompleted).toHaveBeenCalledWith(channelId);
+  });
+
+  it("clears the history marker on disable so re-enabling re-syncs the archived links", async () => {
+    const store = makeStore({
+      [`sync_history_min_${channelId}`]: "2026-01-01T00:00:00.000Z",
+      [`sync_enabled_${channelId}`]: true,
+    });
+    const archiveLinks = vi.fn().mockResolvedValue(undefined);
+    const fellow = makeFellow({ store, integrations: { archiveLinks } });
+
+    await fellow.onChannelDisabled({ id: channelId, title: "Meeting Notes" } as never);
+
+    expect(archiveLinks).toHaveBeenCalled();
+    // Leaving it set would make the next enable take the early return and come
+    // back with no notes at all — the links were just archived.
+    expect(store.map.has(`sync_history_min_${channelId}`)).toBe(false);
+  });
+});
+
 describe("syncBatch", () => {
+  it("carries syncHistoryMin into the next batch so pagination keeps its filter", async () => {
+    const store = makeStore({
+      [`sync_state_${channelId}`]: {
+        cursor: null,
+        batchNumber: 1,
+        notesProcessed: 0,
+        initialSync: true,
+        syncHistoryMin: "2026-01-01T00:00:00.000Z",
+      },
+    });
+    const fellow = makeFellow({ store });
+    const listNotes = vi
+      .fn()
+      .mockResolvedValue({ data: [note("n1")], nextCursor: "cursor2" });
+    (fellow as unknown as { getAPI: unknown }).getAPI = vi.fn().mockReturnValue({
+      listNotes,
+      listActionItems: vi.fn().mockResolvedValue({ data: [] }),
+    });
+    (fellow as unknown as { callback: unknown }).callback = vi.fn().mockResolvedValue("cb");
+    (fellow as unknown as { tools: { tasks: { runTask: unknown } } }).tools.tasks = {
+      runTask: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await (
+      fellow as unknown as { syncBatch: (id: string, initial?: boolean) => Promise<void> }
+    ).syncBatch(channelId, true);
+
+    // Batch 1 filtered on the window...
+    expect(listNotes).toHaveBeenCalledWith(
+      expect.objectContaining({ updatedAtStart: "2026-01-01T00:00:00.000Z" })
+    );
+    // ...and batch 2 must too. Dropping it widened the result set the cursor
+    // was issued against, so pagination walked a different list and re-saved
+    // notes batch 1 had already written.
+    const state = store.map.get(`sync_state_${channelId}`) as {
+      syncHistoryMin?: string;
+    };
+    expect(state.syncHistoryMin).toBe("2026-01-01T00:00:00.000Z");
+  });
+
   it("signals channelSyncCompleted when the last page is reached (initial sync)", async () => {
     const store = makeStore({
       [`sync_state_${channelId}`]: {

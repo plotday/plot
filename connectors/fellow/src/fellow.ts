@@ -155,9 +155,20 @@ export class Fellow extends Connector<Fellow> {
     if (syncHistoryMin) {
       const storedMin = await this.get<string>(`sync_history_min_${channel.id}`);
       if (storedMin && new Date(storedMin) <= syncHistoryMin && !context?.recovering) {
-        return; // Already synced with wider range
+        // Already synced with a wider range — nothing to back-fill. Signal
+        // completion anyway: the platform re-stamps `initial_sync_started_at`
+        // (clearing any prior `initial_sync_completed_at`) on EVERY enable, so
+        // returning silently would leave the connection's "Syncing…"
+        // indicator spinning until the stuck-sync watchdog gave up and
+        // mislabelled a healthy connection "Reconnect". This IS this enable's
+        // sync completing, trivially.
+        await this.tools.integrations.channelSyncCompleted(channel.id);
+        return;
       }
-      await this.set(`sync_history_min_${channel.id}`, syncHistoryMin.toISOString());
+      // The marker is deliberately NOT written here — it's written once the
+      // backfill actually finishes (see syncBatch). Writing it up front armed
+      // the early return above even for a sync that then died mid-flight,
+      // permanently short-circuiting every later re-enable of this channel.
     }
 
     await this.set(`sync_enabled_${channel.id}`, true);
@@ -179,6 +190,10 @@ export class Fellow extends Connector<Fellow> {
     await this.clear(`sync_enabled_${channel.id}`);
     await this.clear(`sync_state_${channel.id}`);
     await this.clear(`last_incremental_sync_${channel.id}`);
+    // Disabling archives every link below, so the "already covered this
+    // window" marker must go too — otherwise re-enabling takes
+    // onChannelEnabled's early return and the channel comes back empty.
+    await this.clear(`sync_history_min_${channel.id}`);
 
     await this.tools.integrations.archiveLinks({
       channelId: channel.id,
@@ -268,7 +283,17 @@ export class Fellow extends Connector<Fellow> {
    */
   async syncBatch(channelId: string, initialSync?: boolean): Promise<void> {
     const state = await this.get<SyncState>(`sync_state_${channelId}`);
-    if (!state) return;
+    if (!state) {
+      // The chain already finished (or the channel was disabled) and this is a
+      // duplicate delivery of the batch task. Re-signalling is idempotent, and
+      // it closes the window where an enable re-stamped
+      // `initial_sync_started_at` after the state was cleared — which would
+      // otherwise leave the indicator spinning with no batch left to clear it.
+      if (initialSync) {
+        await this.tools.integrations.channelSyncCompleted(channelId);
+      }
+      return;
+    }
 
     const isInitial = initialSync ?? state.initialSync;
     const api = this.getAPI();
@@ -308,6 +333,12 @@ export class Fellow extends Connector<Fellow> {
         batchNumber: state.batchNumber + 1,
         notesProcessed: state.notesProcessed + result.data.length,
         initialSync: isInitial,
+        // Carry the history window forward. Dropping it made every batch after
+        // the first re-query Fellow with NO `updated_at_start` filter — a
+        // wider result set than the cursor was issued against, so pagination
+        // walked a different list than it started on and re-saved notes the
+        // first batch had already written.
+        ...(state.syncHistoryMin ? { syncHistoryMin: state.syncHistoryMin } : {}),
       } satisfies SyncState);
 
       const nextBatch = await this.callback(
@@ -323,6 +354,12 @@ export class Fellow extends Connector<Fellow> {
       // also flow through this same branch, don't fire it redundantly.
       if (isInitial) {
         await this.tools.integrations.channelSyncCompleted(channelId);
+      }
+      // Record the history window only now that the backfill actually reached
+      // the end, so a sync that died mid-chain can't short-circuit a later
+      // re-enable (see onChannelEnabled).
+      if (state.syncHistoryMin) {
+        await this.set(`sync_history_min_${channelId}`, state.syncHistoryMin);
       }
       await this.clear(`sync_state_${channelId}`);
     }
