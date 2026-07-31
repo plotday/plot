@@ -1,5 +1,15 @@
 # @plotday/twister
 
+## 0.90.0
+
+### Added
+
+- `TextDef.required` on the `Options` tool. When set, the Flutter connect/edit form blocks submission while the field is empty (secure fields were already implicitly required). Text fields with no sensible default — like a workspace subdomain — can now opt in to this instead of silently accepting a blank value that only fails once the connector tries to use it. ([#353](https://github.com/plotday/plot/pull/353) [`068351a`](https://github.com/plotday/plot/commit/068351af2ecd5fd3936084de17d0f22ff88f8f5b))
+
+### Changed
+
+- `NewNote.unread` now controls read state on the `saveNotes` path. Omitting it leaves the thread's read state untouched, `true` marks the thread unread for everyone but the note's author, and `false` marks it read for the connection owner so a two-way read sync converges. Previously the field had no effect on notes saved through `saveNotes`. ([#353](https://github.com/plotday/plot/pull/353) [`068351a`](https://github.com/plotday/plot/commit/068351af2ecd5fd3936084de17d0f22ff88f8f5b))
+
 ## 0.89.0
 
 ### Added
