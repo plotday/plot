@@ -55,6 +55,20 @@ export type SlackMessage = {
   }>;
   reply_count?: number;
   reply_users_count?: number;
+  latest_reply?: string;
+  /**
+   * Per-THREAD read state for the calling user, present on the parent message
+   * of a `conversations.replies` response. Slack tracks a thread's read state
+   * separately from its channel's: reading the channel does not advance these,
+   * and opening the thread does not advance the channel's `last_read`.
+   *
+   * Absent on messages from `conversations.history`, which is why the thread
+   * fetch in `syncSlackChannel` keeps the replies parent rather than the
+   * history one.
+   */
+  subscribed?: boolean;
+  last_read?: string;
+  unread_count?: number;
 };
 
 export type SlackUser = {
@@ -370,6 +384,37 @@ export class SlackApi {
     // First message in replies is always the parent, so we skip it.
     const messages = await this.getThread(channelId, threadTs);
     return messages.slice(1);
+  }
+
+  /**
+   * The calling user's read cursor for one conversation.
+   *
+   * Tier 3, and NOT subject to the 1 rpm non-Marketplace limit that applies to
+   * `conversations.history`/`conversations.replies` — so this is safe to call
+   * per conversation in a sweep. Returns `null` when Slack omits `last_read`
+   * (the caller must then abstain rather than assume a state).
+   */
+  public async getConversationInfo(
+    channelId: string
+  ): Promise<{ lastRead: string | null }> {
+    const data = await this.call("conversations.info", { channel: channelId });
+    const lastRead = data.channel?.last_read;
+    return { lastRead: typeof lastRead === "string" ? lastRead : null };
+  }
+
+  /**
+   * Move the calling user's read cursor for one conversation to `ts`.
+   *
+   * CONVERSATION-scoped: there is no per-thread equivalent in the public Web
+   * API, so this must only ever be called for a direct conversation, where the
+   * Plot link IS the whole conversation. Calling it for a channel would move
+   * that channel's cursor for every other message in it.
+   */
+  public async markConversationRead(
+    channelId: string,
+    ts: string
+  ): Promise<void> {
+    await this.call("conversations.mark", { channel: channelId, ts });
   }
 
   public async postMessage(
@@ -858,8 +903,21 @@ export async function syncSlackChannel(
       // that cursor indefinitely. Degrade to the parent-only path so the
       // rest of the channel still advances.
       try {
-        const replies = await api.getThreadReplies(state.channelId, threadTs);
-        threads.push([parentMessage, ...replies]);
+        // `getThread` (conversations.replies), not `getThreadReplies`: the
+        // parent it returns carries this thread's own read cursor
+        // (`unread_count`/`last_read`/`latest_reply`), which the
+        // `conversations.history` parent does not have. Same single API call
+        // either way — `getThreadReplies` just threw the parent away.
+        //
+        // Spread the history parent underneath so any field only that response
+        // carried survives, then let the replies parent's fields win.
+        const full = await api.getThread(state.channelId, threadTs);
+        const [repliesParent, ...replies] = full;
+        threads.push(
+          repliesParent
+            ? [{ ...parentMessage, ...repliesParent }, ...replies]
+            : [parentMessage]
+        );
       } catch (error) {
         console.warn(
           `conversations.replies failed for ${state.channelId}/${threadTs}; falling back to parent-only`,
