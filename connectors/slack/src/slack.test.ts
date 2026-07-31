@@ -4166,3 +4166,77 @@ describe("reconcileReadState", () => {
     expect(store.map.has("read_anchor:C2:1700000000.000003")).toBe(true);
   });
 });
+
+describe("onThreadRead", () => {
+  function setup() {
+    const store = makeStore();
+    const slack = makeSlack({
+      store,
+      integrationsGet: vi.fn(),
+      createWebhook: vi.fn(),
+    });
+    const api = { markConversationRead: vi.fn().mockResolvedValue(undefined) };
+    vi.spyOn(
+      slack as unknown as { getApi: (c: string) => Promise<unknown> },
+      "getApi"
+    ).mockResolvedValue(api);
+    return { slack, api };
+  }
+
+  it("marks a direct conversation read in Slack", async () => {
+    const { slack, api } = setup();
+    const thread = {
+      meta: { channelId: "D1", direct: true, threadTs: "1700000000.000001" },
+    };
+
+    await slack.onThreadRead(thread as never, {} as never, false);
+
+    expect(api.markConversationRead).toHaveBeenCalledWith(
+      "D1",
+      "1700000000.000001"
+    );
+  });
+
+  it("does nothing for a channel thread — conversations.mark is channel-wide", async () => {
+    const { slack, api } = setup();
+    const thread = { meta: { channelId: "C1", threadTs: "1700000000.000001" } };
+
+    await slack.onThreadRead(thread as never, {} as never, false);
+
+    expect(api.markConversationRead).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when the thread is marked UNREAD — Slack has no un-mark", async () => {
+    const { slack, api } = setup();
+    const thread = {
+      meta: { channelId: "D1", direct: true, threadTs: "1700000000.000001" },
+    };
+
+    await slack.onThreadRead(thread as never, {} as never, true);
+
+    expect(api.markConversationRead).not.toHaveBeenCalled();
+  });
+
+  it("no-ops when the meta carries no anchor message", async () => {
+    const { slack, api } = setup();
+    const thread = { meta: { channelId: "D1", direct: true } };
+
+    await slack.onThreadRead(thread as never, {} as never, false);
+
+    expect(api.markConversationRead).not.toHaveBeenCalled();
+  });
+
+  it("no-ops when the dms scope group was declined", async () => {
+    const { slack, api } = setup();
+    api.markConversationRead.mockRejectedValue(
+      new SlackPermanentError("conversations.mark", "missing_scope")
+    );
+    const thread = {
+      meta: { channelId: "D1", direct: true, threadTs: "1700000000.000001" },
+    };
+
+    await expect(
+      slack.onThreadRead(thread as never, {} as never, false)
+    ).resolves.toBeUndefined();
+  });
+});

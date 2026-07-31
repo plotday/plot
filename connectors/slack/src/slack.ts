@@ -2165,6 +2165,65 @@ export class Slack extends Connector<Slack> {
     }
   }
 
+  /**
+   * Write a Plot read back to Slack — direct conversations only.
+   *
+   * `conversations.mark` is CONVERSATION-scoped and Slack's public Web API has
+   * no per-thread equivalent, so this is only coherent where the Plot link IS
+   * the whole conversation. For a channel thread the same call would move that
+   * channel's cursor: forward, clearing unread on every other message in it;
+   * backward, re-unreading messages the user had already read. Both are wrong,
+   * so channel threads write back nothing.
+   *
+   * Marking a thread UNREAD is likewise not propagated — Slack offers no
+   * un-mark, and re-pointing the cursor at an older message would un-read
+   * unrelated conversation history.
+   */
+  override async onThreadRead(
+    thread: Thread,
+    _actor: Actor,
+    unread: boolean
+  ): Promise<void> {
+    if (unread) return;
+    const meta = thread.meta ?? {};
+    if (meta.direct !== true) return;
+    const channelId = meta.channelId as string | undefined;
+    const threadTs = meta.threadTs as string | undefined;
+    if (!channelId || !threadTs) return;
+
+    let api: SlackApi;
+    try {
+      api = await this.getApi(channelId);
+    } catch (error) {
+      // Read state already lives in Plot; a missing token is not worth failing
+      // the dispatch over.
+      console.warn("onThreadRead: Slack token unavailable", error);
+      return;
+    }
+
+    try {
+      await api.markConversationRead(channelId, threadTs);
+    } catch (error) {
+      if (error instanceof SlackRateLimitedError) {
+        // The read is already recorded in Plot and the next inbound message
+        // re-establishes the cursor; a deferred write-back is not worth the
+        // bookkeeping for a marker the user cannot see.
+        console.log("onThreadRead: rate limited; skipping write-back");
+        return;
+      }
+      if (error instanceof SlackPermanentError) {
+        // `missing_scope` here means the optional `dms` group was declined,
+        // which is a user decision, not a broken connection — degrade quietly
+        // rather than flagging re-auth.
+        console.warn(
+          `onThreadRead: ${error.method} → ${error.slackError}; skipping write-back`
+        );
+        return;
+      }
+      throw error;
+    }
+  }
+
   // ---- Compose new messages from Plot ----
 
   /**
