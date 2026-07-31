@@ -3905,4 +3905,42 @@ describe("read anchors", () => {
     expect(anchor.newest).toBe("1700000002.000000");
     expect(anchor.threaded).toBe(false);
   });
+
+  it("leaves no anchor for a DM's initial sync — the link is already read", async () => {
+    const store = makeStore();
+    const slack = makeSlack({
+      store,
+      integrationsGet: vi.fn(),
+      createWebhook: vi.fn(),
+    });
+    vi.spyOn(
+      slack as unknown as { isKnownDMChannel: (c: string) => Promise<boolean> },
+      "isKnownDMChannel"
+    ).mockResolvedValue(true);
+    vi.spyOn(
+      slack as unknown as {
+        customEmojiContext: (c: string) => Promise<{ teamId?: string }>;
+      },
+      "customEmojiContext"
+    ).mockResolvedValue({});
+    vi.spyOn(
+      slack as unknown as {
+        dmCounterpartyUserId: (c: string) => Promise<string | null>;
+      },
+      "dmCounterpartyUserId"
+    ).mockResolvedValue("U2");
+
+    const link = await (slack as unknown as {
+      buildConversationLink: (o: unknown) => Promise<{ unread?: boolean } | null>;
+    }).buildConversationLink({
+      channelId: "D1",
+      messages: [
+        { type: "message", ts: "1700000000.000001", user: "U2", text: "hi" },
+      ],
+      initialSync: true,
+    });
+
+    expect(link?.unread).toBe(false);
+    expect(store.map.has("read_anchor:D1:D1")).toBe(false);
+  });
 });

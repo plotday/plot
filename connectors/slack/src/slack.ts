@@ -817,7 +817,13 @@ export class Slack extends Connector<Slack> {
       // save can name a message of any age, and an anchor rewound to an older
       // `newest` would make the sweep declare the conversation read on a
       // cursor that has not actually reached its latest message.
-      if (advanceConversationHead) {
+      //
+      // Only when the link is NOT already read. `assembleSlackDmLink` sets
+      // `unread: false` for `initialSync`, which already asserts read — an
+      // anchor for it could only ever re-assert what is already true, and
+      // would outlive a later manual "mark unread" in Plot, letting the sweep
+      // silently revert it once Slack's cursor caught up.
+      if (advanceConversationHead && link.unread !== false) {
         const dmAnchor = deriveReadAnchor(kept, { direct: true, at: Date.now() });
         if (dmAnchor) {
           await this.set(this.readAnchorKey(channelId, channelId), dmAnchor);
