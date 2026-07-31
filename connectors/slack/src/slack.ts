@@ -485,7 +485,14 @@ export class Slack extends Connector<Slack> {
     for (const key of starredKeys) await this.clear(key);
 
     // Read anchors are per-conversation reconciliation state, not a record of
-    // what earned a place in Plot, so unlike `sync_thread:` they are swept.
+    // what earned a place in Plot, so unlike `sync_thread:` they are swept —
+    // but only a CHANNEL THREAD's anchor is keyed on this channel id
+    // (`read_anchor:<channel.id>:<threadTs>`) and reachable this way. A
+    // direct conversation's anchor is keyed on the conversation id in both
+    // positions (`read_anchor:<dmChannelId>:<dmChannelId>`), and a DM
+    // conversation id is never an enabled channel, so this sweep does not
+    // reach it. That's fine left alone: DM anchors are bounded by
+    // `reconcileReadState`'s 30-day retention regardless.
     const anchorKeys = await this.tools.store.list(`read_anchor:${channel.id}:`);
     for (const key of anchorKeys) await this.clear(key);
   }
