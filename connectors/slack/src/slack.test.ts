@@ -4186,7 +4186,7 @@ describe("onThreadRead", () => {
       slack as unknown as { getApi: (c: string) => Promise<unknown> },
       "getApi"
     ).mockResolvedValue(api);
-    return { slack, api, markNeedsReauth };
+    return { slack, store, api, markNeedsReauth };
   }
 
   it("marks a direct conversation read in Slack", async () => {
@@ -4263,5 +4263,57 @@ describe("onThreadRead", () => {
       slack.onThreadRead(thread as never, {} as never, false)
     ).resolves.toBeUndefined();
     expect(markNeedsReauth).toHaveBeenCalledWith("D1");
+  });
+
+  it("clears a channel thread's read anchor when Plot marks it read", async () => {
+    const { slack, store } = setup();
+    store.map.set("read_anchor:C1:1700000000.000001", {
+      newest: "1700000000.000001",
+      threaded: false,
+      at: 1000,
+    });
+    const thread = { meta: { channelId: "C1", threadTs: "1700000000.000001" } };
+
+    await slack.onThreadRead(thread as never, {} as never, false);
+
+    expect(store.map.has("read_anchor:C1:1700000000.000001")).toBe(false);
+  });
+
+  it("clears a DM's read anchor keyed on the conversation id, not meta.threadTs", async () => {
+    const { slack, store } = setup();
+    // The DM anchor lives at read_anchor:D1:D1 — keyed on the conversation id
+    // in both positions, never on meta.threadTs (which names the
+    // conversation's latest message, not its anchor).
+    store.map.set("read_anchor:D1:D1", {
+      newest: "1700000000.000001",
+      threaded: false,
+      at: 1000,
+    });
+    const thread = {
+      meta: { channelId: "D1", direct: true, threadTs: "1700000000.000001" },
+    };
+
+    await slack.onThreadRead(thread as never, {} as never, false);
+
+    expect(store.map.has("read_anchor:D1:D1")).toBe(false);
+  });
+
+  it("clears the anchor even when marking UNREAD, so a manual override can't be reverted by the next sweep", async () => {
+    const { slack, store, api } = setup();
+    store.map.set("read_anchor:D1:D1", {
+      newest: "1700000000.000001",
+      threaded: false,
+      at: 1000,
+    });
+    const thread = {
+      meta: { channelId: "D1", direct: true, threadTs: "1700000000.000001" },
+    };
+
+    await slack.onThreadRead(thread as never, {} as never, true);
+
+    expect(store.map.has("read_anchor:D1:D1")).toBe(false);
+    // Marking unread still writes back nothing to Slack — only the anchor
+    // bookkeeping changed.
+    expect(api.markConversationRead).not.toHaveBeenCalled();
   });
 });

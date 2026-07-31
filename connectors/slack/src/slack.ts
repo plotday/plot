@@ -2188,17 +2188,38 @@ export class Slack extends Connector<Slack> {
    * Marking a thread UNREAD is likewise not propagated — Slack offers no
    * un-mark, and re-pointing the cursor at an older message would un-read
    * unrelated conversation history.
+   *
+   * Whichever direction Plot's read state changed, that's the user's final
+   * word — any outstanding {@link reconcileReadState} anchor for this link is
+   * cleared FIRST, before either the `unread` or `meta.direct` guard below.
+   * Skipping this for a DM read used to let the very `conversations.mark` call
+   * a few lines down move Slack's cursor to `anchor.newest` without ever
+   * clearing the anchor Slack was catching up to — so marking the thread
+   * unread again in Plot right after left a stale anchor in place, and the
+   * next sweep saw a cursor it had itself advanced and reverted the user's
+   * unread. Clearing here — for both link shapes and both directions — keeps
+   * a manual mark-unread from being undone the same way even without a
+   * write-back to trigger it.
    */
   override async onThreadRead(
     thread: Thread,
     _actor: Actor,
     unread: boolean
   ): Promise<void> {
-    if (unread) return;
     const meta = thread.meta ?? {};
-    if (meta.direct !== true) return;
     const channelId = meta.channelId as string | undefined;
     const threadTs = meta.threadTs as string | undefined;
+    if (channelId && threadTs) {
+      // A DM's `meta.threadTs` is the conversation's latest message, not its
+      // anchor key — `buildConversationLink` anchors a direct conversation on
+      // the conversation id in both positions (see `readAnchorKey`), so using
+      // `threadTs` directly here would clear nothing.
+      const anchorId = meta.direct === true ? channelId : threadTs;
+      await this.clear(this.readAnchorKey(channelId, anchorId));
+    }
+
+    if (unread) return;
+    if (meta.direct !== true) return;
     if (!channelId || !threadTs) return;
 
     let api: SlackApi;
