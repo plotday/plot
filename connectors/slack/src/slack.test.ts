@@ -3957,9 +3957,10 @@ describe("reconcileReadState", () => {
   function setup(anchors: Record<string, unknown>, lastRead: string | null) {
     const store = makeStore(anchors);
     const saveLink = vi.fn().mockResolvedValue("thread-1");
+    const markNeedsReauth = vi.fn();
     const tools = {
       store,
-      integrations: { get: vi.fn(), saveLink },
+      integrations: { get: vi.fn(), saveLink, markNeedsReauth },
       network: { createWebhook: vi.fn() },
       files: {},
     };
@@ -3987,7 +3988,7 @@ describe("reconcileReadState", () => {
       "scheduleRecurring"
     ).mockResolvedValue(undefined);
     vi.spyOn(Date, "now").mockReturnValue(NOW);
-    return { slack, store, saveLink, api };
+    return { slack, store, saveLink, api, markNeedsReauth };
   }
 
   const anchor = (over: Partial<{ newest: string; threaded: boolean; at: number }> = {}) => ({
@@ -4141,5 +4142,27 @@ describe("reconcileReadState", () => {
     expect(saveLink).toHaveBeenCalledTimes(1);
     expect(store.map.has("read_anchor:C1:1700000000.000001")).toBe(true);
     expect(store.map.has("read_anchor:C2:1700000000.000003")).toBe(false);
+  });
+
+  it("flags reauth and stops the pass on an auth-shaped permanent error", async () => {
+    const { slack, store, api, saveLink, markNeedsReauth } = setup(
+      {
+        "read_anchor:C1:1700000000.000001": anchor(),
+        "read_anchor:C2:1700000000.000003": anchor({ newest: "1700000000.000003" }),
+      },
+      "1700000005.000000"
+    );
+    // invalid_auth is in SLACK_AUTH_ERRORS: the grant itself is bad, so this
+    // is not something a retry (or waiting for the user) will fix.
+    api.getConversationInfo.mockRejectedValue(
+      new SlackPermanentError("conversations.info", "invalid_auth")
+    );
+
+    await slack.reconcileReadState("C1");
+
+    expect(markNeedsReauth).toHaveBeenCalledWith("C1");
+    expect(saveLink).not.toHaveBeenCalled();
+    expect(store.map.has("read_anchor:C1:1700000000.000001")).toBe(true);
+    expect(store.map.has("read_anchor:C2:1700000000.000003")).toBe(true);
   });
 });

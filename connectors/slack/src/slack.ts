@@ -1995,8 +1995,6 @@ export class Slack extends Connector<Slack> {
   async reconcileReadState(channelId: string): Promise<void> {
     let scheduleDaily = true;
     try {
-      await this.set("readStateSyncedAt", Date.now());
-
       const entries = await this.tools.store.listEntries<SlackReadAnchor>(
         "read_anchor:"
       );
@@ -2092,8 +2090,20 @@ export class Slack extends Connector<Slack> {
         }
         if (resolved.length > 0) await this.tools.store.clearMany(resolved);
       }
+
+      // Stamped on completion, not entry — matches `membersSyncedAt` /
+      // `customEmojiSyncedAt`. A pass that returned early above (nothing to
+      // sweep, no token, rate limited) skips this: that's correct, since
+      // suppressing `queueWorkspaceDailyTasks`'s backstop for 24h on a pass
+      // that did no real work would leave anchors unreconciled with nothing
+      // to re-trigger it sooner.
+      await this.set("readStateSyncedAt", Date.now());
     } catch (error) {
-      scheduleDaily = false;
+      // Unlike the rate-limit/permanent-error branches above (which return
+      // early and set nothing here), an unexpected error still lets the
+      // `finally` re-arm the daily chain below — mirrors `syncMembers`: a
+      // sweep that dies silently would leave read state unreconciled forever
+      // with no recovery signal, which is worse than retrying tomorrow.
       console.error("reconcileReadState: unexpected error", error);
       throw error;
     } finally {
