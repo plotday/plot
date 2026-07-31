@@ -1518,6 +1518,12 @@ type PendingRsvp = {
    */
   threadId: string;
   channelId: string;
+  /**
+   * Whether the response was first seen during the initial backfill. Carried
+   * so the retry applies the same unread rule the first pass would have — a
+   * late fold must not be noisier than a timely one.
+   */
+  initialSync: boolean;
   /** ISO timestamp of the first failed fold, for {@link PENDING_RSVP_TTL_MS}. */
   firstSeen: string;
 };
@@ -1577,6 +1583,9 @@ export async function drainPendingRsvpsFn(host: GmailSyncHost): Promise<void> {
             email: reply.attendeeEmail,
             ...(reply.attendeeName ? { name: reply.attendeeName } : {}),
           },
+          ...(shouldMarkUnread(reply, pending.initialSync)
+            ? { unread: true }
+            : {}),
         });
         if (!noteId) allFolded = false;
       }
@@ -1695,6 +1704,7 @@ async function saveTransformedThread(
         await host.set(key, {
           threadId: thread.id,
           channelId,
+          initialSync,
           // Preserved across passes so the retry window measures from the
           // first failure, not from the most recent re-sync of the thread.
           firstSeen: existing?.firstSeen ?? new Date().toISOString(),

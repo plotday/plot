@@ -1223,6 +1223,50 @@ describe("drainPendingRsvpsFn — retract once the event arrives", () => {
     expect(store.has("pending-rsvp:rsvp-late")).toBe(false);
   });
 
+  it("applies the same unread rule the first pass would have", async () => {
+    const { host, store } = makeHost();
+    const { notes } = captureSaves(host, { noteId: "N" });
+    const declined = rsvpThread("rsvp-late", replyIcs("DECLINED"));
+    store.set("pending-rsvp:rsvp-late", {
+      threadId: "rsvp-late",
+      channelId: "INBOX",
+      initialSync: false,
+      firstSeen: new Date().toISOString(),
+    });
+    (host.tools.store.list as ReturnType<typeof vi.fn>).mockImplementation(
+      async (prefix: string) =>
+        [...store.keys()].filter((k) => k.startsWith(prefix))
+    );
+    vi.spyOn(GmailApi.prototype, "getThread").mockResolvedValue(declined);
+
+    await drainPendingRsvpsFn(host);
+
+    // A decline is worth surfacing; an acceptance is not. Retrying must not
+    // change that, or a late fold is noisier than a timely one.
+    expect(notes[0]).toMatchObject({ unread: true });
+  });
+
+  it("leaves a response first seen during the initial backfill read", async () => {
+    const { host, store } = makeHost();
+    const { notes } = captureSaves(host, { noteId: "N" });
+    const declined = rsvpThread("rsvp-late", replyIcs("DECLINED"));
+    store.set("pending-rsvp:rsvp-late", {
+      threadId: "rsvp-late",
+      channelId: "INBOX",
+      initialSync: true,
+      firstSeen: new Date().toISOString(),
+    });
+    (host.tools.store.list as ReturnType<typeof vi.fn>).mockImplementation(
+      async (prefix: string) =>
+        [...store.keys()].filter((k) => k.startsWith(prefix))
+    );
+    vi.spyOn(GmailApi.prototype, "getThread").mockResolvedValue(declined);
+
+    await drainPendingRsvpsFn(host);
+
+    expect(notes[0].unread).toBeUndefined();
+  });
+
   it("keeps the entry and archives nothing while the event is still missing", async () => {
     const { host, store } = makeHost();
     captureSaves(host, { noteId: null });
