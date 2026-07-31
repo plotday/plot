@@ -16,15 +16,26 @@ export type SlackReadVerdict = "read" | "unread" | "unknown";
  * Done on the two halves as integers rather than via `parseFloat`: a Slack ts
  * carries 16 significant digits, which is at the edge of float64 precision,
  * so `parseFloat` can round two genuinely different timestamps to the same
- * value. Returns <0, 0, or >0 like a comparator.
+ * value. Returns <0, 0, or >0 like a comparator — or `NaN` when either
+ * timestamp is malformed enough that neither half parses as a number, so a
+ * meaningful comparison isn't possible.
+ *
+ * Callers MUST check `Number.isNaN` on the result and treat it as "unknown",
+ * never fall through to a directional default: every JS comparison against
+ * `NaN` (`< 0`, `>= 0`, `=== 0`) evaluates to `false`, so an unguarded
+ * `compareSlackTs(...) >= 0 ? "read" : "unread"` silently resolves to
+ * "unread" — and the equally unguarded `< 0 ? -1 : 1` shape used to resolve
+ * to `1`, i.e. "read", the UNSAFE direction for a cursor comparison.
  */
 export function compareSlackTs(a: string, b: string): number {
   const [aSec = "0", aMicro = "0"] = a.split(".");
   const [bSec = "0", bMicro = "0"] = b.split(".");
   const secDiff = Number(aSec) - Number(bSec);
+  if (Number.isNaN(secDiff)) return NaN;
   if (secDiff !== 0) return secDiff < 0 ? -1 : 1;
   const microDiff =
     Number(aMicro.padEnd(6, "0")) - Number(bMicro.padEnd(6, "0"));
+  if (Number.isNaN(microDiff)) return NaN;
   return microDiff === 0 ? 0 : microDiff < 0 ? -1 : 1;
 }
 
@@ -41,7 +52,9 @@ export function channelReadVerdict(
   newestTs: string
 ): SlackReadVerdict {
   if (!lastRead) return "unknown";
-  return compareSlackTs(lastRead, newestTs) >= 0 ? "read" : "unread";
+  const cmp = compareSlackTs(lastRead, newestTs);
+  if (Number.isNaN(cmp)) return "unknown";
+  return cmp >= 0 ? "read" : "unread";
 }
 
 /**
@@ -61,9 +74,9 @@ export function threadReadVerdict(
     return parent.unread_count === 0 ? "read" : "unread";
   }
   if (parent.last_read && parent.latest_reply) {
-    return compareSlackTs(parent.last_read, parent.latest_reply) >= 0
-      ? "read"
-      : "unread";
+    const cmp = compareSlackTs(parent.last_read, parent.latest_reply);
+    if (Number.isNaN(cmp)) return "unknown";
+    return cmp >= 0 ? "read" : "unread";
   }
   return "unknown";
 }

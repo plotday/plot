@@ -32,6 +32,21 @@ describe("compareSlackTs", () => {
   it("treats Slack's never-read sentinel as older than everything", () => {
     expect(compareSlackTs("0000000000.000000", "1700000000.000001")).toBe(-1);
   });
+
+  it("returns NaN for a malformed timestamp rather than defaulting to a direction", () => {
+    // A naive `< 0 ? -1 : 1` shape resolves every NaN comparison to `1` —
+    // silently the UNSAFE "read" direction for a caller like
+    // channelReadVerdict. NaN must propagate so callers can detect it.
+    expect(Number.isNaN(compareSlackTs("not-a-timestamp", "1700000000.000001"))).toBe(
+      true
+    );
+    expect(Number.isNaN(compareSlackTs("1700000000.000001", "not-a-timestamp"))).toBe(
+      true
+    );
+    expect(Number.isNaN(compareSlackTs("1700000000.abc", "1700000000.000001"))).toBe(
+      true
+    );
+  });
 });
 
 describe("channelReadVerdict", () => {
@@ -48,6 +63,14 @@ describe("channelReadVerdict", () => {
     expect(channelReadVerdict(null, "1700000000.000001")).toBe("unknown");
     expect(channelReadVerdict(undefined, "1700000000.000001")).toBe("unknown");
     expect(channelReadVerdict("", "1700000000.000001")).toBe("unknown");
+  });
+
+  it("abstains rather than asserting read on a malformed cursor", () => {
+    // Regression: compareSlackTs used to fail toward "read" (the unsafe
+    // direction) on a NaN half; this must abstain instead.
+    expect(channelReadVerdict("not-a-timestamp", "1700000000.000001")).toBe(
+      "unknown"
+    );
   });
 });
 
@@ -82,6 +105,14 @@ describe("threadReadVerdict", () => {
     expect(threadReadVerdict(msg({ ts: "1.0", latest_reply: "1700000002.000000" }))).toBe(
       "unknown"
     );
+  });
+
+  it("abstains rather than asserting read on a malformed fallback-pair cursor", () => {
+    expect(
+      threadReadVerdict(
+        msg({ ts: "1.0", last_read: "not-a-timestamp", latest_reply: "1700000002.000000" })
+      )
+    ).toBe("unknown");
   });
 });
 
