@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+  SlackApi,
   transformSlackThread,
+  syncSlackChannel,
   type SlackMessage,
   type SlackUserInfoMap,
 } from "./slack-api";
@@ -65,5 +67,97 @@ describe("transformSlackThread", () => {
     expect(
       (link as unknown as { autoThread?: unknown }).autoThread
     ).toBeUndefined();
+  });
+});
+
+describe("SlackApi.getConversationInfo", () => {
+  it("returns the caller's last_read cursor", async () => {
+    const api = new SlackApi("xoxp-test");
+    const call = vi
+      .spyOn(api, "call")
+      .mockResolvedValue({ channel: { id: "C1", last_read: "1700000000.000001" } });
+
+    await expect(api.getConversationInfo("C1")).resolves.toEqual({
+      lastRead: "1700000000.000001",
+    });
+    expect(call).toHaveBeenCalledWith("conversations.info", { channel: "C1" });
+  });
+
+  it("returns null when Slack omits last_read rather than inventing one", async () => {
+    const api = new SlackApi("xoxp-test");
+    vi.spyOn(api, "call").mockResolvedValue({ channel: { id: "C1" } });
+
+    await expect(api.getConversationInfo("C1")).resolves.toEqual({ lastRead: null });
+  });
+});
+
+describe("SlackApi.markConversationRead", () => {
+  it("marks the conversation read at the given ts", async () => {
+    const api = new SlackApi("xoxp-test");
+    const call = vi.spyOn(api, "call").mockResolvedValue({ ok: true });
+
+    await api.markConversationRead("D1", "1700000000.000001");
+
+    expect(call).toHaveBeenCalledWith("conversations.mark", {
+      channel: "D1",
+      ts: "1700000000.000001",
+    });
+  });
+});
+
+describe("syncSlackChannel thread parent", () => {
+  it("keeps the conversations.replies parent so its thread cursor survives", async () => {
+    const historyParent = {
+      type: "message",
+      ts: "1700000000.000001",
+      thread_ts: "1700000000.000001",
+      user: "U1",
+      text: "parent",
+      reply_count: 1,
+    };
+    const repliesParent = { ...historyParent, unread_count: 0, subscribed: true };
+    const reply = {
+      type: "message",
+      ts: "1700000002.000000",
+      thread_ts: "1700000000.000001",
+      user: "U2",
+      text: "reply",
+    };
+
+    const api = {
+      getConversationHistory: vi
+        .fn()
+        .mockResolvedValue({ messages: [historyParent], hasMore: false }),
+      getThread: vi.fn().mockResolvedValue([repliesParent, reply]),
+      getThreadReplies: vi.fn(),
+    };
+
+    const { threads } = await syncSlackChannel(api as never, { channelId: "C1" });
+
+    expect(threads).toHaveLength(1);
+    expect(threads[0]![0]!.unread_count).toBe(0);
+    expect(threads[0]![1]!.ts).toBe("1700000002.000000");
+    expect(api.getThreadReplies).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the history parent when conversations.replies returns nothing", async () => {
+    const historyParent = {
+      type: "message",
+      ts: "1700000000.000001",
+      thread_ts: "1700000000.000001",
+      user: "U1",
+      text: "parent",
+      reply_count: 1,
+    };
+    const api = {
+      getConversationHistory: vi
+        .fn()
+        .mockResolvedValue({ messages: [historyParent], hasMore: false }),
+      getThread: vi.fn().mockResolvedValue([]),
+    };
+
+    const { threads } = await syncSlackChannel(api as never, { channelId: "C1" });
+
+    expect(threads).toEqual([[historyParent]]);
   });
 });

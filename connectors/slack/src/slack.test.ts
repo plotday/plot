@@ -30,6 +30,12 @@ function makeStore(initial: Record<string, unknown> = {}) {
     list: vi.fn(async (prefix: string) =>
       [...map.keys()].filter((k) => k.startsWith(prefix))
     ),
+    listEntries: vi.fn(async (prefix: string) =>
+      [...map.entries()].filter(([k]) => k.startsWith(prefix))
+    ),
+    clearMany: vi.fn(async (keys: string[]) => {
+      for (const key of keys) map.delete(key);
+    }),
   };
 }
 
@@ -3709,5 +3715,848 @@ describe("onNoteCreated reply targeting", () => {
     await slack.onNoteCreated({ content: "ack" } as any, thread);
 
     expect(postMessage).toHaveBeenCalledWith("C123", "ack", "100.0");
+  });
+});
+
+describe("buildConversationLink — thread read cursor", () => {
+  function buildSlack() {
+    const store = makeStore();
+    const slack = makeSlack({
+      store,
+      integrationsGet: vi.fn(),
+      createWebhook: vi.fn(),
+    });
+    vi.spyOn(
+      slack as unknown as { isKnownDMChannel: (c: string) => Promise<boolean> },
+      "isKnownDMChannel"
+    ).mockResolvedValue(false);
+    vi.spyOn(
+      slack as unknown as {
+        customEmojiContext: (c: string) => Promise<{ teamId?: string }>;
+      },
+      "customEmojiContext"
+    ).mockResolvedValue({});
+    return { slack, store };
+  }
+
+  const parent = {
+    type: "message",
+    ts: "1700000000.000001",
+    thread_ts: "1700000000.000001",
+    user: "U1",
+    text: "parent",
+  };
+  const reply = {
+    type: "message",
+    ts: "1700000002.000000",
+    thread_ts: "1700000000.000001",
+    user: "U2",
+    text: "reply",
+  };
+
+  async function build(messages: unknown[]) {
+    const { slack } = buildSlack();
+    return (slack as unknown as {
+      buildConversationLink: (o: unknown) => Promise<{ unread?: boolean } | null>;
+    }).buildConversationLink({
+      channelId: "C1",
+      messages,
+      initialSync: false,
+    });
+  }
+
+  it("marks the link read when the thread's own cursor says read", async () => {
+    const link = await build([{ ...parent, unread_count: 0 }, reply]);
+    expect(link?.unread).toBe(false);
+  });
+
+  it("leaves unread alone when the thread cursor says unread", async () => {
+    const link = await build([{ ...parent, unread_count: 2 }, reply]);
+    expect(link).not.toHaveProperty("unread");
+  });
+
+  it("abstains when the parent carries no thread cursor", async () => {
+    const link = await build([parent, reply]);
+    expect(link).not.toHaveProperty("unread");
+  });
+
+  it("abstains on a root-only link — the channel cursor is the sweep's job", async () => {
+    const link = await build([{ ...parent, unread_count: 0 }]);
+    expect(link).not.toHaveProperty("unread");
+  });
+
+  it("never sets unread true, even when the thread is unread in Slack", async () => {
+    const link = await build([{ ...parent, unread_count: 5 }, reply]);
+    expect(link?.unread).not.toBe(true);
+  });
+});
+
+describe("read anchors", () => {
+  const parent = {
+    type: "message",
+    ts: "1700000000.000001",
+    thread_ts: "1700000000.000001",
+    user: "U1",
+    text: "parent",
+  };
+  const reply = {
+    type: "message",
+    ts: "1700000002.000000",
+    thread_ts: "1700000000.000001",
+    user: "U2",
+    text: "reply",
+  };
+
+  async function build(messages: unknown[]) {
+    const store = makeStore();
+    const slack = makeSlack({
+      store,
+      integrationsGet: vi.fn(),
+      createWebhook: vi.fn(),
+    });
+    vi.spyOn(
+      slack as unknown as { isKnownDMChannel: (c: string) => Promise<boolean> },
+      "isKnownDMChannel"
+    ).mockResolvedValue(false);
+    vi.spyOn(
+      slack as unknown as {
+        customEmojiContext: (c: string) => Promise<{ teamId?: string }>;
+      },
+      "customEmojiContext"
+    ).mockResolvedValue({});
+    const link = await (slack as unknown as {
+      buildConversationLink: (o: unknown) => Promise<{ unread?: boolean } | null>;
+    }).buildConversationLink({ channelId: "C1", messages, initialSync: false });
+    return { store, link };
+  }
+
+  const KEY = "read_anchor:C1:1700000000.000001";
+
+  it("writes an anchor for a link it could not mark read", async () => {
+    const { store } = await build([parent]);
+    const anchor = store.map.get(KEY) as { newest: string; threaded: boolean };
+    expect(anchor.newest).toBe("1700000000.000001");
+    expect(anchor.threaded).toBe(false);
+  });
+
+  it("marks a threaded link's anchor threaded so the sweep skips it", async () => {
+    const { store } = await build([parent, reply]);
+    expect((store.map.get(KEY) as { threaded: boolean }).threaded).toBe(true);
+  });
+
+  it("deletes the anchor once the link is marked read", async () => {
+    const { store, link } = await build([{ ...parent, unread_count: 0 }, reply]);
+    expect(link?.unread).toBe(false);
+    expect(store.map.has(KEY)).toBe(false);
+  });
+
+  it("keys the anchor on the thread root, so a new reply replaces it", async () => {
+    const { store } = await build([parent, reply]);
+    expect([...store.map.keys()]).toEqual([KEY]);
+    expect((store.map.get(KEY) as { newest: string }).newest).toBe(
+      "1700000002.000000"
+    );
+  });
+
+  it("does not write an anchor when there is nothing to save", async () => {
+    const { store } = await build([]);
+    expect([...store.map.keys()]).toEqual([]);
+  });
+
+  it("anchors a direct conversation on the conversation id, never threaded", async () => {
+    const store = makeStore();
+    const slack = makeSlack({
+      store,
+      integrationsGet: vi.fn(),
+      createWebhook: vi.fn(),
+    });
+    vi.spyOn(
+      slack as unknown as { isKnownDMChannel: (c: string) => Promise<boolean> },
+      "isKnownDMChannel"
+    ).mockResolvedValue(true);
+    vi.spyOn(
+      slack as unknown as {
+        customEmojiContext: (c: string) => Promise<{ teamId?: string }>;
+      },
+      "customEmojiContext"
+    ).mockResolvedValue({});
+    vi.spyOn(
+      slack as unknown as {
+        dmCounterpartyUserId: (c: string) => Promise<string | null>;
+      },
+      "dmCounterpartyUserId"
+    ).mockResolvedValue("U2");
+
+    await (slack as unknown as {
+      buildConversationLink: (o: unknown) => Promise<unknown>;
+    }).buildConversationLink({
+      channelId: "D1",
+      messages: [
+        { type: "message", ts: "1700000000.000001", user: "U2", text: "hi" },
+        {
+          type: "message",
+          ts: "1700000002.000000",
+          thread_ts: "1700000000.000001",
+          user: "U2",
+          text: "threaded",
+        },
+      ],
+      initialSync: false,
+    });
+
+    const anchor = store.map.get("read_anchor:D1:D1") as {
+      newest: string;
+      threaded: boolean;
+      title?: string | null;
+    };
+    expect(anchor.newest).toBe("1700000002.000000");
+    expect(anchor.threaded).toBe(false);
+    // No `userInfos` was passed, so assembleSlackDmLink omits `title` (see
+    // its own comment on why — the raw Slack user id would otherwise
+    // permanently rename a real person's thread). Nothing else supplied one
+    // here, so the anchor genuinely has none to carry.
+    expect(anchor.title).toBeUndefined();
+  });
+
+  it("carries a DM anchor's previously-stored title forward when the new link has none", async () => {
+    // assembleSlackDmLink omits `title` whenever `users.info` was
+    // unavailable — a real, recurring window, not an edge case. The anchor
+    // must not lose a title it already had just because a later sync landed
+    // in that window; reconcileReadState needs it to survive an
+    // archived-priority upsert (see SlackReadAnchor's doc comment).
+    const store = makeStore({
+      "read_anchor:D1:D1": {
+        newest: "1699999999.000000",
+        threaded: false,
+        at: 1000,
+        title: "Alice Example",
+      },
+    });
+    const slack = makeSlack({
+      store,
+      integrationsGet: vi.fn(),
+      createWebhook: vi.fn(),
+    });
+    vi.spyOn(
+      slack as unknown as { isKnownDMChannel: (c: string) => Promise<boolean> },
+      "isKnownDMChannel"
+    ).mockResolvedValue(true);
+    vi.spyOn(
+      slack as unknown as {
+        customEmojiContext: (c: string) => Promise<{ teamId?: string }>;
+      },
+      "customEmojiContext"
+    ).mockResolvedValue({});
+    vi.spyOn(
+      slack as unknown as {
+        dmCounterpartyUserId: (c: string) => Promise<string | null>;
+      },
+      "dmCounterpartyUserId"
+    ).mockResolvedValue("U2");
+
+    await (slack as unknown as {
+      buildConversationLink: (o: unknown) => Promise<unknown>;
+    }).buildConversationLink({
+      channelId: "D1",
+      // No userInfos passed — assembleSlackDmLink omits `title` on this link.
+      messages: [
+        { type: "message", ts: "1700000000.000001", user: "U2", text: "hi again" },
+      ],
+      initialSync: false,
+    });
+
+    const anchor = store.map.get("read_anchor:D1:D1") as {
+      newest: string;
+      title?: string | null;
+    };
+    expect(anchor.newest).toBe("1700000000.000001");
+    expect(anchor.title).toBe("Alice Example");
+  });
+
+  it("leaves no anchor for a DM's initial sync — the link is already read", async () => {
+    const store = makeStore();
+    const slack = makeSlack({
+      store,
+      integrationsGet: vi.fn(),
+      createWebhook: vi.fn(),
+    });
+    vi.spyOn(
+      slack as unknown as { isKnownDMChannel: (c: string) => Promise<boolean> },
+      "isKnownDMChannel"
+    ).mockResolvedValue(true);
+    vi.spyOn(
+      slack as unknown as {
+        customEmojiContext: (c: string) => Promise<{ teamId?: string }>;
+      },
+      "customEmojiContext"
+    ).mockResolvedValue({});
+    vi.spyOn(
+      slack as unknown as {
+        dmCounterpartyUserId: (c: string) => Promise<string | null>;
+      },
+      "dmCounterpartyUserId"
+    ).mockResolvedValue("U2");
+
+    const link = await (slack as unknown as {
+      buildConversationLink: (o: unknown) => Promise<{ unread?: boolean } | null>;
+    }).buildConversationLink({
+      channelId: "D1",
+      messages: [
+        { type: "message", ts: "1700000000.000001", user: "U2", text: "hi" },
+      ],
+      initialSync: true,
+    });
+
+    expect(link?.unread).toBe(false);
+    expect(store.map.has("read_anchor:D1:D1")).toBe(false);
+  });
+
+  it("does not recreate a channel-thread anchor on a reaction refresh (advanceConversationHead: false)", async () => {
+    // Regression test: `refreshSlackThread` re-fetches with
+    // `advanceConversationHead: false` for a reaction refresh. A root-only
+    // channel message has no thread cursor of its own, so the read verdict
+    // is "unknown" — that must NOT fall through to rewriting the anchor,
+    // since no new content actually arrived.
+    const store = makeStore({
+      "read_anchor:C1:1700000000.000001": {
+        newest: "1700000000.000001",
+        threaded: false,
+        at: 1000,
+      },
+    });
+    const slack = makeSlack({
+      store,
+      integrationsGet: vi.fn(),
+      createWebhook: vi.fn(),
+    });
+    vi.spyOn(
+      slack as unknown as { isKnownDMChannel: (c: string) => Promise<boolean> },
+      "isKnownDMChannel"
+    ).mockResolvedValue(false);
+    vi.spyOn(
+      slack as unknown as {
+        customEmojiContext: (c: string) => Promise<{ teamId?: string }>;
+      },
+      "customEmojiContext"
+    ).mockResolvedValue({});
+
+    await (slack as unknown as {
+      buildConversationLink: (o: unknown) => Promise<unknown>;
+    }).buildConversationLink({
+      channelId: "C1",
+      messages: [parent],
+      initialSync: false,
+      advanceConversationHead: false,
+    });
+
+    const anchorSetCalls = store.set.mock.calls.filter(
+      (call) => call[0] === "read_anchor:C1:1700000000.000001"
+    );
+    expect(anchorSetCalls).toHaveLength(0);
+    expect(
+      (store.map.get("read_anchor:C1:1700000000.000001") as { at: number }).at
+    ).toBe(1000);
+  });
+});
+
+describe("reconcileReadState", () => {
+  const NOW = 1_700_000_000_000;
+
+  function setup(anchors: Record<string, unknown>, lastRead: string | null) {
+    const store = makeStore(anchors);
+    const saveLink = vi.fn().mockResolvedValue("thread-1");
+    const markNeedsReauth = vi.fn();
+    const tools = {
+      store,
+      integrations: { get: vi.fn(), saveLink, markNeedsReauth },
+      network: { createWebhook: vi.fn() },
+      files: {},
+    };
+    const slack = new Slack(
+      "twist-instance-1" as never,
+      { getTools: () => tools } as never
+    );
+    const api = { getConversationInfo: vi.fn().mockResolvedValue({ lastRead }) };
+    vi.spyOn(
+      slack as unknown as { getApi: (c: string) => Promise<unknown> },
+      "getApi"
+    ).mockResolvedValue(api);
+    vi.spyOn(
+      slack as unknown as { isKnownDMChannel: (c: string) => Promise<boolean> },
+      "isKnownDMChannel"
+    ).mockResolvedValue(false);
+    // The `finally` re-arms the daily chain; neither the callbacks nor the
+    // tasks tool is in the test tool shed, so both are stubbed.
+    vi.spyOn(
+      slack as unknown as { callback: (...a: unknown[]) => Promise<unknown> },
+      "callback"
+    ).mockResolvedValue("cb-token");
+    vi.spyOn(
+      slack as unknown as { scheduleRecurring: (...a: unknown[]) => Promise<void> },
+      "scheduleRecurring"
+    ).mockResolvedValue(undefined);
+    vi.spyOn(Date, "now").mockReturnValue(NOW);
+    return { slack, store, saveLink, api, markNeedsReauth };
+  }
+
+  const anchor = (
+    over: Partial<{
+      newest: string;
+      threaded: boolean;
+      at: number;
+      title: string | null;
+    }> = {}
+  ) => ({
+    newest: "1700000000.000001",
+    threaded: false,
+    at: NOW,
+    ...over,
+  });
+
+  it("marks a root-only link read once the channel cursor passes it", async () => {
+    const { slack, store, saveLink } = setup(
+      { "read_anchor:C1:1700000000.000001": anchor() },
+      "1700000005.000000"
+    );
+
+    await slack.reconcileReadState("C1");
+
+    expect(saveLink).toHaveBeenCalledTimes(1);
+    const saved = saveLink.mock.calls[0][0];
+    expect(saved.unread).toBe(false);
+    expect(saved.channelId).toBe("C1");
+    expect(store.map.has("read_anchor:C1:1700000000.000001")).toBe(false);
+  });
+
+  it("sends the anchor's title on the reconcile upsert, so an archived-priority thread keeps its real title", async () => {
+    const { slack, saveLink } = setup(
+      { "read_anchor:C1:1700000000.000001": anchor({ title: "Real title" }) },
+      "1700000005.000000"
+    );
+
+    await slack.reconcileReadState("C1");
+
+    expect(saveLink.mock.calls[0][0].title).toBe("Real title");
+  });
+
+  it("omits `title` entirely when the anchor has none — never worse than today", async () => {
+    const { slack, saveLink } = setup(
+      { "read_anchor:C1:1700000000.000001": anchor() },
+      "1700000005.000000"
+    );
+
+    await slack.reconcileReadState("C1");
+
+    expect(saveLink.mock.calls[0][0]).not.toHaveProperty("title");
+  });
+
+  it("never sends `created` on the reconcile upsert", async () => {
+    const { slack, saveLink } = setup(
+      { "read_anchor:C1:1700000000.000001": anchor() },
+      "1700000005.000000"
+    );
+
+    await slack.reconcileReadState("C1");
+
+    // saveLink drops an `unread: false` save whose date predates the plan's
+    // sync-history limit, so a reconcile upsert must carry no date at all.
+    expect(saveLink.mock.calls[0][0]).not.toHaveProperty("created");
+    expect(saveLink.mock.calls[0][0]).not.toHaveProperty("schedules");
+  });
+
+  it("does not rewrite content on the reconcile upsert", async () => {
+    const { slack, saveLink } = setup(
+      { "read_anchor:C1:1700000000.000001": anchor() },
+      "1700000005.000000"
+    );
+
+    await slack.reconcileReadState("C1");
+
+    const saved = saveLink.mock.calls[0][0];
+    expect(saved).not.toHaveProperty("title");
+    expect(saved).not.toHaveProperty("preview");
+    expect(saved).not.toHaveProperty("notes");
+  });
+
+  it("leaves a link alone while the channel cursor is still behind it", async () => {
+    const { slack, store, saveLink } = setup(
+      { "read_anchor:C1:1700000005.000000": anchor({ newest: "1700000005.000000" }) },
+      "1700000000.000001"
+    );
+
+    await slack.reconcileReadState("C1");
+
+    expect(saveLink).not.toHaveBeenCalled();
+    expect(store.map.has("read_anchor:C1:1700000005.000000")).toBe(true);
+  });
+
+  it("skips threaded anchors — the channel cursor does not speak for them", async () => {
+    const { slack, store, saveLink } = setup(
+      { "read_anchor:C1:1700000000.000001": anchor({ threaded: true }) },
+      "1700000005.000000"
+    );
+
+    await slack.reconcileReadState("C1");
+
+    expect(saveLink).not.toHaveBeenCalled();
+    expect(store.map.has("read_anchor:C1:1700000000.000001")).toBe(true);
+  });
+
+  it("abstains when Slack returns no cursor", async () => {
+    const { slack, store, saveLink } = setup(
+      { "read_anchor:C1:1700000000.000001": anchor() },
+      null
+    );
+
+    await slack.reconcileReadState("C1");
+
+    expect(saveLink).not.toHaveBeenCalled();
+    expect(store.map.has("read_anchor:C1:1700000000.000001")).toBe(true);
+  });
+
+  it("issues one conversations.info per conversation, not per anchor", async () => {
+    const { slack, api } = setup(
+      {
+        "read_anchor:C1:1700000000.000001": anchor(),
+        "read_anchor:C1:1700000000.000002": anchor({ newest: "1700000000.000002" }),
+        "read_anchor:C2:1700000000.000003": anchor({ newest: "1700000000.000003" }),
+      },
+      "1700000005.000000"
+    );
+
+    await slack.reconcileReadState("C1");
+
+    expect(api.getConversationInfo).toHaveBeenCalledTimes(2);
+  });
+
+  it("drops anchors past the retention window without marking them read", async () => {
+    const stale = NOW - 31 * 24 * 60 * 60 * 1000;
+    const { slack, store, saveLink } = setup(
+      { "read_anchor:C1:1700000000.000001": anchor({ at: stale }) },
+      "1700000000.000000"
+    );
+
+    await slack.reconcileReadState("C1");
+
+    expect(saveLink).not.toHaveBeenCalled();
+    expect(store.map.has("read_anchor:C1:1700000000.000001")).toBe(false);
+  });
+
+  it("stops the pass and keeps every remaining anchor when Slack rate limits", async () => {
+    const { slack, store, api } = setup(
+      {
+        "read_anchor:C1:1700000000.000001": anchor(),
+        "read_anchor:C2:1700000000.000003": anchor({ newest: "1700000000.000003" }),
+      },
+      "1700000005.000000"
+    );
+    api.getConversationInfo.mockRejectedValue(
+      new SlackRateLimitedError("conversations.info", 60_000)
+    );
+
+    await slack.reconcileReadState("C1");
+
+    expect(store.map.has("read_anchor:C1:1700000000.000001")).toBe(true);
+    expect(store.map.has("read_anchor:C2:1700000000.000003")).toBe(true);
+  });
+
+  it("skips one unreachable conversation without abandoning the rest", async () => {
+    const { slack, store, api, saveLink } = setup(
+      {
+        "read_anchor:C1:1700000000.000001": anchor(),
+        "read_anchor:C2:1700000000.000003": anchor({ newest: "1700000000.000003" }),
+      },
+      "1700000005.000000"
+    );
+    api.getConversationInfo
+      .mockRejectedValueOnce(
+        new SlackPermanentError("conversations.info", "channel_not_found")
+      )
+      .mockResolvedValue({ lastRead: "1700000005.000000" });
+
+    await slack.reconcileReadState("C1");
+
+    expect(saveLink).toHaveBeenCalledTimes(1);
+    expect(store.map.has("read_anchor:C1:1700000000.000001")).toBe(true);
+    expect(store.map.has("read_anchor:C2:1700000000.000003")).toBe(false);
+  });
+
+  it("flags reauth and stops the pass on an auth-shaped permanent error", async () => {
+    const { slack, store, api, saveLink, markNeedsReauth } = setup(
+      {
+        "read_anchor:C1:1700000000.000001": anchor(),
+        "read_anchor:C2:1700000000.000003": anchor({ newest: "1700000000.000003" }),
+      },
+      "1700000005.000000"
+    );
+    // invalid_auth is in SLACK_AUTH_ERRORS: the grant itself is bad, so this
+    // is not something a retry (or waiting for the user) will fix.
+    api.getConversationInfo.mockRejectedValue(
+      new SlackPermanentError("conversations.info", "invalid_auth")
+    );
+
+    await slack.reconcileReadState("C1");
+
+    expect(markNeedsReauth).toHaveBeenCalledWith("C1");
+    expect(saveLink).not.toHaveBeenCalled();
+    expect(store.map.has("read_anchor:C1:1700000000.000001")).toBe(true);
+    expect(store.map.has("read_anchor:C2:1700000000.000003")).toBe(true);
+  });
+
+  it("skips a conversation whose optional dms scope was declined, without abandoning the rest", async () => {
+    const { slack, store, api, saveLink, markNeedsReauth } = setup(
+      {
+        "read_anchor:C1:1700000000.000001": anchor(),
+        "read_anchor:C2:1700000000.000003": anchor({ newest: "1700000000.000003" }),
+      },
+      "1700000005.000000"
+    );
+    // missing_scope is a member of SLACK_AUTH_ERRORS too, but a declined
+    // optional scope group is a user decision, not a broken connection —
+    // mirrors onThreadRead's handling of the same error.
+    api.getConversationInfo
+      .mockRejectedValueOnce(
+        new SlackPermanentError("conversations.info", "missing_scope")
+      )
+      .mockResolvedValue({ lastRead: "1700000005.000000" });
+
+    await slack.reconcileReadState("C1");
+
+    expect(markNeedsReauth).not.toHaveBeenCalled();
+    expect(saveLink).toHaveBeenCalledTimes(1);
+    expect(store.map.has("read_anchor:C1:1700000000.000001")).toBe(true);
+    expect(store.map.has("read_anchor:C2:1700000000.000003")).toBe(false);
+  });
+
+  it("skips a conversation the token can no longer reach (no_permission), without abandoning the rest", async () => {
+    const { slack, store, api, saveLink, markNeedsReauth } = setup(
+      {
+        "read_anchor:C1:1700000000.000001": anchor(),
+        "read_anchor:C2:1700000000.000003": anchor({ newest: "1700000000.000003" }),
+      },
+      "1700000005.000000"
+    );
+    // no_permission on THIS conversation means the user lost access to it
+    // specifically — not evidence the token itself is dead.
+    api.getConversationInfo
+      .mockRejectedValueOnce(
+        new SlackPermanentError("conversations.info", "no_permission")
+      )
+      .mockResolvedValue({ lastRead: "1700000005.000000" });
+
+    await slack.reconcileReadState("C1");
+
+    expect(markNeedsReauth).not.toHaveBeenCalled();
+    expect(saveLink).toHaveBeenCalledTimes(1);
+    expect(store.map.has("read_anchor:C1:1700000000.000001")).toBe(true);
+    expect(store.map.has("read_anchor:C2:1700000000.000003")).toBe(false);
+  });
+
+  it("resolves a DM anchor to the DM identity source, never an app_redirect URL", async () => {
+    // The DM anchor key (`read_anchor:D1:D1`) parses to a threadTs of "D1" —
+    // a non-timestamp fed straight into conversationSource(). If
+    // isKnownDMChannel ever returned false here, the sweep would synthesise
+    // a bogus app_redirect URL and create a brand-new, empty thread instead
+    // of updating the real DM link.
+    const { slack, saveLink } = setup(
+      { "read_anchor:D1:D1": anchor() },
+      "1700000005.000000"
+    );
+    vi.spyOn(
+      slack as unknown as { isKnownDMChannel: (c: string) => Promise<boolean> },
+      "isKnownDMChannel"
+    ).mockResolvedValue(true);
+
+    await slack.reconcileReadState("C1");
+
+    expect(saveLink).toHaveBeenCalledTimes(1);
+    const saved = saveLink.mock.calls[0][0];
+    expect(saved.type).toBe("dm");
+    expect(saved.source).not.toMatch(/^https:\/\/slack\.com\/app_redirect/);
+    expect(saved.source).toBe("slack:chat:D1");
+  });
+
+  it("does no work on a second invocation within 24h of the last sweep", async () => {
+    // The anchor stays behind the channel cursor (verdict "unread"), so it
+    // survives the first pass — proving the second call's silence comes from
+    // the top-of-function guard, not from there being nothing left to sweep.
+    const { slack, api } = setup(
+      { "read_anchor:C1:1700000005.000000": anchor({ newest: "1700000005.000000" }) },
+      "1700000000.000001"
+    );
+
+    await slack.reconcileReadState("C1");
+    expect(api.getConversationInfo).toHaveBeenCalledTimes(1);
+
+    await slack.reconcileReadState("C1");
+    expect(api.getConversationInfo).toHaveBeenCalledTimes(1);
+  });
+
+  it("arms a fresh 24h chain for a second channel once the guard has passed", async () => {
+    // Sanity check on the other side of the same guard: once 24h have
+    // elapsed (simulated by advancing the mocked clock), a differently-keyed
+    // invocation is free to sweep again.
+    const { slack, api } = setup(
+      { "read_anchor:C1:1700000005.000000": anchor({ newest: "1700000005.000000" }) },
+      "1700000000.000001"
+    );
+
+    await slack.reconcileReadState("C1");
+    expect(api.getConversationInfo).toHaveBeenCalledTimes(1);
+
+    vi.spyOn(Date, "now").mockReturnValue(NOW + 24 * 60 * 60 * 1000 + 1);
+    await slack.reconcileReadState("C2");
+    expect(api.getConversationInfo).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("onThreadRead", () => {
+  function setup() {
+    const store = makeStore();
+    const markNeedsReauth = vi.fn();
+    const tools = {
+      store,
+      integrations: { get: vi.fn(), markNeedsReauth },
+      network: { createWebhook: vi.fn() },
+      files: {},
+    };
+    const slack = new Slack(
+      "twist-instance-1" as never,
+      { getTools: () => tools } as never
+    );
+    const api = { markConversationRead: vi.fn().mockResolvedValue(undefined) };
+    vi.spyOn(
+      slack as unknown as { getApi: (c: string) => Promise<unknown> },
+      "getApi"
+    ).mockResolvedValue(api);
+    return { slack, store, api, markNeedsReauth };
+  }
+
+  it("marks a direct conversation read in Slack", async () => {
+    const { slack, api } = setup();
+    const thread = {
+      meta: { channelId: "D1", direct: true, threadTs: "1700000000.000001" },
+    };
+
+    await slack.onThreadRead(thread as never, {} as never, false);
+
+    expect(api.markConversationRead).toHaveBeenCalledWith(
+      "D1",
+      "1700000000.000001"
+    );
+  });
+
+  it("does nothing for a channel thread — conversations.mark is channel-wide", async () => {
+    const { slack, api } = setup();
+    const thread = { meta: { channelId: "C1", threadTs: "1700000000.000001" } };
+
+    await slack.onThreadRead(thread as never, {} as never, false);
+
+    expect(api.markConversationRead).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when the thread is marked UNREAD — Slack has no un-mark", async () => {
+    const { slack, api } = setup();
+    const thread = {
+      meta: { channelId: "D1", direct: true, threadTs: "1700000000.000001" },
+    };
+
+    await slack.onThreadRead(thread as never, {} as never, true);
+
+    expect(api.markConversationRead).not.toHaveBeenCalled();
+  });
+
+  it("no-ops when the meta carries no anchor message", async () => {
+    const { slack, api } = setup();
+    const thread = { meta: { channelId: "D1", direct: true } };
+
+    await slack.onThreadRead(thread as never, {} as never, false);
+
+    expect(api.markConversationRead).not.toHaveBeenCalled();
+  });
+
+  it("no-ops when the dms scope group was declined", async () => {
+    const { slack, api, markNeedsReauth } = setup();
+    api.markConversationRead.mockRejectedValue(
+      new SlackPermanentError("conversations.mark", "missing_scope")
+    );
+    const thread = {
+      meta: { channelId: "D1", direct: true, threadTs: "1700000000.000001" },
+    };
+
+    await expect(
+      slack.onThreadRead(thread as never, {} as never, false)
+    ).resolves.toBeUndefined();
+    // missing_scope is a member of SLACK_AUTH_ERRORS too, but a declined
+    // optional group is a user decision, not a broken connection — it must
+    // NOT be indistinguishable from a genuinely dead token below.
+    expect(markNeedsReauth).not.toHaveBeenCalled();
+  });
+
+  it("flags reauth on a genuinely dead token — auth-shaped, not missing_scope", async () => {
+    const { slack, api, markNeedsReauth } = setup();
+    api.markConversationRead.mockRejectedValue(
+      new SlackPermanentError("conversations.mark", "invalid_auth")
+    );
+    const thread = {
+      meta: { channelId: "D1", direct: true, threadTs: "1700000000.000001" },
+    };
+
+    await expect(
+      slack.onThreadRead(thread as never, {} as never, false)
+    ).resolves.toBeUndefined();
+    expect(markNeedsReauth).toHaveBeenCalledWith("D1");
+  });
+
+  it("clears a channel thread's read anchor when Plot marks it read", async () => {
+    const { slack, store } = setup();
+    store.map.set("read_anchor:C1:1700000000.000001", {
+      newest: "1700000000.000001",
+      threaded: false,
+      at: 1000,
+    });
+    const thread = { meta: { channelId: "C1", threadTs: "1700000000.000001" } };
+
+    await slack.onThreadRead(thread as never, {} as never, false);
+
+    expect(store.map.has("read_anchor:C1:1700000000.000001")).toBe(false);
+  });
+
+  it("clears a DM's read anchor keyed on the conversation id, not meta.threadTs", async () => {
+    const { slack, store } = setup();
+    // The DM anchor lives at read_anchor:D1:D1 — keyed on the conversation id
+    // in both positions, never on meta.threadTs (which names the
+    // conversation's latest message, not its anchor).
+    store.map.set("read_anchor:D1:D1", {
+      newest: "1700000000.000001",
+      threaded: false,
+      at: 1000,
+    });
+    const thread = {
+      meta: { channelId: "D1", direct: true, threadTs: "1700000000.000001" },
+    };
+
+    await slack.onThreadRead(thread as never, {} as never, false);
+
+    expect(store.map.has("read_anchor:D1:D1")).toBe(false);
+  });
+
+  it("clears the anchor even when marking UNREAD, so a manual override can't be reverted by the next sweep", async () => {
+    const { slack, store, api } = setup();
+    store.map.set("read_anchor:D1:D1", {
+      newest: "1700000000.000001",
+      threaded: false,
+      at: 1000,
+    });
+    const thread = {
+      meta: { channelId: "D1", direct: true, threadTs: "1700000000.000001" },
+    };
+
+    await slack.onThreadRead(thread as never, {} as never, true);
+
+    expect(store.map.has("read_anchor:D1:D1")).toBe(false);
+    // Marking unread still writes back nothing to Slack — only the anchor
+    // bookkeeping changed.
+    expect(api.markConversationRead).not.toHaveBeenCalled();
   });
 });

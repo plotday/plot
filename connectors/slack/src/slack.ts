@@ -46,6 +46,12 @@ import { assembleSlackDmLink, slackConversationIdentity } from "./slack-dm";
 import { unicodeToSlackName } from "./slack-emoji";
 import { slackFacets } from "./slack-facets";
 import { mentionsUser, type MentionContext } from "./slack-mentions";
+import {
+  channelReadVerdict,
+  deriveReadAnchor,
+  type SlackReadAnchor,
+  threadReadVerdict,
+} from "./slack-read-state";
 
 /**
  * Slack integration source.
@@ -65,6 +71,9 @@ import { mentionsUser, type MentionContext } from "./slack-mentions";
  *   through `@here`/`@channel`) or that the user saved — never whole channels
  * - Star-based to-do sync against the user's saved items
  * - Reactions round-trip on everything that is synced
+ * - Read state synced from Slack: a conversation you have read in Slack is
+ *   read in Plot, and reading a direct conversation in Plot marks it read in
+ *   Slack
  *
  * **Required OAuth User Scopes** (each backs a shipped, user-visible feature —
  * kept in sync with the authoritative {@link Slack.SCOPES} array below):
@@ -94,6 +103,13 @@ import { mentionsUser, type MentionContext } from "./slack-mentions";
  *   `im:history`/`mpim:history`, which only grant reading message content
  *   within a conversation whose id is already known — they do not grant
  *   enumeration, so `listDMChannels` needs both.
+ *
+ * Read state uses only scopes the connector already holds: `conversations.info`
+ * is covered by `channels:read`/`groups:read` (required) or `im:read`/`mpim:read`
+ * (the optional `dms` group), and `conversations.mark` for direct conversations
+ * by `im:write`/`mpim:write` (also `dms`). Channel threads are read-in only —
+ * Slack's public API exposes no per-thread mark, and `conversations.mark` would
+ * move the whole channel's cursor.
  */
 
 /**
@@ -102,6 +118,15 @@ import { mentionsUser, type MentionContext } from "./slack-mentions";
  * collapses into one pass that fires at most this long after the first one.
  */
 const INCREMENTAL_SYNC_COALESCE_MS = 10_000;
+
+/**
+ * How long an unresolved read anchor is swept before it is dropped.
+ *
+ * Past this point Plot's own read state is the one that matters, and a link
+ * the user has left unread for a month is not going to be settled by Slack's
+ * cursor. Dropping it keeps the sweep bounded by live work.
+ */
+const READ_ANCHOR_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 /**
  * How far back an event-triggered incremental sync reads. Wide enough to
@@ -436,6 +461,7 @@ export class Slack extends Connector<Slack> {
     await this.cancelScheduledTask(`custom-emoji-sync:${channel.id}`);
     await this.cancelScheduledTask(`user-groups-sync:${channel.id}`);
     await this.cancelScheduledTask(`dm-channels-sync:${channel.id}`);
+    await this.cancelScheduledTask(`read-state-sync:${channel.id}`);
     await this.cancelDrain(`incremental-sync:${channel.id}`);
     await this.cancelDrain(`reaction-refresh:${channel.id}`);
     await this.cancelDrain(`subscribed-thread:${channel.id}`);
@@ -457,6 +483,18 @@ export class Slack extends Connector<Slack> {
     // thread that already earned its place in Plot keeps updating.
     const starredKeys = await this.tools.store.list(`starred:${channel.id}:`);
     for (const key of starredKeys) await this.clear(key);
+
+    // Read anchors are per-conversation reconciliation state, not a record of
+    // what earned a place in Plot, so unlike `sync_thread:` they are swept —
+    // but only a CHANNEL THREAD's anchor is keyed on this channel id
+    // (`read_anchor:<channel.id>:<threadTs>`) and reachable this way. A
+    // direct conversation's anchor is keyed on the conversation id in both
+    // positions (`read_anchor:<dmChannelId>:<dmChannelId>`), and a DM
+    // conversation id is never an enabled channel, so this sweep does not
+    // reach it. That's fine left alone: DM anchors are bounded by
+    // `reconcileReadState`'s 30-day retention regardless.
+    const anchorKeys = await this.tools.store.list(`read_anchor:${channel.id}:`);
+    for (const key of anchorKeys) await this.clear(key);
   }
 
   /**
@@ -803,6 +841,31 @@ export class Slack extends Connector<Slack> {
         // and rewinding what this one just wrote.
         await this.set(this.dmHeadKey(channelId), true);
       }
+      // Anchor the conversation for the daily sweep via the shared helper
+      // below (see `applyReadAnchor`). A direct conversation is never
+      // `threaded`: this one permanent link flattens Slack's reply threads
+      // into a running conversation, so the CONVERSATION cursor is the only
+      // cursor that describes it, and it is keyed on the conversation id in
+      // both positions — there is no thread root to key on. There is no
+      // live, cursor-informed "read" verdict for a DM (the channel cursor is
+      // settled only by the daily `reconcileReadState` sweep), so `read` is
+      // always `false` here; the helper's write gate
+      // (`advanceConversationHead && link.unread !== false`) still applies,
+      // covering both "these messages are not the conversation head" (a
+      // reaction or save naming an older message, which must not rewind the
+      // anchor) and "the link is already read" (`assembleSlackDmLink` sets
+      // `unread: false` for `initialSync`, so an anchor for it could only
+      // ever re-assert what is already true and would outlive a later manual
+      // "mark unread" in Plot).
+      await this.applyReadAnchor({
+        channelId,
+        anchorId: channelId,
+        messages: kept,
+        direct: true,
+        link,
+        read: false,
+        advanceConversationHead,
+      });
       return link;
     }
 
@@ -829,7 +892,113 @@ export class Slack extends Connector<Slack> {
       syncableId: channelId,
     };
     if (messages[0]) link.facets = slackFacets(messages[0], channelId);
+    // Apply Slack's per-thread read cursor via the same shared helper the DM
+    // branch above uses (see `applyReadAnchor`). A root-only channel message
+    // has no thread cursor of its own — only the daily sweep's
+    // `conversations.info` can speak for it — so `threaded` and the read
+    // verdict below are both false, and the helper's write gate
+    // (`advanceConversationHead && link.unread !== false`) is what stops a
+    // stale anchor from being recreated when nothing new actually arrived
+    // (e.g. `refreshSlackThread`'s reaction refresh, which re-fetches with
+    // `advanceConversationHead: false`).
+    //
+    // Read from THIS response, never from a cache: the parent's
+    // `unread_count` is computed after the reply we are saving landed, so a
+    // genuine new-message unread can never be suppressed by a stale cursor.
+    //
+    // `initialSync` already asserts read (it sets `unread: false`), so those
+    // links need no anchor at all — the sweep would only re-assert what is
+    // already true.
+    const threadTs =
+      (link.meta?.threadTs as string | undefined) ?? messages[0]?.ts;
+    if (threadTs) {
+      const threaded = Boolean(
+        deriveReadAnchor(messages, { direct: false, at: Date.now() })?.threaded
+      );
+      const read =
+        link.unread === false ||
+        (threaded && threadReadVerdict(messages[0]) === "read");
+      await this.applyReadAnchor({
+        channelId,
+        anchorId: threadTs,
+        messages,
+        direct: false,
+        link,
+        read,
+        advanceConversationHead,
+      });
+    }
     return link;
+  }
+
+  /**
+   * Settle one link's read-anchor bookkeeping: mark it read (and drop the
+   * anchor) when the caller already has a cursor-backed verdict, or decide
+   * whether an anchor still needs to be (re)written to track it.
+   *
+   * The anchor's EXISTENCE is the transition gate for
+   * {@link reconcileReadState}: present means "not yet marked read for this
+   * `newest` ts". Deleting it on a successful mark-read is what makes a later
+   * manual "mark unread" in Plot stick — the sweep has nothing left to act on
+   * until new content recreates the anchor.
+   *
+   * Shared by both {@link buildConversationLink} branches (direct
+   * conversation and channel thread) so one gating rule governs both writes.
+   * They used to each inline their own version of this and drifted apart: the
+   * channel-thread copy wrote an anchor unconditionally whenever the verdict
+   * wasn't "read", even on a `refreshSlackThread` reaction refresh that asked
+   * `advanceConversationHead: false` — a root-only message has no thread
+   * cursor, so that verdict is always "unknown", and the anchor was
+   * recreated with the same `newest` even though no new content had arrived,
+   * letting the next sweep re-assert read over a user's manual unread.
+   *
+   * `advanceConversationHead` gates the WRITE only, never the read-clear:
+   * solid evidence that a cursor already says read is safe to act on no
+   * matter why the caller fetched these messages, but recreating a "not yet
+   * read" anchor is only valid when the caller is reporting the
+   * conversation's actual current head.
+   *
+   * Also carries the link's `title` onto the anchor (see `SlackReadAnchor`
+   * for why `reconcileReadState` needs it). `assembleSlackDmLink` deliberately
+   * omits `title` when `users.info` was unavailable, so a link with no title
+   * here does not mean "no title exists" — it falls back to whatever title
+   * is already on the stored anchor rather than dropping it for that window.
+   */
+  private async applyReadAnchor(opts: {
+    channelId: string;
+    /** Thread root ts, or the conversation id for a direct conversation. */
+    anchorId: string;
+    messages: SlackMessage[];
+    direct: boolean;
+    link: { unread?: boolean; title?: string | null };
+    /** Did a cursor say this link is read? */
+    read: boolean;
+    advanceConversationHead: boolean;
+  }): Promise<void> {
+    const {
+      channelId,
+      anchorId,
+      messages,
+      direct,
+      link,
+      read,
+      advanceConversationHead,
+    } = opts;
+    const anchorKey = this.readAnchorKey(channelId, anchorId);
+    if (read) {
+      link.unread = false;
+      await this.clear(anchorKey);
+      return;
+    }
+    if (advanceConversationHead && link.unread !== false) {
+      let title = link.title;
+      if (!title) {
+        const existing = await this.get<SlackReadAnchor>(anchorKey);
+        title = existing?.title ?? undefined;
+      }
+      const anchor = deriveReadAnchor(messages, { direct, at: Date.now(), title });
+      if (anchor) await this.set(anchorKey, anchor);
+    }
   }
 
   /**
@@ -1721,6 +1890,18 @@ export class Slack extends Connector<Slack> {
     return `sync_thread:${channelId}:${threadTs}`;
   }
 
+  /**
+   * Key for one link's read anchor. Keyed on the thread root (the same id
+   * `subscriptionKey` uses) so a new reply REPLACES the anchor rather than
+   * accumulating one per message.
+   *
+   * A direct conversation is one permanent link, so it anchors on the
+   * conversation id in both positions.
+   */
+  private readAnchorKey(channelId: string, threadTs: string): string {
+    return `read_anchor:${channelId}:${threadTs}`;
+  }
+
   private async subscribeThread(
     channelId: string,
     threadTs: string
@@ -1888,6 +2069,218 @@ export class Slack extends Connector<Slack> {
     }
   }
 
+  /**
+   * Daily reconciliation of Slack's CHANNEL-level read cursor into Plot.
+   *
+   * Slack has no push signal for read state — `channel_marked`/`im_marked` are
+   * RTM-only — so this is the only way a link that has gone quiet ever learns
+   * the user read it. It uses `conversations.info` (Tier 3) exclusively and
+   * never touches `conversations.history`/`conversations.replies`, which are
+   * limited to 1 rpm and are what live message ingestion runs on: a sweep that
+   * spent that budget would starve inbound messages.
+   *
+   * Threaded anchors are skipped — a channel cursor says nothing about whether
+   * a thread was opened. Those are settled for free on the live path, where
+   * the thread's own cursor arrives with the messages.
+   *
+   * `channelId` is only used to resolve a token; Slack tokens are
+   * workspace-wide, and the conversations to sweep come from the anchors.
+   *
+   * Gated to run at most once per 24 hours per WORKSPACE (like `syncMembers`,
+   * placed the same way — before the `try`, so a redundant call skips the
+   * `finally` below too and never arms a chain of its own). The sweep itself
+   * is workspace-scoped (`listEntries("read_anchor:")`, no channel filter),
+   * but the caller, `queueWorkspaceDailyTasks`, dispatches it once per
+   * ENABLED CHANNEL, and Slack auto-observes new channels as the user
+   * composes into them. Without this guard, every newly-enabled channel would
+   * arm its own daily recurring chain (`read-state-sync:<channelId>` is keyed
+   * per channel, so `scheduleRecurring` cannot dedupe them against each
+   * other) — N chains sweeping the same anchors once a day each means N times
+   * the `conversations.info` calls and N duplicate writes per anchor that
+   * actually resolves.
+   */
+  async reconcileReadState(channelId: string): Promise<void> {
+    const now = Date.now();
+    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+    const lastReadSync = await this.get<number>("readStateSyncedAt");
+    if (lastReadSync && now - lastReadSync < ONE_DAY_MS) return;
+
+    try {
+      const entries = await this.tools.store.listEntries<SlackReadAnchor>(
+        "read_anchor:"
+      );
+      if (entries.length === 0) return;
+
+      // Drop anything past retention before spending an API call on it.
+      const expired = entries.filter(
+        ([, anchor]) => now - anchor.at >= READ_ANCHOR_RETENTION_MS
+      );
+      if (expired.length > 0) {
+        await this.tools.store.clearMany(expired.map(([key]) => key));
+      }
+
+      // Threaded anchors are the live path's job; grouping by conversation is
+      // what keeps this to one `conversations.info` per conversation rather
+      // than one per link.
+      const byConversation = new Map<string, [string, SlackReadAnchor][]>();
+      for (const [key, anchor] of entries) {
+        if (anchor.threaded) continue;
+        if (now - anchor.at >= READ_ANCHOR_RETENTION_MS) continue;
+        const rest = key.slice("read_anchor:".length);
+        const separator = rest.indexOf(":");
+        if (separator <= 0) continue;
+        const conversationId = rest.slice(0, separator);
+        const existing = byConversation.get(conversationId);
+        if (existing) existing.push([key, anchor]);
+        else byConversation.set(conversationId, [[key, anchor]]);
+      }
+      if (byConversation.size === 0) return;
+
+      let api: SlackApi;
+      try {
+        api = await this.getApi(channelId);
+      } catch (error) {
+        console.warn("reconcileReadState: Slack token unavailable", error);
+        return;
+      }
+
+      const conversations = [...byConversation];
+      for (let i = 0; i < conversations.length; i++) {
+        const [conversationId, anchors] = conversations[i]!;
+        let lastRead: string | null;
+        try {
+          ({ lastRead } = await api.getConversationInfo(conversationId));
+        } catch (error) {
+          if (error instanceof SlackRateLimitedError) {
+            // Every remaining conversation needs the same method, so carrying
+            // on would just re-issue guaranteed-429s. Anchors are durable —
+            // tomorrow's pass (or the retry below) picks up exactly where this
+            // one stopped. `conversations.length - i` is what's actually left
+            // — this one included, since it never got resolved — not the
+            // conversation-count total the map started with.
+            const remaining = conversations.length - i;
+            console.log(
+              `reconcileReadState: rate limited on ${error.method}; ${remaining} conversation(s) left for a later pass`
+            );
+            return;
+          }
+          if (error instanceof SlackPermanentError) {
+            if (error.slackError === "missing_scope") {
+              // The optional `dms` scope group was declined at connect time.
+              // That is a user decision, not a broken connection — mirrors
+              // `onThreadRead`'s handling of the same error, so a user who
+              // opted out of DM sync doesn't get a spurious reconnect prompt
+              // while the channels behind this DM in `byConversation` go
+              // unswept.
+              console.warn(
+                `reconcileReadState: skipping ${conversationId}: ${error.method} → missing_scope`
+              );
+              continue;
+            }
+            if (error.slackError === "no_permission") {
+              // This conversation specifically is unreachable (e.g. the user
+              // was removed from it) — not evidence the token itself is dead.
+              console.warn(
+                `reconcileReadState: skipping ${conversationId}: ${error.method} → no_permission`
+              );
+              continue;
+            }
+            if (SLACK_AUTH_ERRORS.has(error.slackError)) {
+              await this.tools.integrations.markNeedsReauth(channelId);
+              return;
+            }
+            // A single gone/forbidden conversation must not abandon the rest.
+            console.warn(
+              `reconcileReadState: skipping ${conversationId}: ${error.method} → ${error.slackError}`
+            );
+            continue;
+          }
+          throw error;
+        }
+
+        const resolved: string[] = [];
+        for (const [key, anchor] of anchors) {
+          if (channelReadVerdict(lastRead, anchor.newest) !== "read") continue;
+          const threadTs = key.slice(
+            `read_anchor:${conversationId}:`.length
+          );
+          // Minimal upsert. `created` and `schedules` are omitted
+          // deliberately: `saveLink` reads `unread === false` as the
+          // initial-sync signal and DROPS the save outright when the item's
+          // date predates the plan's sync history limit. `preview` and
+          // `notes` are omitted too, so the upsert preserves whatever
+          // content is stored rather than rewriting it — `preview`'s
+          // platform default derives from the notes, so with none supplied
+          // it resolves to null and COALESCE falls through to the stored
+          // value.
+          //
+          // `title` is the one field that must be RE-SENT, not omitted:
+          // `upsert_thread` takes an "archived" code path whenever the
+          // user's `thread_priority` row points at an archived priority
+          // (they archived the focus this thread was filed under) or is
+          // missing, and on that path the platform's title default is the
+          // literal string "Untitled" — never null — so an omitted title
+          // there always loses to it, destroying the thread's real title.
+          // Sending `title` also re-writes it on the normal, non-archived
+          // path, which is harmless: a channel thread's title is derived
+          // deterministically from its root message and a DM's is the
+          // counterparty name, so both are re-sent unchanged by every
+          // ordinary sync anyway — this isn't a new source of truth, just
+          // re-asserting the same value. Sourced from the anchor (carried
+          // there by `applyReadAnchor`, since this upsert has no access to
+          // the live Slack message) and omitted here when the anchor has
+          // none — never worse than today's behaviour.
+          //
+          // `author: null` documents that this upsert is genuinely
+          // authorless — it only flips `unread` (and now `title`), never
+          // introduces new content — and silences `saveLink`'s
+          // development-time unattributed-link warning that would otherwise
+          // fire on every reconciled link.
+          await this.tools.integrations.saveLink({
+            // Reuse the connector's own source helper — a reconcile upsert
+            // that guessed the key would create a second, empty thread
+            // instead of updating the one the save path wrote.
+            source: await this.conversationSource(conversationId, threadTs),
+            channelId: conversationId,
+            type: (await this.isKnownDMChannel(conversationId)) ? "dm" : "thread",
+            unread: false,
+            author: null,
+            ...(anchor.title ? { title: anchor.title } : {}),
+          });
+          resolved.push(key);
+        }
+        if (resolved.length > 0) await this.tools.store.clearMany(resolved);
+      }
+
+      // Stamped on completion, not entry — matches `membersSyncedAt` /
+      // `customEmojiSyncedAt`. A pass that returned early above (nothing to
+      // sweep, no token, rate limited) skips this: that's correct, since
+      // suppressing `queueWorkspaceDailyTasks`'s backstop for 24h on a pass
+      // that did no real work would leave anchors unreconciled with nothing
+      // to re-trigger it sooner.
+      await this.set("readStateSyncedAt", Date.now());
+    } catch (error) {
+      // Unlike the rate-limit/permanent-error branches above (which return
+      // early and set nothing here), an unexpected error still lets the
+      // `finally` re-arm the daily chain below — mirrors `syncMembers`: a
+      // sweep that dies silently would leave read state unreconciled forever
+      // with no recovery signal, which is worse than retrying tomorrow.
+      console.error("reconcileReadState: unexpected error", error);
+      throw error;
+    } finally {
+      // Unconditional: nothing in this function suppresses the daily
+      // reschedule (unlike `syncMembers`, which stops its own chain on a
+      // permanent error) — even a dead-token pass is worth retrying
+      // tomorrow, since the user may have reauthed by then. The top-of-
+      // function guard above is what stops a REDUNDANT chain from ever being
+      // armed; this always re-arms the one chain that got past it.
+      const daily = await this.callback(this.reconcileReadState, channelId);
+      await this.scheduleRecurring(`read-state-sync:${channelId}`, daily, {
+        intervalMs: ONE_DAY_MS,
+      });
+    }
+  }
+
   async onThreadToDo(
     thread: Thread,
     _actor: Actor,
@@ -1934,6 +2327,98 @@ export class Slack extends Connector<Slack> {
     } else {
       await api.removeStar(channelId, threadTs);
       if (isDirect) await this.clear(this.starAnchorKey(channelId));
+    }
+  }
+
+  /**
+   * Write a Plot read back to Slack — direct conversations only.
+   *
+   * `conversations.mark` is CONVERSATION-scoped and Slack's public Web API has
+   * no per-thread equivalent, so this is only coherent where the Plot link IS
+   * the whole conversation. For a channel thread the same call would move that
+   * channel's cursor: forward, clearing unread on every other message in it;
+   * backward, re-unreading messages the user had already read. Both are wrong,
+   * so channel threads write back nothing.
+   *
+   * Marking a thread UNREAD is likewise not propagated — Slack offers no
+   * un-mark, and re-pointing the cursor at an older message would un-read
+   * unrelated conversation history.
+   *
+   * Whichever direction Plot's read state changed, that's the user's final
+   * word — any outstanding {@link reconcileReadState} anchor for this link is
+   * cleared FIRST, before either the `unread` or `meta.direct` guard below.
+   * Skipping this for a DM read used to let the very `conversations.mark` call
+   * a few lines down move Slack's cursor to `anchor.newest` without ever
+   * clearing the anchor Slack was catching up to — so marking the thread
+   * unread again in Plot right after left a stale anchor in place, and the
+   * next sweep saw a cursor it had itself advanced and reverted the user's
+   * unread. Clearing here — for both link shapes and both directions — keeps
+   * a manual mark-unread from being undone the same way even without a
+   * write-back to trigger it.
+   */
+  override async onThreadRead(
+    thread: Thread,
+    _actor: Actor,
+    unread: boolean
+  ): Promise<void> {
+    const meta = thread.meta ?? {};
+    const channelId = meta.channelId as string | undefined;
+    const threadTs = meta.threadTs as string | undefined;
+    if (channelId && threadTs) {
+      // A DM's `meta.threadTs` is the conversation's latest message, not its
+      // anchor key — `buildConversationLink` anchors a direct conversation on
+      // the conversation id in both positions (see `readAnchorKey`), so using
+      // `threadTs` directly here would clear nothing.
+      const anchorId = meta.direct === true ? channelId : threadTs;
+      await this.clear(this.readAnchorKey(channelId, anchorId));
+    }
+
+    if (unread) return;
+    if (meta.direct !== true) return;
+    if (!channelId || !threadTs) return;
+
+    let api: SlackApi;
+    try {
+      api = await this.getApi(channelId);
+    } catch (error) {
+      // Read state already lives in Plot; a missing token is not worth failing
+      // the dispatch over.
+      console.warn("onThreadRead: Slack token unavailable", error);
+      return;
+    }
+
+    try {
+      await api.markConversationRead(channelId, threadTs);
+    } catch (error) {
+      if (error instanceof SlackRateLimitedError) {
+        // The read is already recorded in Plot and the next inbound message
+        // re-establishes the cursor; a deferred write-back is not worth the
+        // bookkeeping for a marker the user cannot see.
+        console.log("onThreadRead: rate limited; skipping write-back");
+        return;
+      }
+      if (error instanceof SlackPermanentError) {
+        if (error.slackError === "missing_scope") {
+          // The optional `dms` scope group was declined at connect time.
+          // That is a user decision, not a broken connection — degrade
+          // quietly rather than prompting a pointless reconnect.
+          console.warn(
+            `onThreadRead: ${error.method} → missing_scope; skipping write-back`
+          );
+          return;
+        }
+        if (SLACK_AUTH_ERRORS.has(error.slackError)) {
+          // A genuinely dead token. Flag it the same way every other write-back
+          // path in this connector does, so the user is prompted to reconnect.
+          await this.tools.integrations.markNeedsReauth(channelId);
+          return;
+        }
+        console.warn(
+          `onThreadRead: ${error.method} → ${error.slackError}; skipping write-back`
+        );
+        return;
+      }
+      throw error;
     }
   }
 
@@ -2271,6 +2756,18 @@ export class Slack extends Connector<Slack> {
       await this.set("dmChannelsSyncClaimedAt", now);
       const dmListCallback = await this.callback(this.listDMChannels, channelId);
       await this.runTask(dmListCallback);
+    }
+
+    const lastReadSync = await this.get<number>("readStateSyncedAt");
+    const readClaimedAt = await this.get<number>("readStateSyncClaimedAt");
+    const readClaimed =
+      readClaimedAt !== null &&
+      readClaimedAt !== undefined &&
+      now - readClaimedAt < CLAIM_TTL_MS;
+    if ((!lastReadSync || now - lastReadSync >= ONE_DAY_MS) && !readClaimed) {
+      await this.set("readStateSyncClaimedAt", now);
+      const readCallback = await this.callback(this.reconcileReadState, channelId);
+      await this.runTask(readCallback);
     }
   }
 
