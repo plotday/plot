@@ -2212,9 +2212,21 @@ export class Slack extends Connector<Slack> {
         return;
       }
       if (error instanceof SlackPermanentError) {
-        // `missing_scope` here means the optional `dms` group was declined,
-        // which is a user decision, not a broken connection — degrade quietly
-        // rather than flagging re-auth.
+        if (error.slackError === "missing_scope") {
+          // The optional `dms` scope group was declined at connect time.
+          // That is a user decision, not a broken connection — degrade
+          // quietly rather than prompting a pointless reconnect.
+          console.warn(
+            `onThreadRead: ${error.method} → missing_scope; skipping write-back`
+          );
+          return;
+        }
+        if (SLACK_AUTH_ERRORS.has(error.slackError)) {
+          // A genuinely dead token. Flag it the same way every other write-back
+          // path in this connector does, so the user is prompted to reconnect.
+          await this.tools.integrations.markNeedsReauth(channelId);
+          return;
+        }
         console.warn(
           `onThreadRead: ${error.method} → ${error.slackError}; skipping write-back`
         );

@@ -4170,17 +4170,23 @@ describe("reconcileReadState", () => {
 describe("onThreadRead", () => {
   function setup() {
     const store = makeStore();
-    const slack = makeSlack({
+    const markNeedsReauth = vi.fn();
+    const tools = {
       store,
-      integrationsGet: vi.fn(),
-      createWebhook: vi.fn(),
-    });
+      integrations: { get: vi.fn(), markNeedsReauth },
+      network: { createWebhook: vi.fn() },
+      files: {},
+    };
+    const slack = new Slack(
+      "twist-instance-1" as never,
+      { getTools: () => tools } as never
+    );
     const api = { markConversationRead: vi.fn().mockResolvedValue(undefined) };
     vi.spyOn(
       slack as unknown as { getApi: (c: string) => Promise<unknown> },
       "getApi"
     ).mockResolvedValue(api);
-    return { slack, api };
+    return { slack, api, markNeedsReauth };
   }
 
   it("marks a direct conversation read in Slack", async () => {
@@ -4227,7 +4233,7 @@ describe("onThreadRead", () => {
   });
 
   it("no-ops when the dms scope group was declined", async () => {
-    const { slack, api } = setup();
+    const { slack, api, markNeedsReauth } = setup();
     api.markConversationRead.mockRejectedValue(
       new SlackPermanentError("conversations.mark", "missing_scope")
     );
@@ -4238,5 +4244,24 @@ describe("onThreadRead", () => {
     await expect(
       slack.onThreadRead(thread as never, {} as never, false)
     ).resolves.toBeUndefined();
+    // missing_scope is a member of SLACK_AUTH_ERRORS too, but a declined
+    // optional group is a user decision, not a broken connection — it must
+    // NOT be indistinguishable from a genuinely dead token below.
+    expect(markNeedsReauth).not.toHaveBeenCalled();
+  });
+
+  it("flags reauth on a genuinely dead token — auth-shaped, not missing_scope", async () => {
+    const { slack, api, markNeedsReauth } = setup();
+    api.markConversationRead.mockRejectedValue(
+      new SlackPermanentError("conversations.mark", "invalid_auth")
+    );
+    const thread = {
+      meta: { channelId: "D1", direct: true, threadTs: "1700000000.000001" },
+    };
+
+    await expect(
+      slack.onThreadRead(thread as never, {} as never, false)
+    ).resolves.toBeUndefined();
+    expect(markNeedsReauth).toHaveBeenCalledWith("D1");
   });
 });
