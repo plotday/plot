@@ -16,6 +16,7 @@ import {
   onCreateLinkFn,
   onNoteCreatedFn,
   onNoteReactionChangedFn,
+  drainPendingRsvpsFn,
   processEmailThreadsFn,
   REACTION_SEND_DELAY_MS,
   sendReactionEmailFn,
@@ -91,6 +92,7 @@ function makeHost(): { host: GmailSyncHost; store: Map<string, unknown> } {
         saveNote: vi.fn(async () => null),
         channelSyncCompleted: vi.fn(async () => {}),
         setThreadToDo: vi.fn(async () => {}),
+        archiveLinks: vi.fn(async () => {}),
       },
       files: { read: vi.fn() },
       network: { createWebhook: vi.fn(), deleteWebhook: vi.fn() },
@@ -129,7 +131,11 @@ function forwardDraft(overrides: Partial<CreateLinkDraft> = {}): CreateLinkDraft
   } as CreateLinkDraft;
 }
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  registeredIcs.clear();
+});
 
 describe("onCreateLinkFn — draft.forward", () => {
   it("builds and sends a native Gmail forward of the source message", async () => {
@@ -815,7 +821,48 @@ function part(
   };
 }
 
-/** A single-message GmailThread carrying a `text/calendar` ICS part. */
+/**
+ * ICS bodies keyed by the attachment id Gmail would hand out for them.
+ *
+ * Gmail never leaves a calendar part inline: it synthesizes a filename
+ * (`invite.ics`) and moves the body out to `attachmentId`, so reading the ICS
+ * takes a second `messages.attachments.get` call. Fixtures below build that
+ * real shape and register the body here, and {@link serveIcsAttachments}
+ * stubs `fetch` to return it — so these tests exercise the same two-step read
+ * production performs rather than a payload shape Gmail never produces.
+ */
+const registeredIcs = new Map<string, string>();
+
+/** Stubs `fetch` so `messages.attachments.get` serves the registered bodies. */
+function serveIcsAttachments(): void {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string) => {
+      const attachmentId = url.split("/attachments/")[1]?.split("?")[0];
+      const ics = attachmentId ? registeredIcs.get(attachmentId) : undefined;
+      if (!ics) return new Response(null, { status: 404 });
+      return new Response(
+        JSON.stringify({ data: b64url(ics), size: ics.length }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    })
+  );
+}
+
+/** A calendar part shaped the way Gmail really delivers one. */
+function icsAttachmentPart(ics: string): GmailMessagePart {
+  const attachmentId = `att-${registeredIcs.size + 1}`;
+  registeredIcs.set(attachmentId, ics);
+  serveIcsAttachments();
+  return {
+    mimeType: "text/calendar",
+    filename: "invite.ics",
+    headers: [],
+    body: { size: ics.length, attachmentId },
+  };
+}
+
+/** A single-message GmailThread carrying a calendar ICS part. */
 function calendarUpdateThread(threadId: string, ics: string): GmailThread {
   const message: GmailMessage = {
     id: `${threadId}-msg-1`,
@@ -833,7 +880,7 @@ function calendarUpdateThread(threadId: string, ics: string): GmailThread {
       ],
       parts: [
         part("text/plain", { data: "The event has been updated." }),
-        part("text/calendar", { data: ics }),
+        icsAttachmentPart(ics),
       ],
     }),
   };
@@ -928,7 +975,7 @@ function rsvpThread(
       ],
       parts: [
         part("text/plain", { data: "Beth Round has declined this invitation." }),
-        part("text/calendar", { data: ics }),
+        icsAttachmentPart(ics),
       ],
     }),
   };
@@ -1100,6 +1147,148 @@ describe("processEmailThreadsFn — attendee responses fold onto the event", () 
       (n) => (n as { key?: string }).key
     );
     expect(keys).toEqual(["rsvp-orphan-msg-1"]);
+  });
+
+  it("records a pending retry when the event has not synced yet", async () => {
+    const { host, store } = makeHost();
+    captureSaves(host, { noteId: null });
+
+    await processEmailThreadsFn(
+      host,
+      [rsvpThread("rsvp-pending", replyIcs("DECLINED"))],
+      false,
+      "INBOX"
+    );
+
+    expect(store.get("pending-rsvp:rsvp-pending")).toMatchObject({
+      threadId: "rsvp-pending",
+    });
+  });
+
+  it("does not track a conversation that also carries real correspondence", async () => {
+    const { host, store } = makeHost();
+    captureSaves(host, { noteId: null });
+
+    await processEmailThreadsFn(
+      host,
+      [
+        rsvpThread("rsvp-mixed", replyIcs("DECLINED"), {
+          withPlainReply: true,
+        }),
+      ],
+      false,
+      "INBOX"
+    );
+
+    // Archiving later must never hide a human reply, so a mixed conversation
+    // is left alone entirely.
+    expect(store.get("pending-rsvp:rsvp-mixed")).toBeUndefined();
+  });
+});
+
+describe("drainPendingRsvpsFn — retract once the event arrives", () => {
+  /** Seeds one pending entry and the Gmail thread the retry re-reads. */
+  function seedPending(
+    host: GmailSyncHost,
+    store: Map<string, unknown>,
+    opts: { firstSeen?: string } = {}
+  ) {
+    const gmailThread = rsvpThread("rsvp-late", replyIcs("ACCEPTED"));
+    store.set("pending-rsvp:rsvp-late", {
+      threadId: "rsvp-late",
+      channelId: "INBOX",
+      firstSeen: opts.firstSeen ?? new Date().toISOString(),
+    });
+    (host.tools.store.list as ReturnType<typeof vi.fn>).mockImplementation(
+      async (prefix: string) =>
+        [...store.keys()].filter((k) => k.startsWith(prefix))
+    );
+    vi.spyOn(GmailApi.prototype, "getThread").mockResolvedValue(gmailThread);
+  }
+
+  it("folds the response and archives the standalone email thread", async () => {
+    const { host, store } = makeHost();
+    const { notes } = captureSaves(host, { noteId: "N" });
+    seedPending(host, store);
+
+    await drainPendingRsvpsFn(host);
+
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toMatchObject({
+      thread: { source: "icaluid:uid-rsvp@google.com" },
+    });
+    expect(host.tools.integrations.archiveLinks).toHaveBeenCalledWith({
+      meta: { threadId: "rsvp-late" },
+    });
+    expect(store.has("pending-rsvp:rsvp-late")).toBe(false);
+  });
+
+  it("applies the same unread rule the first pass would have", async () => {
+    const { host, store } = makeHost();
+    const { notes } = captureSaves(host, { noteId: "N" });
+    const declined = rsvpThread("rsvp-late", replyIcs("DECLINED"));
+    store.set("pending-rsvp:rsvp-late", {
+      threadId: "rsvp-late",
+      channelId: "INBOX",
+      initialSync: false,
+      firstSeen: new Date().toISOString(),
+    });
+    (host.tools.store.list as ReturnType<typeof vi.fn>).mockImplementation(
+      async (prefix: string) =>
+        [...store.keys()].filter((k) => k.startsWith(prefix))
+    );
+    vi.spyOn(GmailApi.prototype, "getThread").mockResolvedValue(declined);
+
+    await drainPendingRsvpsFn(host);
+
+    // A decline is worth surfacing; an acceptance is not. Retrying must not
+    // change that, or a late fold is noisier than a timely one.
+    expect(notes[0]).toMatchObject({ unread: true });
+  });
+
+  it("leaves a response first seen during the initial backfill read", async () => {
+    const { host, store } = makeHost();
+    const { notes } = captureSaves(host, { noteId: "N" });
+    const declined = rsvpThread("rsvp-late", replyIcs("DECLINED"));
+    store.set("pending-rsvp:rsvp-late", {
+      threadId: "rsvp-late",
+      channelId: "INBOX",
+      initialSync: true,
+      firstSeen: new Date().toISOString(),
+    });
+    (host.tools.store.list as ReturnType<typeof vi.fn>).mockImplementation(
+      async (prefix: string) =>
+        [...store.keys()].filter((k) => k.startsWith(prefix))
+    );
+    vi.spyOn(GmailApi.prototype, "getThread").mockResolvedValue(declined);
+
+    await drainPendingRsvpsFn(host);
+
+    expect(notes[0].unread).toBeUndefined();
+  });
+
+  it("keeps the entry and archives nothing while the event is still missing", async () => {
+    const { host, store } = makeHost();
+    captureSaves(host, { noteId: null });
+    seedPending(host, store);
+
+    await drainPendingRsvpsFn(host);
+
+    expect(host.tools.integrations.archiveLinks).not.toHaveBeenCalled();
+    expect(store.has("pending-rsvp:rsvp-late")).toBe(true);
+  });
+
+  it("gives up on an entry older than the retry window", async () => {
+    const { host, store } = makeHost();
+    captureSaves(host, { noteId: "N" });
+    seedPending(host, store, {
+      firstSeen: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+
+    await drainPendingRsvpsFn(host);
+
+    expect(host.tools.integrations.archiveLinks).not.toHaveBeenCalled();
+    expect(store.has("pending-rsvp:rsvp-late")).toBe(false);
   });
 });
 

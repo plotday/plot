@@ -10,6 +10,7 @@ import {
   extractCalendarReplies,
   formatFromHeader,
   isSendableGmailReaction,
+  resolveIcsByMessage,
   stripQuotedReply,
   transformGmailThread,
   type AttachmentData,
@@ -844,6 +845,173 @@ describe("transformGmailThread emoji reactions", () => {
   });
 });
 
+/**
+ * A calendar part exactly as the Gmail API delivers it: Gmail treats every
+ * `text/calendar` part as an attachment, synthesizing a filename (usually
+ * `invite.ics`) and moving the body out to `attachmentId` — so `body.data`
+ * is absent and the content must be fetched separately. Fixtures that build
+ * an inline, filename-less part describe a shape production never produces.
+ */
+function icsAttachmentPart(
+  opts: {
+    mimeType?: string;
+    filename?: string;
+    attachmentId?: string;
+  } = {}
+): GmailMessagePart {
+  return {
+    mimeType: opts.mimeType ?? "text/calendar",
+    filename: opts.filename ?? "invite.ics",
+    headers: [],
+    body: { size: 1359, attachmentId: opts.attachmentId ?? "att-1" },
+  };
+}
+
+/**
+ * A real RSVP ICS taken from production — an Exchange-generated `METHOD:REPLY`
+ * whose `CN` is an address (so it carries an `@`), whose `SUMMARY` is folded
+ * across lines, and which leads with a `VTIMEZONE` block.
+ */
+const REAL_RSVP_ICS = [
+  "BEGIN:VCALENDAR",
+  "METHOD:REPLY",
+  "PRODID:Microsoft Exchange Server 2010",
+  "VERSION:2.0",
+  "BEGIN:VTIMEZONE",
+  "TZID:Eastern Standard Time",
+  "BEGIN:STANDARD",
+  "DTSTART:16010101T020000",
+  "TZOFFSETFROM:-0400",
+  "TZOFFSETTO:-0500",
+  "END:STANDARD",
+  "END:VTIMEZONE",
+  "BEGIN:VEVENT",
+  "ATTENDEE;PARTSTAT=ACCEPTED;CN=liohn@example.ca:mailto:liohn@example.ca",
+  "COMMENT;LANGUAGE=en-US:\\n",
+  "UID:k1nET3CLaxZxrDppbbSNg5@Cal.com",
+  "SUMMARY;LANGUAGE=en-US:Accepted: Your Liohn <> Kris has been re",
+  " scheduled to 11:30am - 12:00pm\\, Tuesday\\, August 4\\, 2026.",
+  "DTSTART;TZID=Eastern Standard Time:20260804T113000",
+  "DTSTAMP:20260729T194724Z",
+  "SEQUENCE:1",
+  "END:VEVENT",
+  "END:VCALENDAR",
+].join("\r\n");
+
+describe("resolveIcsByMessage", () => {
+  function messageWithPayload(payload: GmailMessagePart): GmailMessage {
+    return {
+      id: "m1",
+      threadId: "t1",
+      labelIds: ["INBOX"],
+      snippet: "snippet",
+      historyId: "1",
+      internalDate: "1700000000000",
+      sizeEstimate: 500,
+      payload,
+    };
+  }
+
+  it("fetches the body of a text/calendar part delivered as an attachment", async () => {
+    const api = {
+      getAttachment: vi.fn().mockResolvedValue({
+        data: b64url(REAL_RSVP_ICS),
+        size: REAL_RSVP_ICS.length,
+      }),
+    };
+    const message = messageWithPayload(
+      part("multipart/alternative", {
+        parts: [part("text/html", { data: "<p>hi</p>" }), icsAttachmentPart()],
+      })
+    );
+
+    const resolved = await resolveIcsByMessage(api, [message]);
+
+    expect(api.getAttachment).toHaveBeenCalledWith("m1", "att-1");
+    expect(resolved.get("m1")).toContain("UID:k1nET3CLaxZxrDppbbSNg5@Cal.com");
+  });
+
+  it("recognizes an application/ics part", async () => {
+    const api = {
+      getAttachment: vi
+        .fn()
+        .mockResolvedValue({ data: b64url(REAL_RSVP_ICS), size: 1 }),
+    };
+    const message = messageWithPayload(
+      part("multipart/mixed", {
+        parts: [icsAttachmentPart({ mimeType: "application/ics" })],
+      })
+    );
+
+    const resolved = await resolveIcsByMessage(api, [message]);
+
+    expect(resolved.get("m1")).toContain("METHOD:REPLY");
+  });
+
+  it("recognizes an .ics filename carrying an unhelpful mime type", async () => {
+    const api = {
+      getAttachment: vi
+        .fn()
+        .mockResolvedValue({ data: b64url(REAL_RSVP_ICS), size: 1 }),
+    };
+    const message = messageWithPayload(
+      part("multipart/mixed", {
+        parts: [
+          icsAttachmentPart({
+            mimeType: "application/octet-stream",
+            filename: "Appointment1.ics",
+          }),
+        ],
+      })
+    );
+
+    const resolved = await resolveIcsByMessage(api, [message]);
+
+    expect(resolved.get("m1")).toContain("METHOD:REPLY");
+  });
+
+  it("uses inline data without fetching when the part carries a body", async () => {
+    const api = { getAttachment: vi.fn() };
+    const message = messageWithPayload(
+      part("multipart/mixed", {
+        parts: [part("text/calendar", { data: REAL_RSVP_ICS })],
+      })
+    );
+
+    const resolved = await resolveIcsByMessage(api, [message]);
+
+    expect(api.getAttachment).not.toHaveBeenCalled();
+    expect(resolved.get("m1")).toContain("METHOD:REPLY");
+  });
+
+  it("makes no request for a message with no calendar part", async () => {
+    const api = { getAttachment: vi.fn() };
+    const message = messageWithPayload(
+      part("multipart/alternative", {
+        parts: [part("text/html", { data: "<p>ordinary mail</p>" })],
+      })
+    );
+
+    const resolved = await resolveIcsByMessage(api, [message]);
+
+    expect(api.getAttachment).not.toHaveBeenCalled();
+    expect(resolved.size).toBe(0);
+  });
+
+  it("omits the message rather than throwing when the fetch fails", async () => {
+    const api = {
+      getAttachment: vi.fn().mockRejectedValue(new Error("500 backend error")),
+    };
+    const message = messageWithPayload(
+      part("multipart/mixed", { parts: [icsAttachmentPart()] })
+    );
+
+    const resolved = await resolveIcsByMessage(api, [message]);
+
+    expect(resolved.size).toBe(0);
+  });
+});
+
 describe("classifyCalendarThread", () => {
   const icsUpdate =
     "BEGIN:VCALENDAR\r\nMETHOD:REQUEST\r\nBEGIN:VEVENT\r\nUID:uid-1\r\nSEQUENCE:2\r\nEND:VEVENT\r\nEND:VCALENDAR";
@@ -868,12 +1036,15 @@ describe("classifyCalendarThread", () => {
     };
   }
 
-  const msgWithIcs = (ics: string): GmailMessage =>
-    baseMessage(
-      part("multipart/mixed", {
-        parts: [part("text/calendar", { data: ics })],
-      })
-    );
+  /**
+   * The calendar part is attachment-shaped, as Gmail really delivers it, so
+   * its body reaches the classifier through the resolved map rather than
+   * inline on the payload.
+   */
+  const msgWithIcs = (): GmailMessage =>
+    baseMessage(part("multipart/mixed", { parts: [icsAttachmentPart()] }));
+
+  const resolved = (ics: string) => new Map([["m1", ics]]);
 
   const msgWithHeader = (uid: string): GmailMessage =>
     baseMessage(
@@ -884,44 +1055,53 @@ describe("classifyCalendarThread", () => {
     );
 
   it("bundles an update (METHOD:REQUEST SEQUENCE>0)", () => {
-    expect(classifyCalendarThread([msgWithIcs(icsUpdate)])).toEqual({
-      uid: "uid-1",
-      kind: "update",
-    });
+    expect(classifyCalendarThread([msgWithIcs()], resolved(icsUpdate))).toEqual(
+      { uid: "uid-1", kind: "update" }
+    );
   });
 
   it("bundles a cancellation (METHOD:CANCEL)", () => {
-    expect(classifyCalendarThread([msgWithIcs(icsCancel)])).toEqual({
-      uid: "uid-1",
-      kind: "cancel",
-    });
+    expect(classifyCalendarThread([msgWithIcs()], resolved(icsCancel))).toEqual(
+      { uid: "uid-1", kind: "cancel" }
+    );
   });
 
   it("bundles a reply chain (X-Plot-Event-UID header)", () => {
-    expect(classifyCalendarThread([msgWithHeader("uid-9")])).toEqual({
-      uid: "uid-9",
-      kind: "reply",
-    });
+    expect(
+      classifyCalendarThread([msgWithHeader("uid-9")], new Map())
+    ).toEqual({ uid: "uid-9", kind: "reply" });
   });
 
   it("skips a bare invite (SEQUENCE 0)", () => {
-    expect(classifyCalendarThread([msgWithIcs(icsInvite)])).toBeNull();
+    expect(
+      classifyCalendarThread([msgWithIcs()], resolved(icsInvite))
+    ).toBeNull();
   });
 
   it("skips an RSVP (METHOD:REPLY)", () => {
-    expect(classifyCalendarThread([msgWithIcs(icsReply)])).toBeNull();
+    expect(
+      classifyCalendarThread([msgWithIcs()], resolved(icsReply))
+    ).toBeNull();
   });
 });
 
 describe("extractCalendarReplies", () => {
-  /** Minimal well-typed GmailMessage wrapping a text/calendar payload. */
+  /** ICS body each fixture message carries, resolved out-of-band at runtime. */
+  const icsFor = new WeakMap<GmailMessage, string>();
+
+  /**
+   * A well-typed GmailMessage whose calendar part is attachment-shaped, as
+   * Gmail really delivers it. The ICS body never rides on the payload, so it
+   * is remembered here and handed to the extractor by {@link extractReplies}
+   * exactly as `resolveIcsByMessage` does in sync.
+   */
   function replyMessage(
     ics: string,
     opts: { id?: string; internalDate?: string; html?: string } = {}
   ): GmailMessage {
-    const parts: GmailMessagePart[] = [part("text/calendar", { data: ics })];
+    const parts: GmailMessagePart[] = [icsAttachmentPart()];
     if (opts.html) parts.unshift(part("text/html", { data: opts.html }));
-    return {
+    const message: GmailMessage = {
       id: opts.id ?? "m1",
       threadId: "t1",
       labelIds: ["INBOX"],
@@ -931,6 +1111,18 @@ describe("extractCalendarReplies", () => {
       sizeEstimate: 500,
       payload: part("multipart/mixed", { parts }),
     };
+    icsFor.set(message, ics);
+    return message;
+  }
+
+  /** Runs the extractor over the pre-resolved bodies, the way sync does. */
+  function extractReplies(messages: GmailMessage[]): CalendarReply[] {
+    const resolved = new Map<string, string>();
+    for (const message of messages) {
+      const ics = icsFor.get(message);
+      if (ics !== undefined) resolved.set(message.id, ics);
+    }
+    return extractCalendarReplies(messages, resolved);
   }
 
   const declined = [
@@ -944,7 +1136,7 @@ describe("extractCalendarReplies", () => {
   ].join("\r\n");
 
   it("extracts a decline", () => {
-    const [reply] = extractCalendarReplies([replyMessage(declined)]);
+    const [reply] = extractReplies([replyMessage(declined)]);
     expect(reply).toMatchObject({
       messageId: "m1",
       uid: "uid-1@google.com",
@@ -961,20 +1153,20 @@ describe("extractCalendarReplies", () => {
   it("extracts accepted and tentative", () => {
     const accepted = declined.replace("PARTSTAT=DECLINED", "PARTSTAT=ACCEPTED");
     const tentative = declined.replace("PARTSTAT=DECLINED", "PARTSTAT=TENTATIVE");
-    expect(extractCalendarReplies([replyMessage(accepted)])[0].partstat).toBe("ACCEPTED");
-    expect(extractCalendarReplies([replyMessage(tentative)])[0].partstat).toBe("TENTATIVE");
+    expect(extractReplies([replyMessage(accepted)])[0].partstat).toBe("ACCEPTED");
+    expect(extractReplies([replyMessage(tentative)])[0].partstat).toBe("TENTATIVE");
   });
 
   it("ignores NEEDS-ACTION", () => {
     const pending = declined.replace("PARTSTAT=DECLINED", "PARTSTAT=NEEDS-ACTION");
-    expect(extractCalendarReplies([replyMessage(pending)])).toEqual([]);
+    expect(extractReplies([replyMessage(pending)])).toEqual([]);
   });
 
   it("ignores non-REPLY methods and messages with no ICS", () => {
     const request = declined.replace("METHOD:REPLY", "METHOD:REQUEST");
-    expect(extractCalendarReplies([replyMessage(request)])).toEqual([]);
+    expect(extractReplies([replyMessage(request)])).toEqual([]);
     expect(
-      extractCalendarReplies([
+      extractReplies([
         { ...replyMessage(declined), payload: part("text/plain", { data: "hi" }) },
       ])
     ).toEqual([]);
@@ -985,7 +1177,7 @@ describe("extractCalendarReplies", () => {
       "END:VEVENT",
       "RECURRENCE-ID:20260804T140000Z\r\nEND:VEVENT"
     );
-    const [reply] = extractCalendarReplies([replyMessage(ics)]);
+    const [reply] = extractReplies([replyMessage(ics)]);
     expect(reply.occurrence?.toISOString()).toBe("2026-08-04T14:00:00.000Z");
     expect(reply.allDay).toBe(false);
   });
@@ -995,7 +1187,7 @@ describe("extractCalendarReplies", () => {
       "END:VEVENT",
       "RECURRENCE-ID;VALUE=DATE:20260804\r\nEND:VEVENT"
     );
-    const [reply] = extractCalendarReplies([replyMessage(ics)]);
+    const [reply] = extractReplies([replyMessage(ics)]);
     expect(reply.occurrence?.toISOString()).toBe("2026-08-04T00:00:00.000Z");
     expect(reply.allDay).toBe(true);
   });
@@ -1007,7 +1199,7 @@ describe("extractCalendarReplies", () => {
       "END:VEVENT",
       "RECURRENCE-ID;TZID=America/Toronto:20260804T100000\r\nEND:VEVENT"
     );
-    const [reply] = extractCalendarReplies([replyMessage(ics)]);
+    const [reply] = extractReplies([replyMessage(ics)]);
     expect(reply.occurrence?.toISOString()).toBe("2026-08-04T10:00:00.000Z");
   });
 
@@ -1016,7 +1208,7 @@ describe("extractCalendarReplies", () => {
       "END:VEVENT",
       "COMMENT:Could we move this to Thursday?\r\nEND:VEVENT"
     );
-    expect(extractCalendarReplies([replyMessage(ics)])[0].comment).toBe(
+    expect(extractReplies([replyMessage(ics)])[0].comment).toBe(
       "Could we move this to Thursday?"
     );
   });
@@ -1026,7 +1218,7 @@ describe("extractCalendarReplies", () => {
       "END:VEVENT",
       "COMMENT:Could we move this\r\n  to Thursday?\r\nEND:VEVENT"
     );
-    expect(extractCalendarReplies([replyMessage(ics)])[0].comment).toBe(
+    expect(extractReplies([replyMessage(ics)])[0].comment).toBe(
       "Could we move this to Thursday?"
     );
   });
@@ -1036,7 +1228,7 @@ describe("extractCalendarReplies", () => {
       "END:VEVENT",
       "COMMENT:Line one\\nLine two\\, and more\r\nEND:VEVENT"
     );
-    expect(extractCalendarReplies([replyMessage(ics)])[0].comment).toBe(
+    expect(extractReplies([replyMessage(ics)])[0].comment).toBe(
       "Line one\nLine two, and more"
     );
   });
@@ -1046,7 +1238,7 @@ describe("extractCalendarReplies", () => {
       "END:VEVENT",
       "COMMENT:Back\\\\nslash\r\nEND:VEVENT"
     );
-    expect(extractCalendarReplies([replyMessage(ics)])[0].comment).toBe(
+    expect(extractReplies([replyMessage(ics)])[0].comment).toBe(
       "Back\\nslash"
     );
   });
@@ -1056,7 +1248,7 @@ describe("extractCalendarReplies", () => {
       "CN=Beth Round:",
       'CN=Beth Round;X-RESPONSE-COMMENT="Sorry, conflict":'
     );
-    expect(extractCalendarReplies([replyMessage(ics)])[0].comment).toBe(
+    expect(extractReplies([replyMessage(ics)])[0].comment).toBe(
       "Sorry, conflict"
     );
   });
@@ -1066,7 +1258,7 @@ describe("extractCalendarReplies", () => {
       "CN=Beth Round:",
       'CN=Beth Round;X-RESPONSE-COMMENT="Back by 3:00":'
     );
-    const [reply] = extractCalendarReplies([replyMessage(ics)]);
+    const [reply] = extractReplies([replyMessage(ics)]);
     expect(reply.comment).toBe("Back by 3:00");
     expect(reply.attendeeEmail).toBe("beth@example.test");
   });
@@ -1076,28 +1268,28 @@ describe("extractCalendarReplies", () => {
       "<div>Beth Round has declined this invitation with a note:<br>" +
       '&quot;Could we move this to Thursday?&quot;</div>' +
       '<div><a href="https://meet.google.com/abc">Join with Google Meet</a></div>';
-    expect(extractCalendarReplies([replyMessage(declined, { html })])[0].comment).toBe(
+    expect(extractReplies([replyMessage(declined, { html })])[0].comment).toBe(
       "Could we move this to Thursday?"
     );
   });
 
   it("returns null comment when no source has one", () => {
     const html = "<div>Beth Round has declined this invitation.</div>";
-    expect(extractCalendarReplies([replyMessage(declined, { html })])[0].comment).toBeNull();
+    expect(extractReplies([replyMessage(declined, { html })])[0].comment).toBeNull();
   });
 
   it("falls back to the From display name when CN is absent", () => {
     const ics = declined.replace(";CN=Beth Round:", ":");
     const msg = replyMessage(ics);
     msg.payload.headers = [{ name: "From", value: '"Beth Round" <beth@example.test>' }];
-    expect(extractCalendarReplies([msg])[0].attendeeName).toBe("Beth Round");
+    expect(extractReplies([msg])[0].attendeeName).toBe("Beth Round");
   });
 
   it("returns one descriptor per reply message in the conversation", () => {
     const second = declined
       .replace("PARTSTAT=DECLINED", "PARTSTAT=ACCEPTED")
       .replace("beth@example.test", "sam@example.test");
-    const replies = extractCalendarReplies([
+    const replies = extractReplies([
       replyMessage(declined, { id: "m1" }),
       replyMessage(second, { id: "m2" }),
     ]);
@@ -1110,8 +1302,8 @@ describe("extractCalendarReplies", () => {
   it("skips a reply with no resolvable UID or attendee email", () => {
     const noUid = declined.replace("UID:uid-1@google.com\r\n", "");
     const noAttendee = declined.replace(/^ATTENDEE.*\r\n/m, "");
-    expect(extractCalendarReplies([replyMessage(noUid)])).toEqual([]);
-    expect(extractCalendarReplies([replyMessage(noAttendee)])).toEqual([]);
+    expect(extractReplies([replyMessage(noUid)])).toEqual([]);
+    expect(extractReplies([replyMessage(noAttendee)])).toEqual([]);
   });
 });
 
