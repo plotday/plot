@@ -71,6 +71,9 @@ import {
  *   through `@here`/`@channel`) or that the user saved — never whole channels
  * - Star-based to-do sync against the user's saved items
  * - Reactions round-trip on everything that is synced
+ * - Read state synced from Slack: a conversation you have read in Slack is
+ *   read in Plot, and reading a direct conversation in Plot marks it read in
+ *   Slack
  *
  * **Required OAuth User Scopes** (each backs a shipped, user-visible feature —
  * kept in sync with the authoritative {@link Slack.SCOPES} array below):
@@ -100,6 +103,13 @@ import {
  *   `im:history`/`mpim:history`, which only grant reading message content
  *   within a conversation whose id is already known — they do not grant
  *   enumeration, so `listDMChannels` needs both.
+ *
+ * Read state uses only scopes the connector already holds: `conversations.info`
+ * is covered by `channels:read`/`groups:read` (required) or `im:read`/`mpim:read`
+ * (the optional `dms` group), and `conversations.mark` for direct conversations
+ * by `im:write`/`mpim:write` (also `dms`). Channel threads are read-in only —
+ * Slack's public API exposes no per-thread mark, and `conversations.mark` would
+ * move the whole channel's cursor.
  */
 
 /**
