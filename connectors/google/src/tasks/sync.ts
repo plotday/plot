@@ -142,6 +142,34 @@ export async function getTokenFn(
   return token.token;
 }
 
+/**
+ * Like {@link getTokenFn}, but returns `null` instead of throwing when the
+ * channel resolves no auth token (lapsed / revoked Google OAuth).
+ *
+ * Use this on the recurring poll, where a missing token is an expected,
+ * already-surfaced state rather than a fault: reading it flags the connection
+ * for re-auth, so the app is already showing "Reconnect" and the user is the
+ * only one who can clear it. Throwing there instead reports one unhandled
+ * error per poll — multiplied by the queue's retries — for as long as the
+ * connection stays disconnected, which can be indefinitely.
+ *
+ * Google Tasks is the only product in this connector that hits a dead token
+ * this way: mail and calendar are push-driven, and a revoked grant simply
+ * stops delivering notifications. Tasks has no webhooks, so its hourly poll
+ * keeps knocking.
+ *
+ * Paths that must still surface a missing token — notably the initial
+ * backfill, where a silent early return would leave the app's sync spinner
+ * running forever — keep using the throwing {@link getTokenFn}.
+ */
+export async function tryGetTokenFn(
+  host: TasksSyncHost,
+  channelId: string
+): Promise<string | null> {
+  const token = await host.tools.integrations.get(channelId);
+  return token?.token ?? null;
+}
+
 // ---------------------------------------------------------------------------
 // Channel enable / disable (data-plane state)
 // ---------------------------------------------------------------------------
@@ -353,7 +381,21 @@ export async function periodicSyncBatchFn(
   if (!state) return { done: true };
 
   const lastSync = await host.get<string>(`last_sync_time_${listId}`);
-  const token = await getTokenFn(host, listId);
+
+  // No token means the Google grant lapsed or was revoked. Reading it already
+  // flagged the connection for re-auth, so the user is seeing "Reconnect" and
+  // nothing this poll does can help until they act. Drop the in-flight cycle
+  // and report `done` rather than throwing: the poll is durably recurring, so
+  // it re-fires on its own and picks straight back up once the connection is
+  // restored. `last_sync_time_` is deliberately left untouched, so the window
+  // skipped here is re-covered by the first successful cycle instead of being
+  // silently lost.
+  const token = await tryGetTokenFn(host, listId);
+  if (!token) {
+    await host.clear(`periodic_sync_state_${listId}`);
+    return { done: true };
+  }
+
   const authActorId = await host.get<ActorId>("auth_actor_id");
 
   let result;

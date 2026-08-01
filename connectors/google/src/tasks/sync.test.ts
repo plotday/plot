@@ -55,11 +55,15 @@ type HostHarness = {
   saveLink: ReturnType<typeof vi.fn>;
 };
 
-function makeHost(): HostHarness {
+function makeHost(options?: { token?: { token: string; scopes: string[] } | null }): HostHarness {
   const store = new Map<string, unknown>();
   const archiveLinks = vi.fn(async () => {});
   const cancelScheduledTask = vi.fn(async () => {});
   const saveLink = vi.fn(async () => "thread-id");
+  const token: { token: string; scopes: string[] } | null =
+    options && "token" in options
+      ? (options.token ?? null)
+      : { token: "tok", scopes: [] };
 
   const host: TasksSyncHost = {
     id: "twist-instance-1",
@@ -73,7 +77,7 @@ function makeHost(): HostHarness {
     },
     tools: {
       integrations: {
-        get: async () => ({ token: "tok", scopes: [] }),
+        get: async () => token,
         saveLink,
         channelSyncCompleted: vi.fn(async () => {}),
         archiveLinks,
@@ -154,6 +158,62 @@ describe("periodicSyncBatchFn — deleted task list (404)", () => {
     expect(result).toEqual({ done: true });
     expect(cancelScheduledTask).toHaveBeenCalledWith(`poll:${LIST_ID}`);
     expect(archiveLinks).toHaveBeenCalledWith({ channelId: LIST_ID });
+  });
+});
+
+describe("periodicSyncBatchFn — connection needs re-auth (no token)", () => {
+  it("ends the cycle quietly instead of throwing", async () => {
+    // The account's OAuth grant lapsed or was revoked, so the channel resolves
+    // no token. The platform already flags the connection for re-auth (the app
+    // shows "Reconnect"), so this is an expected, user-actionable state — not a
+    // connector bug. Throwing from the hourly poll turns one lapsed connection
+    // into an error report every hour, multiplied by the queue's retries, for
+    // as long as it stays disconnected. Tasks is the only Google product that
+    // keeps hitting a dead token this way: mail and calendar are push-driven,
+    // and a revoked grant simply stops delivering notifications.
+    const { host, store, archiveLinks, cancelScheduledTask } = makeHost({
+      token: null,
+    });
+    store.set(`sync_enabled_${LIST_ID}`, true);
+    store.set(`periodic_sync_state_${LIST_ID}`, {
+      pageToken: null,
+      cycleStart: "2026-06-25T00:00:00.000Z",
+    } satisfies PeriodicSyncState);
+
+    const result = await periodicSyncBatchFn(host, LIST_ID);
+
+    expect(result).toEqual({ done: true });
+    // The in-flight cycle is dropped so the next poll starts a clean one...
+    expect(store.has(`periodic_sync_state_${LIST_ID}`)).toBe(false);
+    // ...but this is NOT a teardown: the list still exists and the channel is
+    // still enabled, so re-auth must resume syncing without re-enabling.
+    expect(cancelScheduledTask).not.toHaveBeenCalled();
+    expect(archiveLinks).not.toHaveBeenCalled();
+    expect(store.get(`sync_enabled_${LIST_ID}`)).toBe(true);
+    // last_sync_time is left untouched so the cycle skipped here is re-covered
+    // by the first poll after re-auth rather than silently lost.
+    expect(store.has(`last_sync_time_${LIST_ID}`)).toBe(false);
+    expect(api.listTasks).not.toHaveBeenCalled();
+  });
+});
+
+describe("syncBatchFn — connection needs re-auth (no token)", () => {
+  it("still throws, so the initial backfill does not silently latch", async () => {
+    // The initial backfill is different: the app shows a sync spinner until
+    // channelSyncCompleted fires, and a silent early return would leave it
+    // spinning forever. Throwing here is what drives the stuck-sync watchdog
+    // to surface "Reconnect", so this path must keep throwing.
+    const { host, store } = makeHost({ token: null });
+    store.set(`sync_state_${LIST_ID}`, {
+      pageToken: null,
+      batchNumber: 1,
+      tasksProcessed: 0,
+      initialSync: true,
+    } satisfies SyncState);
+
+    await expect(syncBatchFn(host, LIST_ID)).rejects.toThrow(
+      /authentication token/i
+    );
   });
 });
 
