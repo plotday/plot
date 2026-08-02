@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { CalendarReply } from "./gmail-api";
-import { composeRsvpNote, shouldMarkUnread } from "./rsvp-note";
+import { composeRsvpNote, shouldEmitRsvpNote, priorRsvpKey } from "./rsvp-note";
 
 function reply(overrides: Partial<CalendarReply> = {}): CalendarReply {
   return {
@@ -80,18 +80,46 @@ describe("composeRsvpNote", () => {
   });
 });
 
-describe("shouldMarkUnread", () => {
-  it("marks declines and tentative responses unread", () => {
-    expect(shouldMarkUnread(reply({ partstat: "DECLINED" }), false)).toBe(true);
-    expect(shouldMarkUnread(reply({ partstat: "TENTATIVE" }), false)).toBe(true);
+describe("shouldEmitRsvpNote", () => {
+  it("emits for a decline or a tentative", () => {
+    expect(shouldEmitRsvpNote(reply({ partstat: "DECLINED" }), false)).toBe(true);
+    expect(shouldEmitRsvpNote(reply({ partstat: "TENTATIVE" }), false)).toBe(true);
   });
 
-  it("leaves read state untouched for an accept", () => {
-    expect(shouldMarkUnread(reply({ partstat: "ACCEPTED" }), false)).toBe(false);
+  it("suppresses a bare acceptance", () => {
+    expect(shouldEmitRsvpNote(reply({ partstat: "ACCEPTED" }), false)).toBe(false);
   });
 
-  it("never marks unread during the initial backfill", () => {
-    expect(shouldMarkUnread(reply({ partstat: "DECLINED" }), true)).toBe(false);
-    expect(shouldMarkUnread(reply({ partstat: "TENTATIVE" }), true)).toBe(false);
+  it("emits an acceptance that carries a comment", () => {
+    expect(
+      shouldEmitRsvpNote(
+        reply({ partstat: "ACCEPTED", comment: "Sounds good, I'll bring the deck" }),
+        false
+      )
+    ).toBe(true);
+  });
+
+  it("emits an acceptance that follows a decline or tentative", () => {
+    expect(shouldEmitRsvpNote(reply({ partstat: "ACCEPTED" }), true)).toBe(true);
+  });
+
+  it("treats an empty comment as no comment", () => {
+    expect(shouldEmitRsvpNote(reply({ partstat: "ACCEPTED", comment: "" }), false)).toBe(
+      false
+    );
+  });
+});
+
+describe("priorRsvpKey", () => {
+  it("scopes the key to the event and the attendee", () => {
+    expect(priorRsvpKey("uid-1@google.com", "beth@example.test")).toBe(
+      "rsvp:uid-1@google.com:beth@example.test"
+    );
+  });
+
+  it("normalises attendee case so a re-cased address hits the same key", () => {
+    expect(priorRsvpKey("uid-1@google.com", "Beth@Example.Test")).toBe(
+      priorRsvpKey("uid-1@google.com", "beth@example.test")
+    );
   });
 });
