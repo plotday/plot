@@ -55,6 +55,11 @@
       "types": "./dist/facets.d.ts",
       "default": "./dist/facets.js"
     },
+    "./signals": {
+      "@plotday/connector": "./src/signals.ts",
+      "types": "./dist/signals.d.ts",
+      "default": "./dist/signals.js"
+    },
     "./options": {
       "@plotday/connector": "./src/options.ts",
       "types": "./dist/options.d.ts",
