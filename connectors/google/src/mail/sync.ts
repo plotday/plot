@@ -1738,8 +1738,9 @@ async function saveTransformedThread(
             ...(reply.attendeeName ? { name: reply.attendeeName } : {}),
           },
           // Explicit on both paths. An omitted flag does NOT mean "leave read
-          // state alone": the scoped-note trigger has already marked every
-          // non-author unread by the time the runtime reads this field.
+          // state alone": attaching a note already surfaces the thread as
+          // unread for every recipient except its author, so only an explicit
+          // false overrides it.
           unread: !initialSync,
         });
         if (noteId) {
