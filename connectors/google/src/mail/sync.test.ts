@@ -1068,7 +1068,7 @@ describe("processEmailThreadsFn — attendee responses fold onto the event", () 
     );
   });
 
-  it("omits unread entirely for an acceptance", async () => {
+  it("writes no note at all for a bare acceptance, and saves no email link", async () => {
     const { host } = makeHost();
     const { notes, links } = captureSaves(host);
 
@@ -1079,24 +1079,75 @@ describe("processEmailThreadsFn — attendee responses fold onto the event", () 
       "INBOX"
     );
 
-    expect(notes[0].content).toBe("Beth Round accepted.");
-    // Not `unread: false` — that would CLEAR unread the event already had.
-    expect(notes[0]).not.toHaveProperty("unread");
+    // The guest list already shows the acceptance. Writing a note is the only
+    // thing that could mark the organiser's event thread unread, so we write none.
+    expect(notes).toHaveLength(0);
     expect(links).toHaveLength(0);
   });
 
-  it("omits unread for every response during the initial backfill", async () => {
+  it("writes a note for an acceptance carrying a personal comment", async () => {
     const { host } = makeHost();
     const { notes } = captureSaves(host);
 
     await processEmailThreadsFn(
       host,
-      [rsvpThread("rsvp-backfill", replyIcs("DECLINED"))],
+      [
+        rsvpThread(
+          "rsvp-accepted-comment",
+          replyIcs("ACCEPTED", { comment: "Sounds good, I'll bring the deck" })
+        ),
+      ],
+      false,
+      "INBOX"
+    );
+
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toMatchObject({
+      content: "Beth Round accepted.\n\n> Sounds good, I'll bring the deck",
+      unread: true,
+    });
+  });
+
+  it("writes a note when an acceptance reverses an earlier decline", async () => {
+    const { host, store } = makeHost();
+    const { notes } = captureSaves(host);
+
+    await processEmailThreadsFn(
+      host,
+      [rsvpThread("rsvp-declined", replyIcs("DECLINED"))],
+      false,
+      "INBOX"
+    );
+    expect(store.get("rsvp:uid-rsvp@google.com:beth@example.test")).toBe("DECLINED");
+
+    await processEmailThreadsFn(
+      host,
+      [rsvpThread("rsvp-accepted", replyIcs("ACCEPTED"))],
+      false,
+      "INBOX"
+    );
+
+    // Two notes: the decline, then the reversal.
+    expect(notes).toHaveLength(2);
+    expect(notes[1]).toMatchObject({ content: "Beth Round accepted." });
+    // The outstanding non-acceptance is resolved, so the key is gone.
+    expect(store.has("rsvp:uid-rsvp@google.com:beth@example.test")).toBe(false);
+  });
+
+  it("marks a folded response read during the initial backfill", async () => {
+    const { host } = makeHost();
+    const { notes } = captureSaves(host);
+
+    await processEmailThreadsFn(
+      host,
+      [rsvpThread("rsvp-declined", replyIcs("DECLINED"))],
       true,
       "INBOX"
     );
 
-    expect(notes[0]).not.toHaveProperty("unread");
+    // Explicit false, not an omitted flag: omitting leaves the scoped-note
+    // trigger's unread standing, which is what broke the original guard.
+    expect(notes[0]).toMatchObject({ unread: false });
   });
 
   it("keeps ordinary correspondence in its own email thread", async () => {

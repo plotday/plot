@@ -39,6 +39,7 @@ import type { WebhookRequest } from "@plotday/twister/tools/network";
 
 import {
   type AttachmentData,
+  type CalendarReply,
   GmailApi,
   GmailApiError,
   type GmailMessage,
@@ -70,7 +71,7 @@ import {
   type ClassifiedSendError,
   classifySendError,
 } from "./gmail-send-errors";
-import { composeRsvpNote, shouldMarkUnread } from "./rsvp-note";
+import { composeRsvpNote, priorRsvpKey, shouldEmitRsvpNote } from "./rsvp-note";
 
 // ---------------------------------------------------------------------------
 // Persisted state shapes (shared with the connector)
@@ -1624,6 +1625,23 @@ async function resolveBatchIcsFn(
 }
 
 /**
+ * Remember an outstanding decline/tentative so a later acceptance is recognised
+ * as a reversal, and forget it once that acceptance arrives. Keeps the store
+ * holding only unresolved non-acceptances.
+ */
+async function recordRsvpOutcome(
+  host: GmailSyncHost,
+  key: string,
+  partstat: CalendarReply["partstat"]
+): Promise<void> {
+  if (partstat === "ACCEPTED") {
+    await host.clear(key);
+    return;
+  }
+  await host.set(key, partstat);
+}
+
+/**
  * Persists one transformed Gmail thread: sent-note dedup, unread-state
  * mirroring, facet computation, the `saveLink` round-trip, and star↔to-do
  * sync. Failures are logged and swallowed so one bad thread never aborts the
@@ -1669,6 +1687,19 @@ async function saveTransformedThread(
     const replies = extractCalendarReplies(thread.messages ?? [], icsByMessage);
     if (replies.length > 0) {
       for (const reply of replies) {
+        const priorKey = priorRsvpKey(reply.uid, reply.attendeeEmail);
+        const hadPriorNonAccept = Boolean(await host.get<string>(priorKey));
+
+        // A bare acceptance says nothing the event's guest list does not
+        // already show. Drop the message rather than writing a note: a note
+        // is the only thing that could mark the organiser's thread unread,
+        // and marking it folded here keeps the responses-only conversation
+        // from becoming an email thread of its own.
+        if (!shouldEmitRsvpNote(reply, hadPriorNonAccept)) {
+          foldedMessageIds.add(reply.messageId);
+          continue;
+        }
+
         // A miss means the calendar event has not synced yet (saveNote returns
         // null when no thread carries `icaluid:<uid>`). Leave the note in place
         // so the response still lands somewhere rather than vanishing. Expected,
@@ -1683,9 +1714,15 @@ async function saveTransformedThread(
             email: reply.attendeeEmail,
             ...(reply.attendeeName ? { name: reply.attendeeName } : {}),
           },
-          ...(shouldMarkUnread(reply, initialSync) ? { unread: true } : {}),
+          // Explicit on both paths. An omitted flag does NOT mean "leave read
+          // state alone": the scoped-note trigger has already marked every
+          // non-author unread by the time the runtime reads this field.
+          unread: !initialSync,
         });
-        if (noteId) foldedMessageIds.add(reply.messageId);
+        if (noteId) {
+          foldedMessageIds.add(reply.messageId);
+          await recordRsvpOutcome(host, priorKey, reply.partstat);
+        }
       }
 
       // Any response that missed its event is worth retrying: the calendar
