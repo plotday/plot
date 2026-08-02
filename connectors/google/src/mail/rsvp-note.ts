@@ -59,9 +59,9 @@ export function composeRsvpNote(reply: CalendarReply): string {
  *
  * A bare acceptance repeats what the event's guest list already shows, so it
  * earns no note. That is also the only way to keep it from raising unread:
- * the platform's scoped-note trigger marks every non-author unread the moment
- * a note is inserted, and no value a connector passes to `saveNote` prevents
- * it. Writing nothing is the guarantee.
+ * attaching a note surfaces the thread as unread for every recipient except
+ * the note's author, and no field a connector passes to `saveNote` can
+ * suppress that. Writing nothing is the guarantee.
  *
  * Everything else is genuinely new information and gets a note:
  * a decline or a tentative changes whether the meeting works; an acceptance
@@ -87,7 +87,18 @@ export function shouldEmitRsvpNote(
  * writes that same field from the event roster, so by the time an RSVP email is
  * processed it may already read as accepted and the prior decline is gone. This
  * key records what this connector last folded, which is the actual question.
+ *
+ * Scoped by `occurrence` as well as `uid`: a reply to one occurrence of a
+ * recurring event carries the same series `uid` as every other occurrence,
+ * distinguished only by `RECURRENCE-ID`. Without the occurrence in the key, a
+ * decline on one occurrence would be read as an outstanding non-acceptance for
+ * an unrelated occurrence's later reply. `null` (a series-wide response) maps
+ * to the literal `"series"` segment.
  */
-export function priorRsvpKey(uid: string, attendeeEmail: string): string {
-  return `rsvp:${uid}:${attendeeEmail.toLowerCase()}`;
+export function priorRsvpKey(
+  uid: string,
+  attendeeEmail: string,
+  occurrence: Date | null
+): string {
+  return `rsvp:${uid}:${occurrence ? occurrence.toISOString() : "series"}:${attendeeEmail.toLowerCase()}`;
 }

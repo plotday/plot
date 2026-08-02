@@ -21,6 +21,7 @@ import {
   REACTION_SEND_DELAY_MS,
   sendReactionEmailFn,
 } from "./sync";
+import { priorRsvpKey } from "./rsvp-note";
 
 /** Decode the base64url raw message the Gmail send API would receive. */
 function decodeRawMessage(b64url: string): string {
@@ -935,7 +936,7 @@ describe("processEmailThreadsFn — calendar-thread bundling", () => {
 /** ICS body for one attendee response. */
 function replyIcs(
   partstat: "DECLINED" | "ACCEPTED" | "TENTATIVE",
-  opts: { uid?: string; comment?: string } = {}
+  opts: { uid?: string; comment?: string; recurrenceId?: string } = {}
 ): string {
   const lines = [
     "BEGIN:VCALENDAR",
@@ -945,6 +946,7 @@ function replyIcs(
     `ATTENDEE;PARTSTAT=${partstat};CN=Beth Round:mailto:beth@example.test`,
   ];
   if (opts.comment) lines.push(`COMMENT:${opts.comment}`);
+  if (opts.recurrenceId) lines.push(`RECURRENCE-ID:${opts.recurrenceId}`);
   lines.push("END:VEVENT", "END:VCALENDAR");
   return lines.join("\r\n");
 }
@@ -1118,7 +1120,8 @@ describe("processEmailThreadsFn — attendee responses fold onto the event", () 
       false,
       "INBOX"
     );
-    expect(store.get("rsvp:uid-rsvp@google.com:beth@example.test")).toBe("DECLINED");
+    const key = priorRsvpKey("uid-rsvp@google.com", "beth@example.test", null);
+    expect(store.get(key)).toBe("DECLINED");
 
     await processEmailThreadsFn(
       host,
@@ -1131,7 +1134,52 @@ describe("processEmailThreadsFn — attendee responses fold onto the event", () 
     expect(notes).toHaveLength(2);
     expect(notes[1]).toMatchObject({ content: "Beth Round accepted." });
     // The outstanding non-acceptance is resolved, so the key is gone.
-    expect(store.has("rsvp:uid-rsvp@google.com:beth@example.test")).toBe(false);
+    expect(store.has(key)).toBe(false);
+  });
+
+  it("does not let a decline on one occurrence suppress an acceptance on another", async () => {
+    const { host, store } = makeHost();
+    const { notes } = captureSaves(host);
+
+    // Beth declines the Aug 4 occurrence of a recurring standup.
+    await processEmailThreadsFn(
+      host,
+      [
+        rsvpThread(
+          "rsvp-recurring-declined",
+          replyIcs("DECLINED", { recurrenceId: "20260804T140000Z" })
+        ),
+      ],
+      false,
+      "INBOX"
+    );
+    expect(notes).toHaveLength(1);
+    const aug4Key = priorRsvpKey(
+      "uid-rsvp@google.com",
+      "beth@example.test",
+      new Date("2026-08-04T14:00:00Z")
+    );
+    expect(store.get(aug4Key)).toBe("DECLINED");
+
+    // Two weeks later she bare-accepts a different occurrence of the same
+    // series (same UID, different RECURRENCE-ID). The Aug 4 decline must not
+    // be read as an outstanding non-acceptance for the Aug 18 occurrence.
+    await processEmailThreadsFn(
+      host,
+      [
+        rsvpThread(
+          "rsvp-recurring-accepted",
+          replyIcs("ACCEPTED", { recurrenceId: "20260818T140000Z" })
+        ),
+      ],
+      false,
+      "INBOX"
+    );
+
+    // No second note: the bare acceptance on the Aug 18 occurrence stays
+    // suppressed, and the Aug 4 decline's key is untouched.
+    expect(notes).toHaveLength(1);
+    expect(store.get(aug4Key)).toBe("DECLINED");
   });
 
   it("marks a folded response read during the initial backfill", async () => {
@@ -1145,8 +1193,8 @@ describe("processEmailThreadsFn — attendee responses fold onto the event", () 
       "INBOX"
     );
 
-    // Explicit false, not an omitted flag: omitting leaves the scoped-note
-    // trigger's unread standing, which is what broke the original guard.
+    // Explicit false, not an omitted flag: a note already surfaces as unread
+    // by the time this field is read, so only an explicit false overrides it.
     expect(notes[0]).toMatchObject({ unread: false });
   });
 

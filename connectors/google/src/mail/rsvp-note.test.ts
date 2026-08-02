@@ -112,14 +112,46 @@ describe("shouldEmitRsvpNote", () => {
 
 describe("priorRsvpKey", () => {
   it("scopes the key to the event and the attendee", () => {
-    expect(priorRsvpKey("uid-1@google.com", "beth@example.test")).toBe(
-      "rsvp:uid-1@google.com:beth@example.test"
+    expect(priorRsvpKey("uid-1@google.com", "beth@example.test", null)).toBe(
+      "rsvp:uid-1@google.com:series:beth@example.test"
     );
   });
 
   it("normalises attendee case so a re-cased address hits the same key", () => {
-    expect(priorRsvpKey("uid-1@google.com", "Beth@Example.Test")).toBe(
-      priorRsvpKey("uid-1@google.com", "beth@example.test")
+    expect(priorRsvpKey("uid-1@google.com", "Beth@Example.Test", null)).toBe(
+      priorRsvpKey("uid-1@google.com", "beth@example.test", null)
     );
+  });
+
+  it("uses the literal 'series' segment for a series-wide reply", () => {
+    expect(priorRsvpKey("uid-1@google.com", "beth@example.test", null)).toBe(
+      "rsvp:uid-1@google.com:series:beth@example.test"
+    );
+  });
+
+  it("scopes the key to a single occurrence when the reply targets one", () => {
+    const occurrence = new Date("2026-08-04T14:00:00Z");
+    expect(priorRsvpKey("uid-1@google.com", "beth@example.test", occurrence)).toBe(
+      `rsvp:uid-1@google.com:${occurrence.toISOString()}:beth@example.test`
+    );
+  });
+
+  it("gives two different occurrences of the same uid+attendee different keys", () => {
+    const aug4 = new Date("2026-08-04T14:00:00Z");
+    const aug18 = new Date("2026-08-18T14:00:00Z");
+    const keyAug4 = priorRsvpKey("uid-1@google.com", "beth@example.test", aug4);
+    const keyAug18 = priorRsvpKey("uid-1@google.com", "beth@example.test", aug18);
+    expect(keyAug4).not.toBe(keyAug18);
+  });
+
+  it("gives an occurrence-scoped reply a different key from the series-wide key", () => {
+    const occurrence = new Date("2026-08-04T14:00:00Z");
+    const seriesKey = priorRsvpKey("uid-1@google.com", "beth@example.test", null);
+    const occurrenceKey = priorRsvpKey(
+      "uid-1@google.com",
+      "beth@example.test",
+      occurrence
+    );
+    expect(seriesKey).not.toBe(occurrenceKey);
   });
 });

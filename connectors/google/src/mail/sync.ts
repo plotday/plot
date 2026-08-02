@@ -1574,8 +1574,15 @@ export async function drainPendingRsvpsFn(host: GmailSyncHost): Promise<void> {
 
       let allFolded = true;
       for (const reply of replies) {
-        const priorKey = priorRsvpKey(reply.uid, reply.attendeeEmail);
-        const hadPriorNonAccept = Boolean(await host.get<string>(priorKey));
+        const priorKey = priorRsvpKey(reply.uid, reply.attendeeEmail, reply.occurrence);
+        // Only a bare acceptance consults prior state; every other response
+        // emits regardless, so skip the store round-trip. Each tools.* call
+        // spends the execution's request budget, and a backfill folds many
+        // responses at once.
+        const needsPriorState = reply.partstat === "ACCEPTED" && !reply.comment;
+        const hadPriorNonAccept = needsPriorState
+          ? Boolean(await host.get<string>(priorKey))
+          : false;
 
         // Same rule as the live path: a bare acceptance earns no note. It
         // counts as folded so the retry still retracts the email thread.
@@ -1696,8 +1703,15 @@ async function saveTransformedThread(
     const replies = extractCalendarReplies(thread.messages ?? [], icsByMessage);
     if (replies.length > 0) {
       for (const reply of replies) {
-        const priorKey = priorRsvpKey(reply.uid, reply.attendeeEmail);
-        const hadPriorNonAccept = Boolean(await host.get<string>(priorKey));
+        const priorKey = priorRsvpKey(reply.uid, reply.attendeeEmail, reply.occurrence);
+        // Only a bare acceptance consults prior state; every other response
+        // emits regardless, so skip the store round-trip. Each tools.* call
+        // spends the execution's request budget, and a backfill folds many
+        // responses at once.
+        const needsPriorState = reply.partstat === "ACCEPTED" && !reply.comment;
+        const hadPriorNonAccept = needsPriorState
+          ? Boolean(await host.get<string>(priorKey))
+          : false;
 
         // A bare acceptance says nothing the event's guest list does not
         // already show. Drop the message rather than writing a note: a note
