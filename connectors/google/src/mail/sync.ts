@@ -1574,6 +1574,13 @@ export async function drainPendingRsvpsFn(host: GmailSyncHost): Promise<void> {
 
       let allFolded = true;
       for (const reply of replies) {
+        const priorKey = priorRsvpKey(reply.uid, reply.attendeeEmail);
+        const hadPriorNonAccept = Boolean(await host.get<string>(priorKey));
+
+        // Same rule as the live path: a bare acceptance earns no note. It
+        // counts as folded so the retry still retracts the email thread.
+        if (!shouldEmitRsvpNote(reply, hadPriorNonAccept)) continue;
+
         const noteId = await host.tools.integrations.saveNote({
           thread: { source: `icaluid:${reply.uid}` },
           key: reply.messageId,
@@ -1584,11 +1591,13 @@ export async function drainPendingRsvpsFn(host: GmailSyncHost): Promise<void> {
             email: reply.attendeeEmail,
             ...(reply.attendeeName ? { name: reply.attendeeName } : {}),
           },
-          ...(shouldMarkUnread(reply, pending.initialSync)
-            ? { unread: true }
-            : {}),
+          unread: !pending.initialSync,
         });
-        if (!noteId) allFolded = false;
+        if (!noteId) {
+          allFolded = false;
+          continue;
+        }
+        await recordRsvpOutcome(host, priorKey, reply.partstat);
       }
       // Retract only once every response reached the event, so a partially
       // folded conversation is never left with nowhere to read the rest.

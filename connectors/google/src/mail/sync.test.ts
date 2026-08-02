@@ -1242,9 +1242,17 @@ describe("drainPendingRsvpsFn — retract once the event arrives", () => {
   function seedPending(
     host: GmailSyncHost,
     store: Map<string, unknown>,
-    opts: { firstSeen?: string } = {}
+    opts: {
+      firstSeen?: string;
+      partstat?: "DECLINED" | "ACCEPTED" | "TENTATIVE";
+    } = {}
   ) {
-    const gmailThread = rsvpThread("rsvp-late", replyIcs("ACCEPTED"));
+    // Declined by default: a bare acceptance now writes no note, so it cannot
+    // exercise the fold-and-retract path these tests cover.
+    const gmailThread = rsvpThread(
+      "rsvp-late",
+      replyIcs(opts.partstat ?? "DECLINED")
+    );
     store.set("pending-rsvp:rsvp-late", {
       threadId: "rsvp-late",
       channelId: "INBOX",
@@ -1315,7 +1323,9 @@ describe("drainPendingRsvpsFn — retract once the event arrives", () => {
 
     await drainPendingRsvpsFn(host);
 
-    expect(notes[0].unread).toBeUndefined();
+    // Explicit false, not an omitted flag: omitting leaves the scoped-note
+    // trigger's unread standing, same convention as the live fold path.
+    expect(notes[0]).toMatchObject({ unread: false });
   });
 
   it("keeps the entry and archives nothing while the event is still missing", async () => {
@@ -1327,6 +1337,21 @@ describe("drainPendingRsvpsFn — retract once the event arrives", () => {
 
     expect(host.tools.integrations.archiveLinks).not.toHaveBeenCalled();
     expect(store.has("pending-rsvp:rsvp-late")).toBe(true);
+  });
+
+  it("writes no note when the deferred response was a bare acceptance", async () => {
+    const { host, store } = makeHost();
+    const { notes } = captureSaves(host, { noteId: "N" });
+    seedPending(host, store, { partstat: "ACCEPTED" });
+
+    await drainPendingRsvpsFn(host);
+
+    expect(notes).toHaveLength(0);
+    // Still retracted: nothing was left for the standalone email thread to show.
+    expect(host.tools.integrations.archiveLinks).toHaveBeenCalledWith({
+      meta: { threadId: "rsvp-late" },
+    });
+    expect(store.has("pending-rsvp:rsvp-late")).toBe(false);
   });
 
   it("gives up on an entry older than the retry window", async () => {
