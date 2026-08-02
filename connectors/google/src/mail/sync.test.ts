@@ -1122,11 +1122,11 @@ describe("processEmailThreadsFn — attendee responses fold onto the event", () 
     // human reply instead.
     expect(links[0].preview).toBe("No problem");
 
-    // Facets must be computed from the surviving human reply, not the
+    // Signals must be computed from the surviving human reply, not the
     // folded notification: the RSVP message carries an Auto-Submitted
-    // header (see rsvpThread), so picking it would classify this thread as
+    // header (see rsvpThread), so picking it would report this thread as
     // automated even though a real person wrote the surviving message.
-    expect(links[0].facets?.automation).toBe("human");
+    expect(links[0].signals?.mail?.autoSubmitted).toBeNull();
   });
 
   it("keeps the email thread when the event thread cannot be resolved", async () => {

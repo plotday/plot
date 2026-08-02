@@ -1,6 +1,5 @@
-import { classifyEmail, extractCta, extractLinkCandidates, type EmailSignals } from "@plotday/email-classifier";
-import type { Cta, ThreadFacets } from "@plotday/twister/facets";
-import { getHeader, getHeaders, getMessageHtml, parseEmailAddress, parseEmailAddresses, type GmailMessage } from "./gmail-api";
+import type { MailSignals } from "@plotday/twister/signals";
+import { getHeader, getHeaders, parseEmailAddress, parseEmailAddresses, type GmailMessage } from "./gmail-api";
 
 const GMAIL_CATEGORY_LABELS = new Set([
   "CATEGORY_PROMOTIONS",
@@ -21,15 +20,21 @@ function trustedAuthResults(message: GmailMessage): string | null {
   return null;
 }
 
-export type GmailClassification = { facets: ThreadFacets; cta: Cta | null };
+const GMAIL_FLAG_LABELS = new Set(["IMPORTANT", "STARRED"]);
 
 /**
- * Compute facets and extract CTA for a Gmail message. `bodyText` is the extracted body used
- * for the length heuristic (pass the same string the note will carry).
+ * Extract the normalized mail signals for a Gmail message. `bodyLength` is the
+ * character length of the extracted plain-text body — pass the length of the
+ * same string the note will carry, so the platform's format thresholds match
+ * what the connector saw.
+ *
+ * This connector no longer classifies: it reports what it observed and the
+ * platform decides.
  */
-export function gmailFacets(message: GmailMessage, bodyText: string): GmailClassification {
+export function gmailSignals(message: GmailMessage, bodyLength: number): MailSignals {
   const from = parseEmailAddress(getHeader(message, "From") ?? "");
-  const signals: EmailSignals = {
+  const labels = message.labelIds ?? [];
+  return {
     listId: getHeader(message, "List-Id"),
     listUnsubscribe: getHeader(message, "List-Unsubscribe"),
     precedence: getHeader(message, "Precedence"),
@@ -38,16 +43,13 @@ export function gmailFacets(message: GmailMessage, bodyText: string): GmailClass
     importance: getHeader(message, "Importance") ?? getHeader(message, "X-Priority"),
     fromAddress: from?.email.toLowerCase() ?? null,
     fromName: from?.name ?? null,
-    recipientCount:
-      parseEmailAddresses(getHeader(message, "To")).length +
-      parseEmailAddresses(getHeader(message, "Cc")).length,
+    toCount: parseEmailAddresses(getHeader(message, "To")).length,
+    ccCount: parseEmailAddresses(getHeader(message, "Cc")).length,
     isReply: getHeader(message, "In-Reply-To") !== null || getHeader(message, "References") !== null,
     subject: getHeader(message, "Subject"),
-    bodyText,
-    bodyLength: bodyText.length,
-    links: extractLinkCandidates(getMessageHtml(message)),
+    bodyLength,
     authResults: trustedAuthResults(message),
-    gmailCategories: (message.labelIds ?? []).filter((l) => GMAIL_CATEGORY_LABELS.has(l)),
+    providerCategories: labels.filter((l) => GMAIL_CATEGORY_LABELS.has(l)),
+    providerFlags: labels.filter((l) => GMAIL_FLAG_LABELS.has(l)),
   };
-  return { facets: classifyEmail(signals), cta: extractCta(signals) };
 }

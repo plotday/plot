@@ -1,45 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { gmailFacets } from "./gmail-facets";
-import type { GmailMessage, GmailMessagePart } from "./gmail-api";
+import { gmailSignals } from "./gmail-facets";
+import type { GmailMessage } from "./gmail-api";
 
-/** Encode a UTF-8 string as base64url (matches Gmail's wire format). */
-function b64url(s: string): string {
-  return Buffer.from(s, "utf8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
-}
-
-function msg(opts: {
-  headers: Array<[string, string]>;
-  labelIds?: string[];
-  htmlBody?: string;
-}): GmailMessage {
-  const topHeaders = opts.headers.map(([name, value]) => ({ name, value }));
-
-  let payload: GmailMessagePart;
-  if (opts.htmlBody !== undefined) {
-    // multipart/alternative with an html part so getMessageHtml (via findPartContent) can find it
-    payload = {
-      mimeType: "multipart/alternative",
-      headers: topHeaders,
-      parts: [
-        {
-          mimeType: "text/plain",
-          headers: [],
-          body: { size: 0, data: b64url("") },
-        },
-        {
-          mimeType: "text/html",
-          headers: [],
-          body: { size: opts.htmlBody.length, data: b64url(opts.htmlBody) },
-        },
-      ],
-    };
-  } else {
-    payload = {
-      mimeType: "text/plain",
-      headers: topHeaders,
-    };
-  }
-
+function msg(opts: { headers: Array<[string, string]>; labelIds?: string[] }): GmailMessage {
   return {
     id: "m1",
     threadId: "t1",
@@ -48,75 +11,113 @@ function msg(opts: {
     historyId: "1",
     internalDate: "1700000000000",
     sizeEstimate: 0,
-    payload,
+    payload: {
+      mimeType: "text/plain",
+      headers: opts.headers.map(([name, value]) => ({ name, value })),
+    },
   };
 }
 
-describe("gmailFacets", () => {
-  it("classifies a newsletter as reading/automated/list", () => {
-    const { facets } = gmailFacets(
-      msg({
-        headers: [
-          ["From", "news@substack.com"],
-          ["To", "me@x.com"],
-          ["Subject", "The Weekly Digest"],
-          ["List-Id", "<news.substack.com>"],
-          ["List-Unsubscribe", "<mailto:u@substack.com>"],
-        ],
-      }),
-      "a".repeat(4000)
-    );
-    expect(facets).toEqual({ format: "reading", automation: "automated", reach: "list" });
+describe("gmailSignals", () => {
+  it("extracts List-Id and List-Unsubscribe from a newsletter", () => {
+    // Previously asserted format: "reading", automation: "automated", reach:
+    // "list" via classifyEmail. The automated/list verdict came from these two
+    // headers; the reading/notification split came from body length, which is
+    // classifier logic now covered by derive-facets.test.ts, not this file.
+    const message = msg({
+      headers: [
+        ["From", "news@substack.com"],
+        ["To", "me@x.com"],
+        ["Subject", "The Weekly Digest"],
+        ["List-Id", "<news.substack.com>"],
+        ["List-Unsubscribe", "<mailto:u@substack.com>"],
+      ],
+    });
+    const s = gmailSignals(message, 4000);
+    expect(s.listId).toBe("<news.substack.com>");
+    expect(s.listUnsubscribe).toBe("<mailto:u@substack.com>");
   });
 
-  it("classifies a personal 1:1 email as message/human/direct", () => {
-    const { facets } = gmailFacets(
-      msg({ headers: [["From", "jane@friends.com"], ["To", "me@x.com"], ["Subject", "Lunch?"]] }),
-      "a".repeat(500)
-    );
-    expect(facets).toEqual({ format: "message", automation: "human", reach: "direct" });
+  it("extracts no automation signals for a personal 1:1 email", () => {
+    // Previously asserted format: "message", automation: "human", reach:
+    // "direct" via classifyEmail. The human verdict came from the absence of
+    // list/precedence/auto-submitted signals (now classifier logic, covered
+    // by derive-facets.test.ts); the direct verdict came from a single To
+    // recipient (toCount), covered here plus by the toCount/ccCount case below.
+    const message = msg({
+      headers: [
+        ["From", "jane@friends.com"],
+        ["To", "me@x.com"],
+        ["Subject", "Lunch?"],
+      ],
+    });
+    const s = gmailSignals(message, 500);
+    expect(s.listId).toBeNull();
+    expect(s.precedence).toBeNull();
+    expect(s.autoSubmitted).toBeNull();
+    expect(s.fromAddress).toBe("jane@friends.com");
+    expect(s.toCount).toBe(1);
   });
 
-  it("classifies a GitHub notification", () => {
-    const { facets } = gmailFacets(
-      msg({
-        headers: [["From", "notifications@github.com"], ["To", "me@x.com"], ["Subject", "[repo] PR merged"]],
-        labelIds: ["CATEGORY_UPDATES"],
-      }),
-      "short"
-    );
-    expect(facets.format).toBe("notification");
-    expect(facets.automation).toBe("automated");
+  it("extracts CATEGORY_UPDATES as a provider category", () => {
+    // Previously asserted format: "notification", automation: "automated" for
+    // a GitHub notification. The automated verdict is classifier logic over
+    // the sender/labels (covered by derive-facets.test.ts); the label itself
+    // is the signal this connector is responsible for extracting.
+    const message = msg({
+      headers: [
+        ["From", "notifications@github.com"],
+        ["To", "me@x.com"],
+        ["Subject", "[repo] PR merged"],
+      ],
+      labelIds: ["CATEGORY_UPDATES"],
+    });
+    const s = gmailSignals(message, 5);
+    expect(s.providerCategories).toEqual(["CATEGORY_UPDATES"]);
   });
 
-  it("extracts a confirm cta from an HTML body link with trusted DMARC", () => {
-    // This test exercises getMessageHtml, which calls findPartContent (already decoded).
-    // With the double-decode bug (decodeBase64Url(findPartContent(...))), the HTML
-    // would be re-decoded as base64url and produce garbage, so extractLinkCandidates
-    // would find no links and cta would be null. Fix: getMessageHtml returns
-    // findPartContent directly without re-decoding.
+  it("selects the Authentication-Results header added by Google's receiving MTA", () => {
+    // Previously exercised CTA extraction from an HTML body link alongside
+    // trusted-DMARC selection; CTA extraction moved server-side (the platform
+    // now derives it from signals), so only the authserv-id selection —
+    // connector-only knowledge — remains here.
+    const authResults =
+      "mx.google.com; spf=pass smtp.mailfrom=acme.com; dkim=pass header.d=acme.com; dmarc=pass header.from=acme.com";
     const message = msg({
       headers: [
         ["From", "Acme <hello@acme.com>"],
         ["To", "user@example.com"],
         ["Subject", "Confirm your email"],
-        [
-          "Authentication-Results",
-          "mx.google.com; spf=pass smtp.mailfrom=acme.com; dkim=pass header.d=acme.com; dmarc=pass header.from=acme.com",
-        ],
+        ["Authentication-Results", authResults],
       ],
-      htmlBody: `<p>Welcome to Acme</p><a href="https://acme.com/confirm?t=abc123">Confirm your email</a>`,
     });
-    const { facets, cta } = gmailFacets(message, "Welcome to Acme Confirm your email");
-    expect(cta).toEqual({
-      kind: "confirm",
-      service: "Acme",
-      code: null,
-      url: "https://acme.com/confirm?t=abc123",
+    const s = gmailSignals(message, 100);
+    expect(s.authResults).toBe(authResults);
+  });
+
+  it("ignores an Authentication-Results header from an untrusted authserv-id", () => {
+    const message = msg({
+      headers: [
+        ["From", "Acme <hello@acme.com>"],
+        ["To", "user@example.com"],
+        ["Subject", "Confirm your email"],
+        ["Authentication-Results", "spf1.example.net; spf=pass smtp.mailfrom=acme.com"],
+      ],
     });
-    // gmailFacets returns raw classifyEmail output; the caller merges cta.kind into
-    // facets.format (see gmail.ts: `cta ? { ...facets, format: cta.kind } : facets`).
-    // Here we just confirm cta is present and facets is non-null.
-    expect(facets).not.toBeNull();
+    const s = gmailSignals(message, 100);
+    expect(s.authResults).toBeNull();
+  });
+
+  it("emits To and Cc counts separately", () => {
+    const message = msg({
+      headers: [
+        ["From", "a@example.com"],
+        ["To", "a@example.com, b@example.com"],
+        ["Cc", "c@example.com"],
+      ],
+    });
+    const s = gmailSignals(message, 100);
+    expect(s.toCount).toBe(2);
+    expect(s.ccCount).toBe(1);
   });
 });
