@@ -21,6 +21,7 @@ import {
   REACTION_SEND_DELAY_MS,
   sendReactionEmailFn,
 } from "./sync";
+import { priorRsvpKey } from "./rsvp-note";
 
 /** Decode the base64url raw message the Gmail send API would receive. */
 function decodeRawMessage(b64url: string): string {
@@ -935,7 +936,7 @@ describe("processEmailThreadsFn — calendar-thread bundling", () => {
 /** ICS body for one attendee response. */
 function replyIcs(
   partstat: "DECLINED" | "ACCEPTED" | "TENTATIVE",
-  opts: { uid?: string; comment?: string } = {}
+  opts: { uid?: string; comment?: string; recurrenceId?: string } = {}
 ): string {
   const lines = [
     "BEGIN:VCALENDAR",
@@ -945,6 +946,7 @@ function replyIcs(
     `ATTENDEE;PARTSTAT=${partstat};CN=Beth Round:mailto:beth@example.test`,
   ];
   if (opts.comment) lines.push(`COMMENT:${opts.comment}`);
+  if (opts.recurrenceId) lines.push(`RECURRENCE-ID:${opts.recurrenceId}`);
   lines.push("END:VEVENT", "END:VCALENDAR");
   return lines.join("\r\n");
 }
@@ -1068,7 +1070,7 @@ describe("processEmailThreadsFn — attendee responses fold onto the event", () 
     );
   });
 
-  it("omits unread entirely for an acceptance", async () => {
+  it("writes no note at all for a bare acceptance, and saves no email link", async () => {
     const { host } = makeHost();
     const { notes, links } = captureSaves(host);
 
@@ -1079,24 +1081,121 @@ describe("processEmailThreadsFn — attendee responses fold onto the event", () 
       "INBOX"
     );
 
-    expect(notes[0].content).toBe("Beth Round accepted.");
-    // Not `unread: false` — that would CLEAR unread the event already had.
-    expect(notes[0]).not.toHaveProperty("unread");
+    // The guest list already shows the acceptance. Writing a note is the only
+    // thing that could mark the organiser's event thread unread, so we write none.
+    expect(notes).toHaveLength(0);
     expect(links).toHaveLength(0);
   });
 
-  it("omits unread for every response during the initial backfill", async () => {
+  it("writes a note for an acceptance carrying a personal comment", async () => {
     const { host } = makeHost();
     const { notes } = captureSaves(host);
 
     await processEmailThreadsFn(
       host,
-      [rsvpThread("rsvp-backfill", replyIcs("DECLINED"))],
+      [
+        rsvpThread(
+          "rsvp-accepted-comment",
+          replyIcs("ACCEPTED", { comment: "Sounds good, I'll bring the deck" })
+        ),
+      ],
+      false,
+      "INBOX"
+    );
+
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toMatchObject({
+      content: "Beth Round accepted.\n\n> Sounds good, I'll bring the deck",
+      unread: true,
+    });
+  });
+
+  it("writes a note when an acceptance reverses an earlier decline", async () => {
+    const { host, store } = makeHost();
+    const { notes } = captureSaves(host);
+
+    await processEmailThreadsFn(
+      host,
+      [rsvpThread("rsvp-declined", replyIcs("DECLINED"))],
+      false,
+      "INBOX"
+    );
+    const key = priorRsvpKey("uid-rsvp@google.com", "beth@example.test", null);
+    expect(store.get(key)).toBe("DECLINED");
+
+    await processEmailThreadsFn(
+      host,
+      [rsvpThread("rsvp-accepted", replyIcs("ACCEPTED"))],
+      false,
+      "INBOX"
+    );
+
+    // Two notes: the decline, then the reversal.
+    expect(notes).toHaveLength(2);
+    expect(notes[1]).toMatchObject({ content: "Beth Round accepted." });
+    // The outstanding non-acceptance is resolved, so the key is gone.
+    expect(store.has(key)).toBe(false);
+  });
+
+  it("does not let a decline on one occurrence suppress an acceptance on another", async () => {
+    const { host, store } = makeHost();
+    const { notes } = captureSaves(host);
+
+    // Beth declines the Aug 4 occurrence of a recurring standup.
+    await processEmailThreadsFn(
+      host,
+      [
+        rsvpThread(
+          "rsvp-recurring-declined",
+          replyIcs("DECLINED", { recurrenceId: "20260804T140000Z" })
+        ),
+      ],
+      false,
+      "INBOX"
+    );
+    expect(notes).toHaveLength(1);
+    const aug4Key = priorRsvpKey(
+      "uid-rsvp@google.com",
+      "beth@example.test",
+      new Date("2026-08-04T14:00:00Z")
+    );
+    expect(store.get(aug4Key)).toBe("DECLINED");
+
+    // Two weeks later she bare-accepts a different occurrence of the same
+    // series (same UID, different RECURRENCE-ID). The Aug 4 decline must not
+    // be read as an outstanding non-acceptance for the Aug 18 occurrence.
+    await processEmailThreadsFn(
+      host,
+      [
+        rsvpThread(
+          "rsvp-recurring-accepted",
+          replyIcs("ACCEPTED", { recurrenceId: "20260818T140000Z" })
+        ),
+      ],
+      false,
+      "INBOX"
+    );
+
+    // No second note: the bare acceptance on the Aug 18 occurrence stays
+    // suppressed, and the Aug 4 decline's key is untouched.
+    expect(notes).toHaveLength(1);
+    expect(store.get(aug4Key)).toBe("DECLINED");
+  });
+
+  it("marks a folded response read during the initial backfill", async () => {
+    const { host } = makeHost();
+    const { notes } = captureSaves(host);
+
+    await processEmailThreadsFn(
+      host,
+      [rsvpThread("rsvp-declined", replyIcs("DECLINED"))],
       true,
       "INBOX"
     );
 
-    expect(notes[0]).not.toHaveProperty("unread");
+    // Explicit false, not an omitted flag: a note already surfaces as unread
+    // by the time this field is read, so only an explicit false overrides it.
+    expect(notes[0]).toMatchObject({ unread: false });
   });
 
   it("keeps ordinary correspondence in its own email thread", async () => {
@@ -1191,9 +1290,17 @@ describe("drainPendingRsvpsFn — retract once the event arrives", () => {
   function seedPending(
     host: GmailSyncHost,
     store: Map<string, unknown>,
-    opts: { firstSeen?: string } = {}
+    opts: {
+      firstSeen?: string;
+      partstat?: "DECLINED" | "ACCEPTED" | "TENTATIVE";
+    } = {}
   ) {
-    const gmailThread = rsvpThread("rsvp-late", replyIcs("ACCEPTED"));
+    // Declined by default: a bare acceptance now writes no note, so it cannot
+    // exercise the fold-and-retract path these tests cover.
+    const gmailThread = rsvpThread(
+      "rsvp-late",
+      replyIcs(opts.partstat ?? "DECLINED")
+    );
     store.set("pending-rsvp:rsvp-late", {
       threadId: "rsvp-late",
       channelId: "INBOX",
@@ -1264,7 +1371,9 @@ describe("drainPendingRsvpsFn — retract once the event arrives", () => {
 
     await drainPendingRsvpsFn(host);
 
-    expect(notes[0].unread).toBeUndefined();
+    // Explicit false, not an omitted flag: omitting leaves the scoped-note
+    // trigger's unread standing, same convention as the live fold path.
+    expect(notes[0]).toMatchObject({ unread: false });
   });
 
   it("keeps the entry and archives nothing while the event is still missing", async () => {
@@ -1276,6 +1385,21 @@ describe("drainPendingRsvpsFn — retract once the event arrives", () => {
 
     expect(host.tools.integrations.archiveLinks).not.toHaveBeenCalled();
     expect(store.has("pending-rsvp:rsvp-late")).toBe(true);
+  });
+
+  it("writes no note when the deferred response was a bare acceptance", async () => {
+    const { host, store } = makeHost();
+    const { notes } = captureSaves(host, { noteId: "N" });
+    seedPending(host, store, { partstat: "ACCEPTED" });
+
+    await drainPendingRsvpsFn(host);
+
+    expect(notes).toHaveLength(0);
+    // Still retracted: nothing was left for the standalone email thread to show.
+    expect(host.tools.integrations.archiveLinks).toHaveBeenCalledWith({
+      meta: { threadId: "rsvp-late" },
+    });
+    expect(store.has("pending-rsvp:rsvp-late")).toBe(false);
   });
 
   it("gives up on an entry older than the retry window", async () => {

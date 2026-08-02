@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { CalendarReply } from "./gmail-api";
-import { composeRsvpNote, shouldMarkUnread } from "./rsvp-note";
+import { composeRsvpNote, shouldEmitRsvpNote, priorRsvpKey } from "./rsvp-note";
 
 function reply(overrides: Partial<CalendarReply> = {}): CalendarReply {
   return {
@@ -80,18 +80,78 @@ describe("composeRsvpNote", () => {
   });
 });
 
-describe("shouldMarkUnread", () => {
-  it("marks declines and tentative responses unread", () => {
-    expect(shouldMarkUnread(reply({ partstat: "DECLINED" }), false)).toBe(true);
-    expect(shouldMarkUnread(reply({ partstat: "TENTATIVE" }), false)).toBe(true);
+describe("shouldEmitRsvpNote", () => {
+  it("emits for a decline or a tentative", () => {
+    expect(shouldEmitRsvpNote(reply({ partstat: "DECLINED" }), false)).toBe(true);
+    expect(shouldEmitRsvpNote(reply({ partstat: "TENTATIVE" }), false)).toBe(true);
   });
 
-  it("leaves read state untouched for an accept", () => {
-    expect(shouldMarkUnread(reply({ partstat: "ACCEPTED" }), false)).toBe(false);
+  it("suppresses a bare acceptance", () => {
+    expect(shouldEmitRsvpNote(reply({ partstat: "ACCEPTED" }), false)).toBe(false);
   });
 
-  it("never marks unread during the initial backfill", () => {
-    expect(shouldMarkUnread(reply({ partstat: "DECLINED" }), true)).toBe(false);
-    expect(shouldMarkUnread(reply({ partstat: "TENTATIVE" }), true)).toBe(false);
+  it("emits an acceptance that carries a comment", () => {
+    expect(
+      shouldEmitRsvpNote(
+        reply({ partstat: "ACCEPTED", comment: "Sounds good, I'll bring the deck" }),
+        false
+      )
+    ).toBe(true);
+  });
+
+  it("emits an acceptance that follows a decline or tentative", () => {
+    expect(shouldEmitRsvpNote(reply({ partstat: "ACCEPTED" }), true)).toBe(true);
+  });
+
+  it("treats an empty comment as no comment", () => {
+    expect(shouldEmitRsvpNote(reply({ partstat: "ACCEPTED", comment: "" }), false)).toBe(
+      false
+    );
+  });
+});
+
+describe("priorRsvpKey", () => {
+  it("scopes the key to the event and the attendee", () => {
+    expect(priorRsvpKey("uid-1@google.com", "beth@example.test", null)).toBe(
+      "rsvp:uid-1@google.com:series:beth@example.test"
+    );
+  });
+
+  it("normalises attendee case so a re-cased address hits the same key", () => {
+    expect(priorRsvpKey("uid-1@google.com", "Beth@Example.Test", null)).toBe(
+      priorRsvpKey("uid-1@google.com", "beth@example.test", null)
+    );
+  });
+
+  it("uses the literal 'series' segment for a series-wide reply", () => {
+    expect(priorRsvpKey("uid-1@google.com", "beth@example.test", null)).toBe(
+      "rsvp:uid-1@google.com:series:beth@example.test"
+    );
+  });
+
+  it("scopes the key to a single occurrence when the reply targets one", () => {
+    const occurrence = new Date("2026-08-04T14:00:00Z");
+    expect(priorRsvpKey("uid-1@google.com", "beth@example.test", occurrence)).toBe(
+      `rsvp:uid-1@google.com:${occurrence.toISOString()}:beth@example.test`
+    );
+  });
+
+  it("gives two different occurrences of the same uid+attendee different keys", () => {
+    const aug4 = new Date("2026-08-04T14:00:00Z");
+    const aug18 = new Date("2026-08-18T14:00:00Z");
+    const keyAug4 = priorRsvpKey("uid-1@google.com", "beth@example.test", aug4);
+    const keyAug18 = priorRsvpKey("uid-1@google.com", "beth@example.test", aug18);
+    expect(keyAug4).not.toBe(keyAug18);
+  });
+
+  it("gives an occurrence-scoped reply a different key from the series-wide key", () => {
+    const occurrence = new Date("2026-08-04T14:00:00Z");
+    const seriesKey = priorRsvpKey("uid-1@google.com", "beth@example.test", null);
+    const occurrenceKey = priorRsvpKey(
+      "uid-1@google.com",
+      "beth@example.test",
+      occurrence
+    );
+    expect(seriesKey).not.toBe(occurrenceKey);
   });
 });

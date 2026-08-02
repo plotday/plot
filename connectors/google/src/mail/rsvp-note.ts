@@ -55,21 +55,50 @@ export function composeRsvpNote(reply: CalendarReply): string {
 }
 
 /**
- * Whether this response should surface the event thread as unread.
+ * Whether an attendee response warrants a note on the event thread.
  *
- * A decline or a tentative response changes whether the meeting works and
- * deserves attention. An acceptance tells the organizer nothing the event's
- * guest list does not already show, so it must neither raise unread nor clear
- * it — returning false here omits the flag entirely, which the runtime treats
- * as "leave read state alone" (NOT as "mark read").
+ * A bare acceptance repeats what the event's guest list already shows, so it
+ * earns no note. That is also the only way to keep it from raising unread:
+ * attaching a note surfaces the thread as unread for every recipient except
+ * the note's author, and no field a connector passes to `saveNote` can
+ * suppress that. Writing nothing is the guarantee.
  *
- * The initial backfill never marks unread: folding a year of historical
- * responses must not resurface old events.
+ * Everything else is genuinely new information and gets a note:
+ * a decline or a tentative changes whether the meeting works; an acceptance
+ * carrying a personal comment is a message from a person; and an acceptance
+ * that reverses an earlier decline or tentative is a real change of state,
+ * which `hadPriorNonAccept` reports from connector-local storage.
  */
-export function shouldMarkUnread(
+export function shouldEmitRsvpNote(
   reply: CalendarReply,
-  initialSync: boolean
+  hadPriorNonAccept: boolean
 ): boolean {
-  if (initialSync) return false;
-  return reply.partstat === "DECLINED" || reply.partstat === "TENTATIVE";
+  if (reply.partstat !== "ACCEPTED") return true;
+  if (reply.comment) return true;
+  return hadPriorNonAccept;
+}
+
+/**
+ * Storage key holding an outstanding decline/tentative for one attendee on one
+ * event. Written when such a response is folded, cleared when that attendee
+ * later accepts — so the store only ever holds unresolved non-acceptances.
+ *
+ * Not read from `schedule_contact`: the calendar product's own attendee sync
+ * writes that same field from the event roster, so by the time an RSVP email is
+ * processed it may already read as accepted and the prior decline is gone. This
+ * key records what this connector last folded, which is the actual question.
+ *
+ * Scoped by `occurrence` as well as `uid`: a reply to one occurrence of a
+ * recurring event carries the same series `uid` as every other occurrence,
+ * distinguished only by `RECURRENCE-ID`. Without the occurrence in the key, a
+ * decline on one occurrence would be read as an outstanding non-acceptance for
+ * an unrelated occurrence's later reply. `null` (a series-wide response) maps
+ * to the literal `"series"` segment.
+ */
+export function priorRsvpKey(
+  uid: string,
+  attendeeEmail: string,
+  occurrence: Date | null
+): string {
+  return `rsvp:${uid}:${occurrence ? occurrence.toISOString() : "series"}:${attendeeEmail.toLowerCase()}`;
 }

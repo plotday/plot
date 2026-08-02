@@ -39,6 +39,7 @@ import type { WebhookRequest } from "@plotday/twister/tools/network";
 
 import {
   type AttachmentData,
+  type CalendarReply,
   GmailApi,
   GmailApiError,
   type GmailMessage,
@@ -70,7 +71,7 @@ import {
   type ClassifiedSendError,
   classifySendError,
 } from "./gmail-send-errors";
-import { composeRsvpNote, shouldMarkUnread } from "./rsvp-note";
+import { composeRsvpNote, priorRsvpKey, shouldEmitRsvpNote } from "./rsvp-note";
 
 // ---------------------------------------------------------------------------
 // Persisted state shapes (shared with the connector)
@@ -1573,6 +1574,20 @@ export async function drainPendingRsvpsFn(host: GmailSyncHost): Promise<void> {
 
       let allFolded = true;
       for (const reply of replies) {
+        const priorKey = priorRsvpKey(reply.uid, reply.attendeeEmail, reply.occurrence);
+        // Only a bare acceptance consults prior state; every other response
+        // emits regardless, so skip the store round-trip. Each tools.* call
+        // spends the execution's request budget, and a backfill folds many
+        // responses at once.
+        const needsPriorState = reply.partstat === "ACCEPTED" && !reply.comment;
+        const hadPriorNonAccept = needsPriorState
+          ? Boolean(await host.get<string>(priorKey))
+          : false;
+
+        // Same rule as the live path: a bare acceptance earns no note. It
+        // counts as folded so the retry still retracts the email thread.
+        if (!shouldEmitRsvpNote(reply, hadPriorNonAccept)) continue;
+
         const noteId = await host.tools.integrations.saveNote({
           thread: { source: `icaluid:${reply.uid}` },
           key: reply.messageId,
@@ -1583,11 +1598,13 @@ export async function drainPendingRsvpsFn(host: GmailSyncHost): Promise<void> {
             email: reply.attendeeEmail,
             ...(reply.attendeeName ? { name: reply.attendeeName } : {}),
           },
-          ...(shouldMarkUnread(reply, pending.initialSync)
-            ? { unread: true }
-            : {}),
+          unread: !pending.initialSync,
         });
-        if (!noteId) allFolded = false;
+        if (!noteId) {
+          allFolded = false;
+          continue;
+        }
+        await recordRsvpOutcome(host, priorKey, reply.partstat);
       }
       // Retract only once every response reached the event, so a partially
       // folded conversation is never left with nowhere to read the rest.
@@ -1621,6 +1638,23 @@ async function resolveBatchIcsFn(
   const api = await getApiAnyFn(host);
   if (!api) return new Map();
   return resolveIcsByMessage(api, messages);
+}
+
+/**
+ * Remember an outstanding decline/tentative so a later acceptance is recognised
+ * as a reversal, and forget it once that acceptance arrives. Keeps the store
+ * holding only unresolved non-acceptances.
+ */
+async function recordRsvpOutcome(
+  host: GmailSyncHost,
+  key: string,
+  partstat: CalendarReply["partstat"]
+): Promise<void> {
+  if (partstat === "ACCEPTED") {
+    await host.clear(key);
+    return;
+  }
+  await host.set(key, partstat);
 }
 
 /**
@@ -1669,6 +1703,26 @@ async function saveTransformedThread(
     const replies = extractCalendarReplies(thread.messages ?? [], icsByMessage);
     if (replies.length > 0) {
       for (const reply of replies) {
+        const priorKey = priorRsvpKey(reply.uid, reply.attendeeEmail, reply.occurrence);
+        // Only a bare acceptance consults prior state; every other response
+        // emits regardless, so skip the store round-trip. Each tools.* call
+        // spends the execution's request budget, and a backfill folds many
+        // responses at once.
+        const needsPriorState = reply.partstat === "ACCEPTED" && !reply.comment;
+        const hadPriorNonAccept = needsPriorState
+          ? Boolean(await host.get<string>(priorKey))
+          : false;
+
+        // A bare acceptance says nothing the event's guest list does not
+        // already show. Drop the message rather than writing a note: a note
+        // is the only thing that could mark the organiser's thread unread,
+        // and marking it folded here keeps the responses-only conversation
+        // from becoming an email thread of its own.
+        if (!shouldEmitRsvpNote(reply, hadPriorNonAccept)) {
+          foldedMessageIds.add(reply.messageId);
+          continue;
+        }
+
         // A miss means the calendar event has not synced yet (saveNote returns
         // null when no thread carries `icaluid:<uid>`). Leave the note in place
         // so the response still lands somewhere rather than vanishing. Expected,
@@ -1683,9 +1737,16 @@ async function saveTransformedThread(
             email: reply.attendeeEmail,
             ...(reply.attendeeName ? { name: reply.attendeeName } : {}),
           },
-          ...(shouldMarkUnread(reply, initialSync) ? { unread: true } : {}),
+          // Explicit on both paths. An omitted flag does NOT mean "leave read
+          // state alone": attaching a note already surfaces the thread as
+          // unread for every recipient except its author, so only an explicit
+          // false overrides it.
+          unread: !initialSync,
         });
-        if (noteId) foldedMessageIds.add(reply.messageId);
+        if (noteId) {
+          foldedMessageIds.add(reply.messageId);
+          await recordRsvpOutcome(host, priorKey, reply.partstat);
+        }
       }
 
       // Any response that missed its event is worth retrying: the calendar
