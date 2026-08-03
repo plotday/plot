@@ -1127,6 +1127,13 @@ describe("processEmailThreadsFn — attendee responses fold onto the event", () 
     // header (see rsvpThread), so picking it would report this thread as
     // automated even though a real person wrote the surviving message.
     expect(links[0].signals?.mail?.autoSubmitted).toBeNull();
+
+    // …and `noteKey` must name that same surviving message, so the platform
+    // reads ITS body when classifying. The folded RSVP notification is the
+    // thread's first message, so a link that named no note (or named the
+    // first one) would classify from a message this link no longer carries.
+    expect(links[0].signals?.noteKey).toBe("rsvp-mixed-msg-2");
+    expect(keys).toContain(links[0].signals?.noteKey);
   });
 
   it("keeps the email thread when the event thread cannot be resolved", async () => {

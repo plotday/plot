@@ -367,6 +367,10 @@ export function transformMessages(
     // this batch.
     const signals = {
       mail: appleMailSignals(originator),
+      // Points the platform at the originator's own note (same `noteKeyOf`
+      // the notes below are keyed with) so body-derived classification reads
+      // that message, not whichever note happens to be first in this batch.
+      noteKey: noteKeyOf(originator),
     };
 
     // Union of participants for thread access.

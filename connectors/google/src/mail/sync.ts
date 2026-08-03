@@ -1810,7 +1810,14 @@ async function saveTransformedThread(
         (survivingNoteKeys === null || survivingNoteKeys.has(m.id))
     );
     if (facetParent) {
-      plotThread.signals = { mail: gmailSignals(facetParent) };
+      // `noteKey` points the platform at THIS message's note (notes are keyed
+      // on the Gmail message id — see transformGmailThread), so body-derived
+      // classification reads the same message the headers came from rather
+      // than whichever note happens to be first in this batch.
+      plotThread.signals = {
+        mail: gmailSignals(facetParent),
+        noteKey: facetParent.id,
+      };
     }
 
     // Star ↔ todo sync: detect star changes and sync to Plot todo status.

@@ -325,6 +325,15 @@ The one judgement a connector still makes is selecting which
 `Authentication-Results` header to trust — only the connector knows its
 provider's `authserv-id`. Emit that header's value and let the platform parse it.
 
+When a link carries several notes (one per message in a conversation), also set
+`signals.noteKey` to the `key` of the note the signals were read from — the
+message you picked as the classification parent. Body-derived classification
+(how long the message is, what it links to) reads that note's content, so
+without the pointer the platform falls back to the link's first note, which on
+an incremental sync is often a later reply — and the thread's classification
+churns every time someone replies. Use the same expression the note was keyed
+with.
+
 `link.facets` (a finished `{format, automation, reach}` verdict) is still
 supported for connectors that have not migrated, and for non-email sources whose
 signals do not fit the mail shape. When a link carries both, `signals` wins.

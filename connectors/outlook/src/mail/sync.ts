@@ -1503,7 +1503,15 @@ export async function processConversationsFn(
         (m) => !m.isDraft
       );
       if (facetParent) {
-        plotThread.signals = { mail: outlookSignals(item.parentHeaders, facetParent) };
+        // `noteKey` points the platform at THIS message's note — same
+        // expression the note itself is keyed with (see
+        // graph-mail-api.ts) — so body-derived classification reads the
+        // message the headers came from, not whichever note happens to be
+        // first in this batch.
+        plotThread.signals = {
+          mail: outlookSignals(item.parentHeaders, facetParent),
+          noteKey: facetParent.internetMessageId ?? facetParent.id,
+        };
       }
 
       const isFlagged = isConversationFlagged(item.messages);

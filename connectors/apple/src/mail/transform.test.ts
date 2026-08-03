@@ -967,6 +967,12 @@ describe("transformMessages — signals", () => {
     // Still computed off the newsletter-shaped originator, not the short
     // human reply — matches Gmail/Outlook's "parent message" convention.
     expect(link.signals?.mail?.listId).toBe("<news.example.com>");
+    // `noteKey` names the originator's own note, so the platform reads that
+    // message's body for classification rather than the reply's.
+    expect(link.signals?.noteKey).toBe("root@example.com");
+    expect((link.notes ?? []).map((n) => (n as { key?: string }).key)).toContain(
+      link.signals?.noteKey
+    );
   });
 
   // The CTA-extraction cases previously here ("attaches an extracted CTA to

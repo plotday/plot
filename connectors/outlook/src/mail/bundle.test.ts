@@ -137,6 +137,41 @@ describe("processConversationsFn — calendar-thread bundling", () => {
     expect(saved[0].sources).toContain("icaluid:uid-3");
   });
 
+  it("names the parent message's note on the signals so the platform classifies from it", async () => {
+    // A draft sits ahead of the real message in the conversation. The parent
+    // (first non-draft) is what the signals are read from, and `noteKey` must
+    // point at THAT message's note — the same key the note itself carries —
+    // so body-derived classification never reads a different message.
+    const { host, saved } = makeHost();
+    const item = {
+      messages: [
+        baseMessage({
+          id: "msg-draft",
+          internetMessageId: "<msg-draft@x>",
+          conversationId: "conv-5",
+          isDraft: true,
+          receivedDateTime: "2026-06-01T09:00:00Z",
+        }),
+        baseMessage({
+          id: "msg-5",
+          internetMessageId: "<msg-5@x>",
+          conversationId: "conv-5",
+          receivedDateTime: "2026-06-01T10:00:00Z",
+        }),
+      ],
+      attachmentsByMessageId: emptyAttachments,
+      parentHeaders: null as GraphHeader[] | null,
+    };
+
+    await processConversationsFn(host, [item], false, "inbox-folder");
+
+    expect(saved).toHaveLength(1);
+    expect(saved[0].signals?.noteKey).toBe("<msg-5@x>");
+    expect(
+      (saved[0].notes ?? []).map((n) => (n as { key?: string }).key)
+    ).toContain(saved[0].signals?.noteKey);
+  });
+
   it("does not add icaluid sources for a plain conversation with no calendar signal", async () => {
     const { host, saved } = makeHost();
     const item = {

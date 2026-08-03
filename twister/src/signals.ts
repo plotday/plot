@@ -62,4 +62,23 @@ export type MailSignals = {
 /** Signals a connector attaches to a `NewLink`. */
 export type LinkSignals = {
   mail?: MailSignals;
+  /**
+   * The `key` of the note these signals were read from — the message the
+   * connector picked as the conversation's classification parent (normally
+   * the originating message).
+   *
+   * A conversation link carries one note per message, and body-derived
+   * classification (how long the message really is, what it links to) must
+   * read the SAME message the headers came from. Without this pointer the
+   * platform can only use the link's first note, which on an incremental
+   * sync is often a later reply — so a thread's classification would churn
+   * every time someone replies to it.
+   *
+   * Set it to the `key` of the note built from that message, using the same
+   * expression the note itself was keyed with. Omit it when the link has a
+   * single note, or when its notes are unkeyed; the platform then falls back
+   * to the first note. When the key matches no note in the link, the
+   * platform classifies from `link.preview` instead.
+   */
+  noteKey?: string | null;
 };
