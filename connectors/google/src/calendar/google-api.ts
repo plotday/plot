@@ -91,10 +91,26 @@ export type SyncState = {
   min?: Date | null;
   max?: Date | null;
   sequence?: number;
-  // Initial sync runs two passes: "quick" (timeMin=now, front-loads upcoming
-  // non-recurring events and future exceptions) then "full" (timeMin=history
-  // limit, picks up long-running recurring masters excluded by the quick
-  // pass's timeMin). Undefined on incremental webhook-triggered syncs.
+  // Initial sync runs two passes: "quick" (timeMin=now) then "full"
+  // (timeMin=history floor).
+  //
+  // The quick pass front-loads everything upcoming, recurring series
+  // INCLUDED: Google does not apply `timeMin` to recurring masters. Verified
+  // against a live calendar — a FREQ=YEARLY master whose first instance was
+  // in 1980, and a FREQ=WEEKLY master whose RRULE `UNTIL` had already passed,
+  // were both returned by a `timeMin=now` listing. Only non-recurring events
+  // are actually bounded by `timeMin`.
+  //
+  // So the full pass is NOT what makes recurring meetings appear (an earlier
+  // version of this comment claimed it was). It exists to import past one-off
+  // events and to establish the `nextSyncToken` that incremental syncs reuse.
+  //
+  // Do not generalise this to Outlook: Microsoft Graph's
+  // `$filter=start/dateTime ge …` is a literal comparison against the series
+  // master's own (first) start, which genuinely does exclude a long-running
+  // master. See `outlook/src/calendar/sync.ts`.
+  //
+  // Undefined on incremental webhook-triggered syncs.
   phase?: "quick" | "full";
 };
 
