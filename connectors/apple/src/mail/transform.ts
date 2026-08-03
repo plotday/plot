@@ -434,8 +434,8 @@ export function transformMessages(
     // precedence over `sentOnly`), and `title` has NO default at all: the
     // runtime substitutes the literal placeholder "Untitled",
     // PERMANENTLY, since every later pass for a still-Sent-only thread would
-    // also omit the key (`thread-helpers.ts`'s
-    // `cleanTitle(activity.title?.trim() || "Untitled")`). A degraded
+    // also omit the key (the platform's title-cleaning fallback substitutes
+    // "Untitled" whenever the title is empty). A degraded
     // "Re: …" subject from the Sent copy is strictly better than "Untitled",
     // and gets overwritten with the real subject the moment an inbound
     // message enters the window. See `sync.test.ts`'s "never 'Untitled'"

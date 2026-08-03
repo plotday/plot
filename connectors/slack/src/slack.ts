@@ -178,9 +178,9 @@ const REACTION_REFRESH_MAX_ATTEMPTS = 20;
  * connection that covers ALL of the user's DM/MPIM conversations, instead of
  * one callback per conversation (which would require enumerating and
  * tracking hundreds of `channel` rows with no corresponding Settings UI to
- * manage them). `GetSlackCallbacks` (workers/api/src/twist/tools/network.ts)
- * broadcasts every incoming Slack event to every callback registered for the
- * team whose granted scopes cover the event type — this sentinel is just
+ * manage them). The platform broadcasts every incoming Slack event to every
+ * callback registered for the team whose granted scopes cover the event
+ * type — this sentinel is just
  * another registered callback's extraArg, distinguished from a real
  * channelId by never matching a Slack conversation id format.
  */

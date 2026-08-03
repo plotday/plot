@@ -74,8 +74,8 @@ function isVirtualChannel(id: string): boolean {
  * `(provider, accountId)` mappings in `contact_external_account`, so a
  * source-only contact created by a comment will be transparently merged with
  * the email-having contact created by the file owner (or any later sync that
- * sees the same user with an email) — see `addContacts` in
- * `workers/api/src/twist/tools/plot/contacts.ts`.
+ * sees the same user with an email) — handled automatically by the platform's
+ * contact-merging logic.
  *
  * The pattern (used by Linear, Asana, GitHub, Google Chat, Jira, etc.):
  *   - Always emit `source` when you have a stable provider-side user ID.

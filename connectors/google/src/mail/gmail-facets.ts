@@ -28,8 +28,8 @@ const GMAIL_FLAG_LABELS = new Set(["IMPORTANT", "STARRED"]);
  * This connector no longer classifies: it reports what it observed and the
  * platform decides. Body length is not part of this contract — the platform
  * already holds the note content and derives plain-text length from it
- * itself (see `derive-facets.ts`'s `toEmailSignals`), rather than trusting a
- * number each connector would otherwise have to compute independently.
+ * itself, rather than trusting a number each connector would otherwise have
+ * to compute independently.
  */
 export function gmailSignals(message: GmailMessage): MailSignals {
   const from = parseEmailAddress(getHeader(message, "From") ?? "");

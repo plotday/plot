@@ -22,8 +22,8 @@ export interface ClassifiedSendError {
   message: string | null;
 }
 
-// Google reason markers (mirrors the server-side classifier vocabulary in
-// workers/api/src/utils/transient-error.ts, which the connector can't import).
+// Google reason markers (mirrors the platform's own transient-error
+// classifier vocabulary, which the connector can't import).
 const RATE_LIMIT_MARKERS = [
   "rateLimitExceeded",
   "userRateLimitExceeded",

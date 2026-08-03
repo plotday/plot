@@ -11,10 +11,10 @@
  * Every field is nullable — populate only what the source actually provides.
  *
  * Deliberately absent: a body-length field. The platform already holds the
- * note content and already has an HTML-to-plain-text fallback path
- * (`stripHtmlToText` in the API's thread helpers), so it derives body length
- * itself instead of trusting a number connectors would each have to compute
- * (and, historically, got wrong — see `derive-facets.ts`'s `toEmailSignals`).
+ * note content, so it derives body length itself instead of trusting a
+ * number connectors would each have to compute independently — and,
+ * historically, got wrong: connectors used to report the raw content
+ * string's length, which is markup length whenever the note is HTML.
  */
 
 /** Header and metadata signals from an email message. */
