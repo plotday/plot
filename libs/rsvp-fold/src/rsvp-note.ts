@@ -1,10 +1,11 @@
 /**
  * Presentation for attendee responses folded onto a calendar event's thread.
  *
- * Google's own notification email states the response in one sentence and then
- * repeats the entire event — Meet dial-in, When, Location, Guests — all of
- * which the event thread already shows. Only the response itself and the
- * responder's personal note are new, so that is all these notes carry.
+ * A calendar system's own notification email states the response in one
+ * sentence and then repeats the entire event — dial-in, When, Location,
+ * Guests — all of which the event thread already shows. Only the response
+ * itself and the responder's personal note are new, so that is all these
+ * notes carry.
  */
 
 /**
@@ -33,8 +34,8 @@ const VERBS: Record<RsvpReply["partstat"], string> = {
 };
 
 /**
- * Format an occurrence date the same way the cancellation note does
- * (`calendar/sync.ts`), so the two annotations on a recurring series read
+ * Format an occurrence date the same way a cancellation note on the same
+ * event thread does, so the two annotations on a recurring series read
  * alike. All-day occurrences are pinned to UTC because their instant is a
  * bare date; timed ones use the worker's zone, which is UTC — a late-evening
  * local occurrence can therefore format as the following day, exactly as the

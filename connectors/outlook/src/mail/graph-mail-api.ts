@@ -681,8 +681,13 @@ export function sortConversation(messages: GraphMessage[]): GraphMessage[] {
   );
 }
 
-/** Graph's meeting-response type → the shared fold rule's `partstat`. */
-const RSVP_PARTSTAT: Record<string, RsvpReply["partstat"]> = {
+/**
+ * Graph's meeting-response type → the shared fold rule's `partstat`. Exported
+ * so the mail sync's fold step can use the same mapping as a cheap pre-filter
+ * for deciding which messages are worth an extra MIME fetch, without
+ * duplicating this table.
+ */
+export const RSVP_PARTSTAT: Record<string, RsvpReply["partstat"]> = {
   meetingAccepted: "ACCEPTED",
   meetingDeclined: "DECLINED",
   meetingTentativelyAccepted: "TENTATIVE",
