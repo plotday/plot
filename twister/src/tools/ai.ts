@@ -188,13 +188,13 @@ export type AICapabilities = {
  *   prompt: "Summarize this in one sentence: ..."
  * });
  *
- * // Balanced performance - uses GPT-5 Mini or Gemini 2.5 Flash
+ * // Balanced performance - uses GPT-5 Mini or Gemini 3.5 Flash
  * const response = await ai.prompt({
  *   model: { speed: "balanced", cost: "medium" },
  *   prompt: "Analyze this data..."
  * });
  *
- * // Most capable - uses models like GPT-5, Claude Sonnet 4.6, or Gemini 2.5 Pro
+ * // Most capable - uses models like GPT-5, Claude Sonnet 4.6, or Gemini 3.1 Pro
  * const response = await ai.prompt({
  *   model: { speed: "capable", cost: "high" },
  *   prompt: "Solve this complex reasoning problem..."
@@ -256,11 +256,26 @@ export enum AIModel {
   CLAUDE_SONNET_46 = "anthropic/claude-sonnet-4-6",
   CLAUDE_HAIKU_45 = "anthropic/claude-haiku-4-5",
 
-  // Google models - Gemini 2.x series
+  // Google models - Gemini 3.x series
+  GEMINI_31_PRO = "google/gemini-3.1-pro-preview",
+  GEMINI_35_FLASH = "google/gemini-3.5-flash",
+  GEMINI_35_FLASH_LITE = "google/gemini-3.5-flash-lite",
+
+  // Google models - Gemini 2.x series (superseded)
+  //
+  // Google has withdrawn most of this generation. The members are kept so that
+  // twists built against an earlier SDK version still compile, and a hint
+  // naming a withdrawn model is transparently served by its 3.x equivalent
+  // rather than failing — but new code should name a 3.x member directly.
+  /** @deprecated Withdrawn by Google. Use {@link AIModel.GEMINI_31_PRO}. */
   GEMINI_25_PRO = "google/gemini-2.5-pro",
+  /** @deprecated Withdrawn by Google. Use {@link AIModel.GEMINI_35_FLASH}. */
   GEMINI_25_FLASH = "google/gemini-2.5-flash",
+  /** @deprecated Withdrawn by Google. Use {@link AIModel.GEMINI_35_FLASH_LITE}. */
   GEMINI_25_FLASH_LITE = "google/gemini-2.5-flash-lite",
+  /** @deprecated Withdrawn by Google. Use {@link AIModel.GEMINI_35_FLASH}. */
   GEMINI_20_FLASH = "google/gemini-2.0-flash",
+  /** @deprecated Withdrawn by Google. Use {@link AIModel.GEMINI_35_FLASH_LITE}. */
   GEMINI_20_FLASH_LITE = "google/gemini-2.0-flash-lite",
 
   // Cloudflare Workers AI models - Free/low-cost models running on Cloudflare's network

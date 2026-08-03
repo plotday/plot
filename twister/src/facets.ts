@@ -42,9 +42,9 @@ export type ThreadFacets = {
 };
 
 /**
- * A time-sensitive call-to-action extracted from a message (e.g. an OTP code
- * or a "confirm your account" link). Carried on a note so the client can show
- * an ephemeral prompt. Heuristic + best-effort; null when nothing confident is
+ * A time-sensitive call-to-action detected during classification (e.g. an OTP
+ * code or a "confirm your account" link), used to identify one-time-code and
+ * confirmation mail. Heuristic + best-effort; null when nothing confident is
  * found. Link (`url`) is only ever populated for DMARC-authenticated mail.
  */
 export type CtaKind = "otp" | "confirm";
