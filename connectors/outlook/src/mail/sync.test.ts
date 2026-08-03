@@ -588,6 +588,42 @@ describe("processConversationsFn — attendee responses fold onto the event", ()
     expect(links).toHaveLength(0);
   });
 
+  it("does not re-emit a note when a commented acceptance is processed again", async () => {
+    // A bare (comment-less) repeat is suppressed by `shouldEmitRsvpNote`
+    // itself once there's no outstanding non-acceptance — `alreadyFolded`
+    // never even has to matter for that case. A COMMENTED acceptance is
+    // the one shape `shouldEmitRsvpNote` always says yes to on its own
+    // (its second rule: any comment earns a note), so `alreadyFolded` is
+    // the only thing standing between a redelivered commented acceptance
+    // and re-emitting on every redelivery.
+    const { host } = makeFoldHost();
+    const { notes, links } = captureSaves(host);
+    const uid = "uid-rsvp-comment-reprocess@example.test";
+    const msg = rsvpMessage(
+      "msg-comment-reprocess",
+      "conv-comment-reprocess",
+      "meetingAccepted",
+      uid
+    );
+    mimeById.set(
+      "msg-comment-reprocess",
+      rsvpMime(replyIcs("ACCEPTED", { uid, comment: "Looking forward to it" }))
+    );
+    const conversation = {
+      messages: [msg],
+      attachmentsByMessageId: new Map(),
+      parentHeaders: null,
+    };
+
+    await processConversationsFn(host, [conversation], false, "inbox");
+    expect(notes).toHaveLength(1);
+
+    await processConversationsFn(host, [conversation], false, "inbox");
+
+    expect(notes).toHaveLength(1);
+    expect(links).toHaveLength(0);
+  });
+
   it("does not let a decline on one occurrence suppress an acceptance on another", async () => {
     const { host, map } = makeFoldHost();
     const { notes } = captureSaves(host);
