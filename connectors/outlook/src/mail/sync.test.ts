@@ -717,5 +717,95 @@ describe("processConversationsFn — attendee responses fold onto the event", ()
     expect(links).toHaveLength(1); // the conversation, minus the folded message
     const keys = (links[0].notes ?? []).map((n) => (n as { key?: string }).key);
     expect(keys).toEqual(["<msg-mixed-2>"]);
+
+    // The folded RSVP was the only calendar-classifiable message in this
+    // conversation — its own thread must not get bundled onto the event's
+    // thread via a shared `sources` element (that would merge the surviving
+    // human reply onto the calendar event thread too).
+    expect(links[0].sources ?? []).not.toContain(`icaluid:${uid}`);
+
+    // Signals/noteKey must point at a note that still exists — the RSVP
+    // message (14:00) sorts before the reply (14:05), so an unfiltered
+    // "parent" pick would select the folded message instead.
+    expect(links[0].signals?.noteKey).toBe("<msg-mixed-2>");
+    expect(keys).toContain(links[0].signals?.noteKey);
+
+    // The preview must come from the surviving reply, not the folded RSVP
+    // notification (whose bodyPreview seeded transformOutlookConversation's
+    // original preview since it sorted first).
+    expect(links[0].preview).toBe("No problem, let's find another time.");
+  });
+
+  it("degrades a single candidate's failed MIME fetch to ordinary mail without aborting the rest of the batch", async () => {
+    const { host } = makeFoldHost();
+    const { notes, links } = captureSaves(host);
+    const goodUid = "uid-rsvp-batch-good@example.test";
+    const badUid = "uid-rsvp-batch-bad@example.test";
+    const badMsg = rsvpMessage("msg-batch-bad", "conv-batch-bad", "meetingDeclined", badUid);
+    const goodMsg = rsvpMessage("msg-batch-good", "conv-batch-good", "meetingDeclined", goodUid);
+
+    graphApi.getMimeContent.mockImplementation(async (id: string) => {
+      if (id === "msg-batch-bad") throw new Error("500 from Graph");
+      if (id === "msg-batch-good") {
+        return rsvpMime(replyIcs("DECLINED", { uid: goodUid }));
+      }
+      return null;
+    });
+
+    await processConversationsFn(
+      host,
+      [
+        { messages: [badMsg], attachmentsByMessageId: new Map(), parentHeaders: null },
+        { messages: [goodMsg], attachmentsByMessageId: new Map(), parentHeaders: null },
+      ],
+      false,
+      "inbox"
+    );
+
+    // The failing fetch degrades ITS OWN message to ordinary mail rather
+    // than throwing out of the batch, so its conversation still gets a
+    // (non-folded) email thread.
+    expect(links).toHaveLength(1);
+    const badLinkKeys = (links[0].notes ?? []).map((n) => (n as { key?: string }).key);
+    expect(badLinkKeys).toEqual(["<msg-batch-bad>"]);
+
+    // The other conversation in the same batch still folds normally — a
+    // single Graph error must not fail every conversation in the batch.
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toMatchObject({ thread: { source: `icaluid:${goodUid}` } });
+  });
+
+  it("does not read prior state for a decline, a tentative, or a commented acceptance", async () => {
+    const { host } = makeFoldHost();
+    captureSaves(host);
+    const getSpy = host.get as ReturnType<typeof vi.fn>;
+
+    const shapes: Array<{
+      partstat: "DECLINED" | "TENTATIVE" | "ACCEPTED";
+      meetingMessageType: "meetingDeclined" | "meetingTentativelyAccepted" | "meetingAccepted";
+      comment?: string;
+    }> = [
+      { partstat: "DECLINED", meetingMessageType: "meetingDeclined" },
+      { partstat: "TENTATIVE", meetingMessageType: "meetingTentativelyAccepted" },
+      { partstat: "ACCEPTED", meetingMessageType: "meetingAccepted", comment: "Sounds good" },
+    ];
+
+    for (const shape of shapes) {
+      getSpy.mockClear();
+      const uid = `uid-no-prior-read-${shape.partstat}@example.test`;
+      const msgId = `msg-no-prior-read-${shape.partstat}`;
+      const msg = rsvpMessage(msgId, `conv-no-prior-read-${shape.partstat}`, shape.meetingMessageType, uid);
+      mimeById.set(msgId, rsvpMime(replyIcs(shape.partstat, { uid, comment: shape.comment })));
+
+      await processConversationsFn(
+        host,
+        [{ messages: [msg], attachmentsByMessageId: new Map(), parentHeaders: null }],
+        false,
+        "inbox"
+      );
+
+      const priorKey = priorRsvpKey(uid, "beth@example.test", null);
+      expect(getSpy).not.toHaveBeenCalledWith(priorKey);
+    }
   });
 });

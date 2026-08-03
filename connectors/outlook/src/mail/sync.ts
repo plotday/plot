@@ -1418,8 +1418,21 @@ async function resolveBatchRsvpMimeFn(
 
   const mimeById = new Map<string, string>();
   for (const m of candidates) {
-    const mime = await api.getMimeContent(m.id);
-    if (mime) mimeById.set(m.id, mime);
+    try {
+      const mime = await api.getMimeContent(m.id);
+      if (mime) mimeById.set(m.id, mime);
+    } catch (error) {
+      // getMimeContent returns null (not a throw) on 404; anything else
+      // (5xx, a mid-batch 401, a 429/503 that still fails after call()'s own
+      // retry) throws GraphMailApiError. That must not abort every other
+      // conversation in this batch — degrade to "no MIME for this message"
+      // exactly like a 404 does. The fold loop already treats a missing
+      // entry here as "leave as ordinary mail".
+      console.warn(
+        `[outlook-mail] getMimeContent failed for ${m.id}, leaving as ordinary mail:`,
+        error
+      );
+    }
   }
   return mimeById;
 }
@@ -1599,11 +1612,52 @@ export async function processConversationsFn(
         // acceptance as reversing nothing.
         await recordRsvpOutcome(host, priorKey, reply.partstat);
       }
+      // Messages whose note survived the fold — everything below that reads
+      // `item.messages` to pick a "parent" (facets, calendar bundling) must
+      // use this instead, or it can select a message whose note no longer
+      // exists in `plotThread.notes`.
+      const survivingMessages =
+        foldedMessageIds.size > 0
+          ? item.messages.filter(
+              (m) => !foldedMessageIds.has(m.internetMessageId ?? m.id)
+            )
+          : item.messages;
+
       if (foldedMessageIds.size > 0) {
         plotThread.notes = plotThread.notes.filter((note) => {
           const noteKey = "key" in note ? (note as { key: string }).key : null;
           return !noteKey || !foldedMessageIds.has(noteKey);
         });
+
+        // The preview (set from the conversation's first non-draft message's
+        // bodyPreview in transformOutlookConversation) may have come from
+        // the message we just folded away. Recompute it from the first
+        // surviving note's own message so a mixed conversation previews the
+        // human reply, not the RSVP notification that's no longer part of
+        // this thread.
+        const originalParent = sortConversation(item.messages).find(
+          (m) => !m.isDraft
+        );
+        const originalParentKey = originalParent
+          ? (originalParent.internetMessageId ?? originalParent.id)
+          : null;
+        if (originalParentKey && foldedMessageIds.has(originalParentKey)) {
+          const firstSurvivingNote = plotThread.notes[0];
+          const firstSurvivingKey =
+            firstSurvivingNote && "key" in firstSurvivingNote
+              ? (firstSurvivingNote as { key: string }).key
+              : null;
+          const firstSurvivingMessage = firstSurvivingKey
+            ? item.messages.find(
+                (m) => (m.internetMessageId ?? m.id) === firstSurvivingKey
+              )
+            : null;
+          plotThread.preview =
+            firstSurvivingMessage?.bodyPreview ||
+            (firstSurvivingNote as { content?: string } | undefined)
+              ?.content ||
+            null;
+        }
       }
 
       if (plotThread.notes.length === 0) continue;
@@ -1638,8 +1692,16 @@ export async function processConversationsFn(
 
       // Bundle onto the calendar event's thread when this conversation relates
       // to one (a Plot-sent reply chain, or a meeting update/cancellation).
+      // Uses `survivingMessages`, NOT `item.messages`: an `rsvp`-kind
+      // classification whose only supporting message was just folded away
+      // must not append `icaluid:<uid>` to `sources` — a shared `sources`
+      // element bundles threads together, so that would merge the rest of a
+      // mixed conversation onto the event thread even though the fold's own
+      // contract is to leave real correspondence in its own thread. A
+      // `cancel`/`update` classification is unaffected: those message kinds
+      // are never added to `foldedMessageIds`, so they're still present here.
       const calBundle = classifyOutlookCalendar(
-        item.messages,
+        survivingMessages,
         item.parentHeaders
       );
       if (calBundle) {
@@ -1654,8 +1716,11 @@ export async function processConversationsFn(
         }
       }
 
-      // Compute mail signals from the parent message's headers.
-      const facetParent = sortConversation(item.messages).find(
+      // Compute mail signals from the parent message's headers. Also uses
+      // `survivingMessages` — otherwise a folded RSVP notification could be
+      // selected as the parent, pointing `signals.noteKey` at a note that no
+      // longer exists in `plotThread.notes`.
+      const facetParent = sortConversation(survivingMessages).find(
         (m) => !m.isDraft
       );
       if (facetParent) {
