@@ -63,6 +63,22 @@ describe("classifyICS — the full classification matrix", () => {
     expect(result).toBeNull();
   });
 
+  it("skips a METHOD:REPLY with no SEQUENCE too — folding is not this function's job", () => {
+    // The null verdict says nothing about what becomes of the message: in a
+    // sync pass a recognised response is folded onto the event's own thread
+    // before it is ever offered here (see `sync.ts`).
+    const raw = [
+      "BEGIN:VCALENDAR",
+      "METHOD:REPLY",
+      "BEGIN:VEVENT",
+      "UID:evt-reply@example.test",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+
+    expect(classifyICS(raw)).toBeNull();
+  });
+
   it("returns null when the ICS has no UID at all", () => {
     const result = classifyICS(ics({ method: "CANCEL" }));
     expect(result).toBeNull();
@@ -143,18 +159,5 @@ describe("classifyICS — property reading after the shared-icsProp swap", () =>
     ].join("\r\n");
 
     expect(classifyICS(ics)).toEqual({ uid: "evt-params@example.test", kind: "update" });
-  });
-
-  it("still skips a METHOD:REPLY (folding is not this function's job)", () => {
-    const ics = [
-      "BEGIN:VCALENDAR",
-      "METHOD:REPLY",
-      "BEGIN:VEVENT",
-      "UID:evt-reply@example.test",
-      "END:VEVENT",
-      "END:VCALENDAR",
-    ].join("\r\n");
-
-    expect(classifyICS(ics)).toBeNull();
   });
 });
