@@ -7,6 +7,7 @@ import type {
   NewLinkWithNotes,
 } from "@plotday/twister/plot";
 import { isNoReplySender } from "@plotday/twister/signals";
+import type { RsvpReply } from "@plotday/rsvp-fold";
 import { stripQuotedReply } from "./email-parsing";
 
 export type GraphRecipient = {
@@ -187,13 +188,17 @@ export class GraphMailApi {
    * folder moves — attachment refs and the msg-channel cache depend on it)
    * plus html body-content. Returns null on 404 (deleted upstream). Retries
    * once on 429/503 honoring Retry-After (capped 15s).
+   *
+   * `raw: true` returns the response body as text without JSON-parsing it —
+   * for endpoints like `$value` that return `message/rfc822`, not JSON.
    */
   public async call(
     method: string,
     url: string,
     params?: Record<string, string>,
     body?: unknown,
-    extraHeaders?: Record<string, string>
+    extraHeaders?: Record<string, string>,
+    raw?: boolean
   ): Promise<any> {
     const query = params ? `?${new URLSearchParams(params)}` : "";
     const headers: Record<string, string> = {
@@ -224,8 +229,9 @@ export class GraphMailApi {
           await response.text()
         );
       }
-      if (response.status === 202 || response.status === 204) return {};
+      if (response.status === 202 || response.status === 204) return raw ? "" : {};
       const text = await response.text();
+      if (raw) return text;
       return text ? JSON.parse(text) : {};
     }
   }
@@ -303,6 +309,9 @@ export class GraphMailApi {
         // 'event' on type 'microsoft.graph.message'". The OData type-cast
         // segment scopes the expand to items that are actually eventMessages;
         // plain messages just come back without an `event` field.
+        // iCalUId is all classifyOutlookCalendar needs — the occurrence an
+        // RSVP responded to is read from the reply's own ICS
+        // (RECURRENCE-ID) instead of trusted from Graph.
         $expand: "microsoft.graph.eventMessage/event($select=iCalUId)",
       };
       if (args.since) {
@@ -345,6 +354,9 @@ export class GraphMailApi {
       $filter: `conversationId eq ${odataQuote(conversationId)}`,
       $top: "100",
       $select: MESSAGE_SELECT_COLLECTION,
+      // iCalUId is all classifyOutlookCalendar needs — the occurrence an
+      // RSVP responded to is read from the reply's own ICS (RECURRENCE-ID)
+      // instead of trusted from Graph.
       $expand: "microsoft.graph.eventMessage/event($select=iCalUId)",
     });
     for (let page = 0; page < 5; page++) {
@@ -365,6 +377,25 @@ export class GraphMailApi {
       { $select: "internetMessageHeaders" }
     )) as { internetMessageHeaders?: GraphHeader[] } | null;
     return data?.internetMessageHeaders ?? null;
+  }
+
+  /**
+   * The message's raw MIME source (`GET .../$value`), as text. Needed for
+   * reading a meeting reply's `text/calendar` part: a Microsoft-generated
+   * reply carries no `application/ics` attachment at all, so
+   * `listAttachments`/`getAttachment` would silently miss it — see
+   * `extractOutlookReply` in `outlook-ics-reply.ts`. Returns null on 404
+   * (message deleted upstream, same as the other single-message getters).
+   */
+  async getMimeContent(messageId: string): Promise<string | null> {
+    return this.call(
+      "GET",
+      `${GRAPH}/me/messages/${encodeURIComponent(messageId)}/$value`,
+      undefined,
+      undefined,
+      undefined,
+      true
+    );
   }
 
   async listAttachments(messageId: string): Promise<GraphAttachmentMeta[]> {
@@ -651,24 +682,47 @@ export function sortConversation(messages: GraphMessage[]): GraphMessage[] {
 }
 
 /**
+ * Graph's meeting-response type → the shared fold rule's `partstat`. Exported
+ * so the mail sync's fold step can use the same mapping as a cheap pre-filter
+ * for deciding which messages are worth an extra MIME fetch, without
+ * duplicating this table.
+ */
+export const RSVP_PARTSTAT: Record<string, RsvpReply["partstat"]> = {
+  meetingAccepted: "ACCEPTED",
+  meetingDeclined: "DECLINED",
+  meetingTentativelyAccepted: "TENTATIVE",
+};
+
+/**
  * Classify an Outlook conversation's relationship to a calendar event for
  * bundling onto the event's Plot thread. Two signals: our own
  * `X-Plot-Event-UID` header on the parent's raw headers (a Plot-sent reply
  * chain — checked first, regardless of any message-derived signal), or a
- * message's Graph meeting-message metadata (update/cancellation).
+ * message's Graph meeting-message metadata (update/cancellation/RSVP).
  *
  * Graph's `meetingMessageType` doesn't distinguish a brand-new invite from
  * an update/reschedule to an existing meeting the way Exchange Web
  * Services' `MeetingRequestType` (fullUpdate/informationalUpdate/
  * newMeetingRequest) does — Graph has no equivalent property, so every
  * `meetingRequest` bundles onto its event's thread here, new invite or not.
- * RSVP responses (accept/decline/tentative) fall through and are skipped,
- * since they match neither branch below.
+ * Cancel and update are checked across the whole conversation before RSVP is
+ * considered at all, in a separate pass — so a conversation carrying both a
+ * response and a cancellation/update still classifies as the stronger kind
+ * regardless of which message comes first. The `partstat` on an RSVP
+ * classification is a cheap pre-filter for deciding a message is worth an
+ * ICS fetch — the fold itself must prefer the value read from the reply's
+ * own ICS (`parseIcsReply`), which is also where the occurrence a response
+ * targets (`RECURRENCE-ID`) is read from; Graph's own metadata carries
+ * neither reliably enough to be a source of truth.
  */
 export function classifyOutlookCalendar(
   messages: GraphMessage[],
   parentHeaders: GraphHeader[] | null
-): { uid: string; kind: "reply" | "update" | "cancel" } | null {
+): {
+  uid: string;
+  kind: "reply" | "update" | "cancel" | "rsvp";
+  partstat?: RsvpReply["partstat"];
+} | null {
   const hdr = (parentHeaders ?? []).find(
     (h) => h.name.toLowerCase() === "x-plot-event-uid"
   );
@@ -678,6 +732,14 @@ export function classifyOutlookCalendar(
     if (!uid) continue;
     if (m.meetingMessageType === "meetingCancelled") return { uid, kind: "cancel" };
     if (m.meetingMessageType === "meetingRequest") return { uid, kind: "update" };
+  }
+  for (const m of messages) {
+    const uid = m.event?.iCalUId;
+    if (!uid) continue;
+    const partstat = m.meetingMessageType
+      ? RSVP_PARTSTAT[m.meetingMessageType]
+      : undefined;
+    if (partstat) return { uid, kind: "rsvp", partstat };
   }
   return null;
 }

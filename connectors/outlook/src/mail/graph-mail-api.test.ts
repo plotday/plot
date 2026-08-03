@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   classifyOutlookCalendar,
   conversationSource,
@@ -15,6 +15,8 @@ import {
   type GraphHeader,
   type GraphMessage,
 } from "./graph-mail-api";
+
+afterEach(() => vi.unstubAllGlobals());
 
 const msg = (over: Partial<GraphMessage>): GraphMessage => ({
   id: "id-1",
@@ -284,6 +286,41 @@ describe("GraphMailApi queries", () => {
       "microsoft.graph.eventMessage/event($select=iCalUId)"
     );
   });
+
+  it("getMimeContent requests $value and returns the raw MIME text intact", async () => {
+    // Exercises the REAL call() implementation (fetch is mocked, call() is
+    // not) — a raw MIME body is never valid JSON, so this only passes if
+    // call()'s `raw` branch actually returns response.text() instead of
+    // falling through to JSON.parse(text), and if getMimeContent actually
+    // threads `raw: true` through to call(). A stubbed call() (as the
+    // other tests in this file use for asserting request shape) can't
+    // catch either regression, since it never runs call()'s body at all.
+    const rawMime =
+      "MIME-Version: 1.0\r\nFrom: a@b.c\r\nContent-Type: text/calendar; method=REPLY\r\n\r\nBEGIN:VCALENDAR\r\nEND:VCALENDAR";
+    const fetchMock = vi.fn(async (input: string | URL) => {
+      expect(String(input)).toBe(
+        "https://graph.microsoft.com/v1.0/me/messages/msg-1/$value"
+      );
+      // Deliberately NOT valid JSON — proves call() didn't JSON.parse it.
+      expect(() => JSON.parse(rawMime)).toThrow();
+      return new Response(rawMime, { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await new GraphMailApi("tok").getMimeContent("msg-1");
+
+    expect(result).toBe(rawMime);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("getMimeContent returns null on 404 (message deleted upstream)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("gone", { status: 404 }))
+    );
+    const result = await new GraphMailApi("tok").getMimeContent("msg-1");
+    expect(result).toBeNull();
+  });
 });
 
 describe("classifyOutlookCalendar", () => {
@@ -346,13 +383,31 @@ describe("classifyOutlookCalendar", () => {
     ).toEqual({ uid: "uid-1", kind: "cancel" });
   });
 
-  it("skips RSVP responses (accept/decline/tentative)", () => {
+  it("classifies an acceptance, a decline and a tentative as rsvp", () => {
+    for (const [type, partstat] of [
+      ["meetingAccepted", "ACCEPTED"],
+      ["meetingDeclined", "DECLINED"],
+      ["meetingTentativelyAccepted", "TENTATIVE"],
+    ] as const) {
+      expect(
+        classifyOutlookCalendar(
+          [msg({ meetingMessageType: type, event: { iCalUId: "u" } })],
+          null
+        )
+      ).toMatchObject({ uid: "u", kind: "rsvp", partstat });
+    }
+  });
+
+  it("still prefers cancel and request over an rsvp in the same conversation", () => {
     expect(
       classifyOutlookCalendar(
-        [msg({ meetingMessageType: "meetingAccepted", event: { iCalUId: "u" } })],
+        [
+          msg({ meetingMessageType: "meetingAccepted", event: { iCalUId: "u" } }),
+          msg({ meetingMessageType: "meetingCancelled", event: { iCalUId: "u" } }),
+        ],
         null
       )
-    ).toBeNull();
+    ).toMatchObject({ kind: "cancel" });
   });
 
   it("skips a qualifying meetingMessageType without an event.iCalUId", () => {

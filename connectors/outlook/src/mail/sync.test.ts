@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { CreateLinkDraft } from "@plotday/twister";
+import type { CreateLinkDraft, NewLinkWithNotes } from "@plotday/twister";
+import { priorRsvpKey } from "@plotday/rsvp-fold";
 
 /**
  * Regression coverage for Gmail-alias-aware self-exclusion in the Outlook
@@ -19,6 +20,7 @@ const { graphApi } = vi.hoisted(() => ({
     updateMessage: vi.fn(),
     getMessage: vi.fn(),
     getConversationMessages: vi.fn(),
+    getMimeContent: vi.fn(),
     send: vi.fn(),
   },
 }));
@@ -27,7 +29,13 @@ vi.mock("./graph-mail-api", async (importOriginal) => {
   return { ...actual, GraphMailApi: vi.fn(() => graphApi) };
 });
 // ensureUserEmailFn reads user_email from store; seed it to avoid a getProfile call.
-import { onCreateLinkFn, onNoteCreatedFn } from "./sync";
+import {
+  onCreateLinkFn,
+  onNoteCreatedFn,
+  processConversationsFn,
+  type OutlookMailSyncHost,
+} from "./sync";
+import type { GraphMessage } from "./graph-mail-api";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -230,4 +238,672 @@ describe("onNoteCreatedFn — calendar reply whose curated recipients are all se
       },
     });
   });
+});
+
+// ---------------------------------------------------------------------------
+// processConversationsFn — attendee responses fold onto the event thread
+// ---------------------------------------------------------------------------
+
+/** Minimal in-memory OutlookMailSyncHost for processConversationsFn. */
+function makeFoldHost(initial: Record<string, unknown> = {}) {
+  const map = new Map<string, unknown>(
+    Object.entries({
+      enabled_channels: ["inbox"],
+      user_email: "organizer@example.test",
+      // Non-empty so getWellKnownFn's cache hit skips getWellKnownFolderIds —
+      // irrelevant here anyway since every call below passes forceChannelId.
+      wellknown_folders: { inbox: "folder-inbox-id" },
+      ...initial,
+    })
+  );
+  const host = {
+    id: "ti-1",
+    get: vi.fn(async (k: string) => (map.has(k) ? map.get(k) : null)),
+    set: vi.fn(async (k: string, v: unknown) => {
+      map.set(k, v);
+    }),
+    setMany: vi.fn(async (entries: [string, unknown][]) => {
+      for (const [k, v] of entries) map.set(k, v);
+    }),
+    clear: vi.fn(async (k: string) => {
+      map.delete(k);
+    }),
+    tools: {
+      integrations: {
+        get: vi.fn(async () => ({ token: "tok", scopes: [] })),
+        saveLink: vi.fn(async () => "T"),
+        saveNote: vi.fn(async () => "N"),
+        channelSyncCompleted: vi.fn(async () => {}),
+        setThreadToDo: vi.fn(async () => {}),
+      },
+      files: { read: vi.fn() },
+      network: { createWebhook: vi.fn(), deleteWebhook: vi.fn() },
+      store: {
+        acquireLock: vi.fn(async () => true),
+        releaseLock: vi.fn(async () => {}),
+        list: vi.fn(async () => []),
+      },
+    },
+    scheduler: {
+      onOutlookMailWebhook: undefined,
+      setupMailboxSubscription: vi.fn(async () => {}),
+      renewMailboxSubscription: vi.fn(async () => {}),
+      scheduleMailboxRenewal: vi.fn(async () => {}),
+      scheduleSelfHealCheck: vi.fn(async () => {}),
+      cancelScheduledTask: vi.fn(async () => {}),
+      scheduleDrain: vi.fn(async () => {}),
+      queueRenewSubscription: vi.fn(async () => {}),
+      requeueInitialSync: vi.fn(async () => {}),
+    },
+  } as unknown as OutlookMailSyncHost;
+  return { host, map };
+}
+
+/** Capture every saveNote/saveLink call the sync makes. */
+function captureSaves(
+  host: OutlookMailSyncHost,
+  opts: { noteId?: string | null } = {}
+) {
+  const notes: Record<string, unknown>[] = [];
+  const links: NewLinkWithNotes[] = [];
+  (
+    host.tools.integrations.saveNote as ReturnType<typeof vi.fn>
+  ).mockImplementation(async (n: Record<string, unknown>) => {
+    notes.push(n);
+    return opts.noteId === undefined ? "N" : opts.noteId;
+  });
+  (
+    host.tools.integrations.saveLink as ReturnType<typeof vi.fn>
+  ).mockImplementation(async (l: NewLinkWithNotes) => {
+    links.push(l);
+    return "T";
+  });
+  return { notes, links };
+}
+
+/** A calendar-reply ICS body for one attendee response. */
+function replyIcs(
+  partstat: "DECLINED" | "ACCEPTED" | "TENTATIVE",
+  opts: { uid?: string; comment?: string; recurrenceId?: string } = {}
+): string {
+  const lines = [
+    "BEGIN:VCALENDAR",
+    "METHOD:REPLY",
+    "BEGIN:VEVENT",
+    `UID:${opts.uid ?? "uid-rsvp@example.test"}`,
+    `ATTENDEE;PARTSTAT=${partstat};CN=Beth Round:mailto:beth@example.test`,
+  ];
+  if (opts.comment) lines.push(`COMMENT:${opts.comment}`);
+  if (opts.recurrenceId) lines.push(`RECURRENCE-ID:${opts.recurrenceId}`);
+  lines.push("END:VEVENT", "END:VCALENDAR");
+  return lines.join("\r\n");
+}
+
+/** A Microsoft-shaped raw MIME body carrying one `text/calendar` reply part. */
+function rsvpMime(ics: string): string {
+  return (
+    [
+      "MIME-Version: 1.0",
+      "From: Beth Round <beth@example.test>",
+      "Subject: RSVP notification",
+      "Content-Type: text/calendar; method=REPLY",
+      "Content-Transfer-Encoding: 7bit",
+    ].join("\r\n") +
+    "\r\n\r\n" +
+    ics
+  );
+}
+
+/** A Graph message flagged by the classifyOutlookCalendar pre-filter as an RSVP. */
+function rsvpMessage(
+  id: string,
+  conversationId: string,
+  meetingMessageType:
+    | "meetingAccepted"
+    | "meetingDeclined"
+    | "meetingTentativelyAccepted",
+  uid: string
+): GraphMessage {
+  return {
+    id,
+    conversationId,
+    internetMessageId: `<${id}>`,
+    subject: "RSVP notification",
+    from: { emailAddress: { name: "Beth Round", address: "beth@example.test" } },
+    toRecipients: [{ emailAddress: { address: "organizer@example.test" } }],
+    ccRecipients: [],
+    receivedDateTime: "2026-08-04T14:00:00.000Z",
+    isRead: true,
+    isDraft: false,
+    body: { contentType: "text", content: "Beth Round has responded." },
+    bodyPreview: "Beth Round has responded.",
+    meetingMessageType,
+    event: { iCalUId: uid },
+  } as GraphMessage;
+}
+
+/** An ordinary (non-RSVP) human reply in the same conversation. */
+function plainReplyMessage(id: string, conversationId: string): GraphMessage {
+  return {
+    id,
+    conversationId,
+    internetMessageId: `<${id}>`,
+    subject: "Re: RSVP notification",
+    from: { emailAddress: { name: "Beth Round", address: "beth@example.test" } },
+    toRecipients: [{ emailAddress: { address: "organizer@example.test" } }],
+    ccRecipients: [],
+    receivedDateTime: "2026-08-04T14:05:00.000Z",
+    isRead: true,
+    isDraft: false,
+    body: { contentType: "text", content: "No problem, let's find another time." },
+    bodyPreview: "No problem, let's find another time.",
+  } as GraphMessage;
+}
+
+describe("processConversationsFn — attendee responses fold onto the event", () => {
+  let mimeById: Map<string, string>;
+
+  beforeEach(() => {
+    mimeById = new Map();
+    graphApi.getMimeContent.mockImplementation(
+      async (id: string) => mimeById.get(id) ?? null
+    );
+  });
+
+  it("writes a note to the event thread and saves no email link", async () => {
+    const { host } = makeFoldHost();
+    const { notes, links } = captureSaves(host);
+    const uid = "uid-rsvp@example.test";
+    const msg = rsvpMessage("msg-decline", "conv-decline", "meetingDeclined", uid);
+    mimeById.set("msg-decline", rsvpMime(replyIcs("DECLINED", { uid })));
+
+    await processConversationsFn(
+      host,
+      [{ messages: [msg], attachmentsByMessageId: new Map(), parentHeaders: null }],
+      false,
+      "inbox"
+    );
+
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toMatchObject({
+      thread: { source: `icaluid:${uid}` },
+      key: "<msg-decline>",
+      content: "Beth Round declined.",
+      contentType: "markdown",
+      created: new Date("2026-08-04T14:00:00.000Z"),
+      unread: true,
+      author: { email: "beth@example.test", name: "Beth Round" },
+      deferUntilThread: true,
+    });
+    expect(links).toHaveLength(0);
+  });
+
+  it("carries the responder's personal note into the quote", async () => {
+    const { host } = makeFoldHost();
+    const { notes } = captureSaves(host);
+    const uid = "uid-rsvp-comment@example.test";
+    const msg = rsvpMessage("msg-decline-comment", "conv-decline-comment", "meetingDeclined", uid);
+    mimeById.set(
+      "msg-decline-comment",
+      rsvpMime(replyIcs("DECLINED", { uid, comment: "Could we move this to Thursday?" }))
+    );
+
+    await processConversationsFn(
+      host,
+      [{ messages: [msg], attachmentsByMessageId: new Map(), parentHeaders: null }],
+      false,
+      "inbox"
+    );
+
+    expect(notes[0].content).toBe(
+      "Beth Round declined.\n\n> Could we move this to Thursday?"
+    );
+  });
+
+  it("writes no note at all for a bare acceptance, and saves no email link", async () => {
+    const { host } = makeFoldHost();
+    const { notes, links } = captureSaves(host);
+    const uid = "uid-rsvp-accept@example.test";
+    const msg = rsvpMessage("msg-accept", "conv-accept", "meetingAccepted", uid);
+    mimeById.set("msg-accept", rsvpMime(replyIcs("ACCEPTED", { uid })));
+
+    await processConversationsFn(
+      host,
+      [{ messages: [msg], attachmentsByMessageId: new Map(), parentHeaders: null }],
+      false,
+      "inbox"
+    );
+
+    // The guest list already shows the acceptance. Writing a note is the only
+    // thing that could mark the organiser's event thread unread, so we write
+    // none — and the responses-only conversation creates no email thread.
+    expect(notes).toHaveLength(0);
+    expect(links).toHaveLength(0);
+  });
+
+  it("writes a note for an acceptance carrying a personal comment", async () => {
+    const { host } = makeFoldHost();
+    const { notes } = captureSaves(host);
+    const uid = "uid-rsvp-accept-comment@example.test";
+    const msg = rsvpMessage("msg-accept-comment", "conv-accept-comment", "meetingAccepted", uid);
+    mimeById.set(
+      "msg-accept-comment",
+      rsvpMime(replyIcs("ACCEPTED", { uid, comment: "Sounds good, I'll bring the deck" }))
+    );
+
+    await processConversationsFn(
+      host,
+      [{ messages: [msg], attachmentsByMessageId: new Map(), parentHeaders: null }],
+      false,
+      "inbox"
+    );
+
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toMatchObject({
+      content: "Beth Round accepted.\n\n> Sounds good, I'll bring the deck",
+      unread: true,
+    });
+  });
+
+  it("writes a note when an acceptance reverses an earlier decline", async () => {
+    const { host, map } = makeFoldHost();
+    const { notes } = captureSaves(host);
+    const uid = "uid-rsvp-reversal@example.test";
+
+    const declineMsg = rsvpMessage("msg-reversal-1", "conv-reversal-1", "meetingDeclined", uid);
+    mimeById.set("msg-reversal-1", rsvpMime(replyIcs("DECLINED", { uid })));
+    await processConversationsFn(
+      host,
+      [{ messages: [declineMsg], attachmentsByMessageId: new Map(), parentHeaders: null }],
+      false,
+      "inbox"
+    );
+    const key = priorRsvpKey(uid, "beth@example.test", null);
+    expect(map.get(key)).toBe("DECLINED");
+
+    const acceptMsg = rsvpMessage("msg-reversal-2", "conv-reversal-2", "meetingAccepted", uid);
+    mimeById.set("msg-reversal-2", rsvpMime(replyIcs("ACCEPTED", { uid })));
+    await processConversationsFn(
+      host,
+      [{ messages: [acceptMsg], attachmentsByMessageId: new Map(), parentHeaders: null }],
+      false,
+      "inbox"
+    );
+
+    // Two notes: the decline, then the reversal.
+    expect(notes).toHaveLength(2);
+    expect(notes[1]).toMatchObject({ content: "Beth Round accepted." });
+    // The key now records the last folded response for every emitted
+    // response, including an acceptance — not just outstanding
+    // non-acceptances — so a later repeat of this exact ACCEPTED is
+    // recognised as already folded instead of re-emitting.
+    expect(map.get(key)).toBe("ACCEPTED");
+
+    // A third pass re-delivers that same ACCEPTED response. This is the
+    // sequence the old store got wrong: it cleared its marker on every
+    // acceptance, so a repeated acceptance always looked unrecorded and
+    // would have re-emitted. The new store keeps the marker, so
+    // `alreadyFolded` recognises the repeat and no third note appears.
+    const acceptAgainMsg = rsvpMessage(
+      "msg-reversal-3",
+      "conv-reversal-3",
+      "meetingAccepted",
+      uid
+    );
+    mimeById.set("msg-reversal-3", rsvpMime(replyIcs("ACCEPTED", { uid })));
+    await processConversationsFn(
+      host,
+      [{ messages: [acceptAgainMsg], attachmentsByMessageId: new Map(), parentHeaders: null }],
+      false,
+      "inbox"
+    );
+    expect(notes).toHaveLength(2);
+  });
+
+  it("does not re-emit a note when the same conversation is processed again", async () => {
+    const { host } = makeFoldHost();
+    const { notes, links } = captureSaves(host);
+    const uid = "uid-rsvp-reprocess@example.test";
+    const msg = rsvpMessage("msg-reprocess", "conv-reprocess", "meetingDeclined", uid);
+    mimeById.set("msg-reprocess", rsvpMime(replyIcs("DECLINED", { uid })));
+    const conversation = {
+      messages: [msg],
+      attachmentsByMessageId: new Map(),
+      parentHeaders: null,
+    };
+
+    await processConversationsFn(host, [conversation], false, "inbox");
+    expect(notes).toHaveLength(1);
+
+    // Graph's subscription fires on `updated` as well as `created`, and the
+    // drain re-fetches the whole conversation for any notified message —
+    // this is the routine case, not a rare replay.
+    await processConversationsFn(host, [conversation], false, "inbox");
+
+    // No second note: re-emitting one would re-apply its unread intent and
+    // drag the organiser's event thread back to unread for no new
+    // information. The message is still dropped from the mail side, though —
+    // no standalone email thread appears for it either time.
+    expect(notes).toHaveLength(1);
+    expect(links).toHaveLength(0);
+  });
+
+  it("does not re-emit a note when a commented acceptance is processed again", async () => {
+    // A bare (comment-less) repeat is suppressed by `shouldEmitRsvpNote`
+    // itself once there's no outstanding non-acceptance — `alreadyFolded`
+    // never even has to matter for that case. A COMMENTED acceptance is
+    // the one shape `shouldEmitRsvpNote` always says yes to on its own
+    // (its second rule: any comment earns a note), so `alreadyFolded` is
+    // the only thing standing between a redelivered commented acceptance
+    // and re-emitting on every redelivery.
+    const { host } = makeFoldHost();
+    const { notes, links } = captureSaves(host);
+    const uid = "uid-rsvp-comment-reprocess@example.test";
+    const msg = rsvpMessage(
+      "msg-comment-reprocess",
+      "conv-comment-reprocess",
+      "meetingAccepted",
+      uid
+    );
+    mimeById.set(
+      "msg-comment-reprocess",
+      rsvpMime(replyIcs("ACCEPTED", { uid, comment: "Looking forward to it" }))
+    );
+    const conversation = {
+      messages: [msg],
+      attachmentsByMessageId: new Map(),
+      parentHeaders: null,
+    };
+
+    await processConversationsFn(host, [conversation], false, "inbox");
+    expect(notes).toHaveLength(1);
+
+    await processConversationsFn(host, [conversation], false, "inbox");
+
+    expect(notes).toHaveLength(1);
+    expect(links).toHaveLength(0);
+  });
+
+  it("does not let a decline on one occurrence suppress an acceptance on another", async () => {
+    const { host, map } = makeFoldHost();
+    const { notes } = captureSaves(host);
+    const uid = "uid-rsvp-recurring@example.test";
+
+    // Beth declines the Aug 4 occurrence of a recurring standup.
+    const aug4Decline = rsvpMessage("msg-aug4", "conv-aug4", "meetingDeclined", uid);
+    mimeById.set(
+      "msg-aug4",
+      rsvpMime(replyIcs("DECLINED", { uid, recurrenceId: "20260804T140000Z" }))
+    );
+    await processConversationsFn(
+      host,
+      [{ messages: [aug4Decline], attachmentsByMessageId: new Map(), parentHeaders: null }],
+      false,
+      "inbox"
+    );
+    expect(notes).toHaveLength(1);
+    const aug4Key = priorRsvpKey(
+      uid,
+      "beth@example.test",
+      new Date("2026-08-04T14:00:00Z")
+    );
+    expect(map.get(aug4Key)).toBe("DECLINED");
+
+    // Two weeks later she bare-accepts a different occurrence of the same
+    // series (same UID, different RECURRENCE-ID). The Aug 4 decline must not
+    // be read as an outstanding non-acceptance for the Aug 18 occurrence.
+    const aug18Accept = rsvpMessage("msg-aug18", "conv-aug18", "meetingAccepted", uid);
+    mimeById.set(
+      "msg-aug18",
+      rsvpMime(replyIcs("ACCEPTED", { uid, recurrenceId: "20260818T140000Z" }))
+    );
+    await processConversationsFn(
+      host,
+      [{ messages: [aug18Accept], attachmentsByMessageId: new Map(), parentHeaders: null }],
+      false,
+      "inbox"
+    );
+
+    // No second note: the bare acceptance on the Aug 18 occurrence stays
+    // suppressed, and the Aug 4 decline's key is untouched.
+    expect(notes).toHaveLength(1);
+    expect(map.get(aug4Key)).toBe("DECLINED");
+  });
+
+  it("marks a folded response read during the initial backfill", async () => {
+    const { host } = makeFoldHost();
+    const { notes } = captureSaves(host);
+    const uid = "uid-rsvp-initial@example.test";
+    const msg = rsvpMessage("msg-initial", "conv-initial", "meetingDeclined", uid);
+    mimeById.set("msg-initial", rsvpMime(replyIcs("DECLINED", { uid })));
+
+    await processConversationsFn(
+      host,
+      [{ messages: [msg], attachmentsByMessageId: new Map(), parentHeaders: null }],
+      true,
+      "inbox"
+    );
+
+    // Explicit false, not an omitted flag: a note already surfaces as unread
+    // by the time this field is read, so only an explicit false overrides it.
+    expect(notes[0]).toMatchObject({ unread: false });
+  });
+
+  it("passes deferUntilThread so the platform holds a miss instead of us retrying it", async () => {
+    const { host } = makeFoldHost();
+    const { notes } = captureSaves(host);
+    const uid = "uid-rsvp-defer@example.test";
+    const msg = rsvpMessage("msg-defer", "conv-defer", "meetingDeclined", uid);
+    mimeById.set("msg-defer", rsvpMime(replyIcs("DECLINED", { uid })));
+
+    await processConversationsFn(
+      host,
+      [{ messages: [msg], attachmentsByMessageId: new Map(), parentHeaders: null }],
+      false,
+      "inbox"
+    );
+
+    expect(notes[0]).toMatchObject({ deferUntilThread: true });
+  });
+
+  it("drops the email thread on a miss too, and still records the outcome", async () => {
+    const { host, map } = makeFoldHost();
+    // null = no thread carries `icaluid:<uid>` yet (calendar hasn't synced).
+    // The platform parks the deferUntilThread note rather than returning it
+    // to us, so the message is folded away exactly as a successful fold
+    // would be, and no standalone email thread is created for it.
+    const { notes, links } = captureSaves(host, { noteId: null });
+    const uid = "uid-rsvp-orphan@example.test";
+    const msg = rsvpMessage("msg-orphan", "conv-orphan", "meetingDeclined", uid);
+    mimeById.set("msg-orphan", rsvpMime(replyIcs("DECLINED", { uid })));
+
+    await processConversationsFn(
+      host,
+      [{ messages: [msg], attachmentsByMessageId: new Map(), parentHeaders: null }],
+      false,
+      "inbox"
+    );
+
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toMatchObject({ deferUntilThread: true });
+    expect(links).toHaveLength(0);
+    // Recorded regardless of saveNote's return value — a deferred note
+    // returns no id, and gating on it would leave this decline's reversal
+    // state unrecorded forever.
+    const key = priorRsvpKey(uid, "beth@example.test", null);
+    expect(map.get(key)).toBe("DECLINED");
+  });
+
+  it("leaves the message as ordinary mail when the raw MIME carries no parseable reply", async () => {
+    const { host } = makeFoldHost();
+    const { notes, links } = captureSaves(host);
+    const uid = "uid-rsvp-nomime@example.test";
+    // The pre-filter flags this message (meetingAccepted + iCalUId), but the
+    // raw MIME carries no calendar part at all — extractOutlookReply returns
+    // null. Without the ICS there is no comment and no occurrence, so folding
+    // would mis-scope the dedup key; the safe direction is ordinary mail.
+    const msg = rsvpMessage("msg-nomime", "conv-nomime", "meetingAccepted", uid);
+    mimeById.set(
+      "msg-nomime",
+      [
+        "MIME-Version: 1.0",
+        "From: Beth Round <beth@example.test>",
+        "Content-Type: text/plain",
+        "",
+        "Beth Round has responded.",
+      ].join("\r\n")
+    );
+
+    await processConversationsFn(
+      host,
+      [{ messages: [msg], attachmentsByMessageId: new Map(), parentHeaders: null }],
+      false,
+      "inbox"
+    );
+
+    expect(notes).toHaveLength(0);
+    expect(links).toHaveLength(1);
+    const keys = (links[0].notes ?? []).map((n) => (n as { key?: string }).key);
+    expect(keys).toEqual(["<msg-nomime>"]);
+
+    // The pre-filter still saw a `meetingAccepted` + iCalUId on this message,
+    // so `classifyOutlookCalendar` would classify it as `kind: "rsvp"` even
+    // though the fold itself failed. That classification must never append
+    // `icaluid:<uid>` to `sources` — otherwise this ordinary-mail thread (and
+    // any real correspondence sharing its conversation) gets bundled onto the
+    // calendar event's thread, marking the organiser unread for a plain
+    // notification email.
+    expect(links[0].sources ?? []).not.toContain(`icaluid:${uid}`);
+  });
+
+  it("leaves the message as ordinary mail when the MIME fetch itself misses (e.g. 404)", async () => {
+    const { host } = makeFoldHost();
+    const { notes, links } = captureSaves(host);
+    const uid = "uid-rsvp-no-mime-fetch@example.test";
+    const msg = rsvpMessage("msg-no-mime-fetch", "conv-no-mime-fetch", "meetingDeclined", uid);
+    // mimeById has no entry — getMimeContent resolves null (404).
+
+    await processConversationsFn(
+      host,
+      [{ messages: [msg], attachmentsByMessageId: new Map(), parentHeaders: null }],
+      false,
+      "inbox"
+    );
+
+    expect(notes).toHaveLength(0);
+    expect(links).toHaveLength(1);
+    // Same reasoning as the no-parseable-MIME case above: a 404'd fetch still
+    // leaves an `rsvp`-classifiable message behind, and it must not bundle.
+    expect(links[0].sources ?? []).not.toContain(`icaluid:${uid}`);
+  });
+
+  it("keeps ordinary correspondence in its own email thread, dropping only the folded RSVP message", async () => {
+    const { host } = makeFoldHost();
+    const { notes, links } = captureSaves(host);
+    const uid = "uid-rsvp-mixed@example.test";
+    const rsvp = rsvpMessage("msg-mixed-1", "conv-mixed", "meetingDeclined", uid);
+    const reply = plainReplyMessage("msg-mixed-2", "conv-mixed");
+    mimeById.set("msg-mixed-1", rsvpMime(replyIcs("DECLINED", { uid })));
+
+    await processConversationsFn(
+      host,
+      [{ messages: [rsvp, reply], attachmentsByMessageId: new Map(), parentHeaders: null }],
+      false,
+      "inbox"
+    );
+
+    expect(notes).toHaveLength(1); // the folded RSVP note on the event thread
+    expect(links).toHaveLength(1); // the conversation, minus the folded message
+    const keys = (links[0].notes ?? []).map((n) => (n as { key?: string }).key);
+    expect(keys).toEqual(["<msg-mixed-2>"]);
+
+    // The folded RSVP was the only calendar-classifiable message in this
+    // conversation — its own thread must not get bundled onto the event's
+    // thread via a shared `sources` element (that would merge the surviving
+    // human reply onto the calendar event thread too).
+    expect(links[0].sources ?? []).not.toContain(`icaluid:${uid}`);
+
+    // Signals/noteKey must point at a note that still exists — the RSVP
+    // message (14:00) sorts before the reply (14:05), so an unfiltered
+    // "parent" pick would select the folded message instead.
+    expect(links[0].signals?.noteKey).toBe("<msg-mixed-2>");
+    expect(keys).toContain(links[0].signals?.noteKey);
+
+    // The preview must come from the surviving reply, not the folded RSVP
+    // notification (whose bodyPreview seeded transformOutlookConversation's
+    // original preview since it sorted first).
+    expect(links[0].preview).toBe("No problem, let's find another time.");
+  });
+
+  it("does not mark the surviving thread unread from a folded RSVP notification's own unread state", async () => {
+    const { host } = makeFoldHost();
+    const { notes, links } = captureSaves(host);
+    const uid = "uid-rsvp-unread-fold@example.test";
+    // The RSVP notification is unread in Outlook, but its note gets folded
+    // away. The surviving reply is already read.
+    const rsvp = {
+      ...rsvpMessage("msg-unread-fold-1", "conv-unread-fold", "meetingDeclined", uid),
+      isRead: false,
+    };
+    const reply = {
+      ...plainReplyMessage("msg-unread-fold-2", "conv-unread-fold"),
+      isRead: true,
+    };
+    mimeById.set("msg-unread-fold-1", rsvpMime(replyIcs("DECLINED", { uid })));
+
+    await processConversationsFn(
+      host,
+      [{ messages: [rsvp, reply], attachmentsByMessageId: new Map(), parentHeaders: null }],
+      false,
+      "inbox"
+    );
+
+    expect(notes).toHaveLength(1); // the folded RSVP note on the event thread
+    expect(links).toHaveLength(1);
+    // Computed from `survivingMessages` (just the read reply), not
+    // `item.messages` (which still has the unread RSVP) — otherwise the
+    // surviving thread would be marked unread with nothing in it the user
+    // can read to clear it.
+    expect(links[0].unread).toBe(false);
+  });
+
+  it("degrades a single candidate's failed MIME fetch to ordinary mail without aborting the rest of the batch", async () => {
+    const { host } = makeFoldHost();
+    const { notes, links } = captureSaves(host);
+    const goodUid = "uid-rsvp-batch-good@example.test";
+    const badUid = "uid-rsvp-batch-bad@example.test";
+    const badMsg = rsvpMessage("msg-batch-bad", "conv-batch-bad", "meetingDeclined", badUid);
+    const goodMsg = rsvpMessage("msg-batch-good", "conv-batch-good", "meetingDeclined", goodUid);
+
+    graphApi.getMimeContent.mockImplementation(async (id: string) => {
+      if (id === "msg-batch-bad") throw new Error("500 from Graph");
+      if (id === "msg-batch-good") {
+        return rsvpMime(replyIcs("DECLINED", { uid: goodUid }));
+      }
+      return null;
+    });
+
+    await processConversationsFn(
+      host,
+      [
+        { messages: [badMsg], attachmentsByMessageId: new Map(), parentHeaders: null },
+        { messages: [goodMsg], attachmentsByMessageId: new Map(), parentHeaders: null },
+      ],
+      false,
+      "inbox"
+    );
+
+    // The failing fetch degrades ITS OWN message to ordinary mail rather
+    // than throwing out of the batch, so its conversation still gets a
+    // (non-folded) email thread.
+    expect(links).toHaveLength(1);
+    const badLinkKeys = (links[0].notes ?? []).map((n) => (n as { key?: string }).key);
+    expect(badLinkKeys).toEqual(["<msg-batch-bad>"]);
+
+    // The other conversation in the same batch still folds normally — a
+    // single Graph error must not fail every conversation in the batch.
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toMatchObject({ thread: { source: `icaluid:${goodUid}` } });
+  });
+
 });

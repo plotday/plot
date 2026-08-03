@@ -31,21 +31,31 @@ import type {
   Actor,
   ActorId,
   NewLinkWithNotes,
+  NewNote,
   Note,
   Thread,
 } from "@plotday/twister/plot";
 import type { WebhookRequest } from "@plotday/twister/tools/network";
 import { markdownToHtml } from "@plotday/twister/utils/markdown-html";
+import {
+  alreadyFolded,
+  composeRsvpNote,
+  isNonAcceptance,
+  priorRsvpKey,
+  shouldEmitRsvpNote,
+} from "@plotday/rsvp-fold";
 
 import { enrichLinkContactsFromOutlook } from "./enrich";
 import {
   EXCLUDED_WELL_KNOWN,
   GraphMailApi,
   GraphMailApiError,
+  RSVP_PARTSTAT,
   classifyOutlookCalendar,
   conversationSource,
   isConversationFlagged,
   isConversationUnread,
+  messageDate,
   recipientEmails,
   sortConversation,
   transformOutlookConversation,
@@ -54,6 +64,7 @@ import {
   type GraphMessage,
   type WellKnownFolders,
 } from "./graph-mail-api";
+import { extractOutlookReply } from "./outlook-ics-reply";
 import { outlookSignals } from "./outlook-facets";
 
 // ---------------------------------------------------------------------------
@@ -210,6 +221,12 @@ export interface OutlookMailSyncHost {
       ): Promise<{ token: string; scopes: string[] } | null>;
       /** Persist a link (upsert by source). Returns the saved thread id (or null if filtered). */
       saveLink(link: NewLinkWithNotes): Promise<string | null>;
+      /**
+       * Attach a note to an EXISTING thread addressed by `{ source }` or
+       * `{ id }`. Creates no thread-level link. Returns the note id, or null
+       * when the target thread could not be resolved.
+       */
+      saveNote(note: NewNote): Promise<string | null>;
       /** Signal that the initial backfill for a channel has finished. */
       channelSyncCompleted(channelId: string): Promise<void>;
       /** Set a thread's to-do (flagged) state from the connector's own write. */
@@ -1359,6 +1376,50 @@ export async function drainNotifiedMessagesFn(
   return retry.length > 0 ? { retry } : undefined;
 }
 
+/**
+ * Reads the raw MIME for every message the {@link RSVP_PARTSTAT} pre-filter
+ * (Graph's own `meetingMessageType`, which requires no extra request) flags
+ * as a candidate meeting response, across the whole batch. Resolving an API
+ * client is itself a token round-trip, so a batch with no candidate at all
+ * skips straight to an empty map. A batch whose connection has no usable
+ * token degrades the same way: those conversations sync as plain email.
+ */
+async function resolveBatchRsvpMimeFn(
+  host: OutlookMailSyncHost,
+  messages: GraphMessage[]
+): Promise<Map<string, string>> {
+  const candidates = messages.filter(
+    (m) =>
+      !m.isDraft &&
+      m.event?.iCalUId &&
+      m.meetingMessageType &&
+      RSVP_PARTSTAT[m.meetingMessageType]
+  );
+  if (candidates.length === 0) return new Map();
+  const api = await getApiAnyFn(host);
+  if (!api) return new Map();
+
+  const mimeById = new Map<string, string>();
+  for (const m of candidates) {
+    try {
+      const mime = await api.getMimeContent(m.id);
+      if (mime) mimeById.set(m.id, mime);
+    } catch (error) {
+      // getMimeContent returns null (not a throw) on 404; anything else
+      // (5xx, a mid-batch 401, a 429/503 that still fails after call()'s own
+      // retry) throws GraphMailApiError. That must not abort every other
+      // conversation in this batch — degrade to "no MIME for this message"
+      // exactly like a 404 does. The fold loop already treats a missing
+      // entry here as "leave as ordinary mail".
+      console.warn(
+        `[outlook-mail] getMimeContent failed for ${m.id}, leaving as ordinary mail:`,
+        error
+      );
+    }
+  }
+  return mimeById;
+}
+
 export async function processConversationsFn(
   host: OutlookMailSyncHost,
   items: ConversationItem[],
@@ -1421,6 +1482,13 @@ export async function processConversationsFn(
     console.warn("Failed to enrich Outlook contacts (non-blocking):", err);
   }
 
+  // Raw MIME for every RSVP-flagged message in the batch, resolved once
+  // ahead of the save fan-out (mirrors Google's `icsByMessage`).
+  const mimeByMessageId = await resolveBatchRsvpMimeFn(
+    host,
+    transformed.flatMap(({ item }) => item.messages)
+  );
+
   for (const {
     item,
     plot: plotThread,
@@ -1450,8 +1518,157 @@ export async function processConversationsFn(
         filtered.push(note);
       }
       plotThread.notes = filtered;
+
+      // Attendee responses ("Declined: <event>") belong on the event, not in
+      // a thread of their own. Fold each RSVP-flagged message onto the
+      // event's thread and drop its note here — a conversation that was
+      // nothing but responses is left with no notes and falls out at the
+      // guard below, so no email link is ever created for it. A conversation
+      // that also carries real correspondence keeps its thread, minus the
+      // folded messages.
+      const foldedMessageIds = new Set<string>();
+      for (const m of item.messages) {
+        if (m.isDraft) continue;
+        const uid = m.event?.iCalUId;
+        if (!uid) continue;
+        const partstat = m.meetingMessageType
+          ? RSVP_PARTSTAT[m.meetingMessageType]
+          : undefined;
+        if (!partstat) continue; // Pre-filter: not a candidate meeting response.
+
+        // Without the raw MIME there is no ICS, so no comment and no
+        // occurrence — folding on the Graph metadata alone would mis-scope
+        // the dedup key. Leave the message as ordinary mail instead; this
+        // covers both a missing/404'd fetch and MIME that carries no
+        // parseable calendar part.
+        const mime = mimeByMessageId.get(m.id);
+        if (!mime) continue;
+        const reply = extractOutlookReply(mime, {
+          name: m.from?.emailAddress?.name ?? null,
+          email: m.from?.emailAddress?.address ?? "",
+        });
+        if (!reply) continue;
+
+        const noteKey = m.internetMessageId ?? m.id;
+        const priorKey = priorRsvpKey(uid, reply.attendeeEmail, reply.occurrence);
+        // Read on every response, not just a bare acceptance: `alreadyFolded`
+        // needs the stored value on every path, so there is no cheaper way to
+        // skip this round-trip anymore (there used to be one for the
+        // non-acceptance/commented-acceptance cases — traded away below).
+        const stored = await host.get<string>(priorKey);
+
+        // Re-processing a conversation re-runs this loop for a response
+        // already folded onto the event thread — Graph's subscription fires
+        // on `updated` as well as `created`, and the drain re-fetches the
+        // whole conversation for any notified message. The note itself
+        // upserts by key, so re-saving it wouldn't duplicate it, but its
+        // `unread` intent would still be re-applied and drag the thread back
+        // to unread for anyone who already read it. Comparing against the
+        // stored partstat (not just presence) means a genuine change of
+        // response is never caught by this: an attendee who edits only their
+        // comment on an unchanged response gets no updated note, which is
+        // the accepted trade for not re-raising unread on every re-deliver.
+        if (alreadyFolded(stored, reply)) {
+          foldedMessageIds.add(noteKey);
+          continue;
+        }
+
+        // A bare acceptance says nothing the event's guest list does not
+        // already show. Drop the message rather than writing a note: a note
+        // is the only thing that could mark the organiser's thread unread,
+        // and marking it folded here keeps a responses-only conversation
+        // from becoming an email thread of its own.
+        if (!shouldEmitRsvpNote(reply, isNonAcceptance(stored))) {
+          foldedMessageIds.add(noteKey);
+          continue;
+        }
+
+        // saveNote returns null when no thread carries `icaluid:<uid>` yet
+        // (the calendar event hasn't synced). deferUntilThread has the
+        // platform hold the note and attach it once that thread appears.
+        await host.tools.integrations.saveNote({
+          thread: { source: `icaluid:${uid}` },
+          key: noteKey,
+          content: composeRsvpNote(reply),
+          contentType: "markdown",
+          created: messageDate(m),
+          author: {
+            email: reply.attendeeEmail,
+            ...(reply.attendeeName ? { name: reply.attendeeName } : {}),
+          },
+          // Explicit on both paths. An omitted flag does NOT mean "leave read
+          // state alone": attaching a note already surfaces the thread as
+          // unread for every recipient except its author, so only an
+          // explicit false overrides it.
+          unread: !initialSync,
+          deferUntilThread: true,
+        });
+        foldedMessageIds.add(noteKey);
+        // Recorded regardless of the saveNote return value: a deferred note
+        // returns no id, and gating on it would leave a deferred
+        // non-acceptance unrecorded forever, wrongly treating a later bare
+        // acceptance as reversing nothing.
+        //
+        // Always set, never cleared: the key now holds the last response
+        // actually folded, for every emitted response (including an
+        // acceptance) — that's what lets `alreadyFolded` recognise a repeat
+        // of ANY partstat, not just an outstanding non-acceptance.
+        await host.set(priorKey, reply.partstat);
+      }
+      // Messages whose note survived the fold — everything below that reads
+      // `item.messages` to pick a "parent" (facets, calendar bundling) must
+      // use this instead, or it can select a message whose note no longer
+      // exists in `plotThread.notes`.
+      const survivingMessages =
+        foldedMessageIds.size > 0
+          ? item.messages.filter(
+              (m) => !foldedMessageIds.has(m.internetMessageId ?? m.id)
+            )
+          : item.messages;
+
+      if (foldedMessageIds.size > 0) {
+        plotThread.notes = plotThread.notes.filter((note) => {
+          const noteKey = "key" in note ? (note as { key: string }).key : null;
+          return !noteKey || !foldedMessageIds.has(noteKey);
+        });
+
+        // The preview (set from the conversation's first non-draft message's
+        // bodyPreview in transformOutlookConversation) may have come from
+        // the message we just folded away. Recompute it from the first
+        // surviving note's own message so a mixed conversation previews the
+        // human reply, not the RSVP notification that's no longer part of
+        // this thread.
+        const originalParent = sortConversation(item.messages).find(
+          (m) => !m.isDraft
+        );
+        const originalParentKey = originalParent
+          ? (originalParent.internetMessageId ?? originalParent.id)
+          : null;
+        if (originalParentKey && foldedMessageIds.has(originalParentKey)) {
+          const firstSurvivingNote = plotThread.notes[0];
+          const firstSurvivingKey =
+            firstSurvivingNote && "key" in firstSurvivingNote
+              ? (firstSurvivingNote as { key: string }).key
+              : null;
+          const firstSurvivingMessage = firstSurvivingKey
+            ? item.messages.find(
+                (m) => (m.internetMessageId ?? m.id) === firstSurvivingKey
+              )
+            : null;
+          plotThread.preview =
+            firstSurvivingMessage?.bodyPreview ||
+            (firstSurvivingNote as { content?: string } | undefined)
+              ?.content ||
+            null;
+        }
+      }
+
       if (plotThread.notes.length === 0) continue;
-      const isUnread = isConversationUnread(item.messages);
+      // Uses `survivingMessages`, NOT `item.messages`: an unread or flagged
+      // RSVP notification that was folded away must not drive the surviving
+      // thread's unread/to-do state — otherwise the thread shows unread (or
+      // becomes a to-do) with nothing in it the user can act on to clear it.
+      const isUnread = isConversationUnread(survivingMessages);
       if (initialSync) {
         plotThread.unread = isUnread;
         plotThread.archived = false;
@@ -1482,11 +1699,26 @@ export async function processConversationsFn(
 
       // Bundle onto the calendar event's thread when this conversation relates
       // to one (a Plot-sent reply chain, or a meeting update/cancellation).
+      // Uses `survivingMessages`, NOT `item.messages`: an `rsvp`-kind
+      // classification whose only supporting message was just folded away
+      // must not append `icaluid:<uid>` to `sources` — a shared `sources`
+      // element bundles threads together, so that would merge the rest of a
+      // mixed conversation onto the event thread even though the fold's own
+      // contract is to leave real correspondence in its own thread. A
+      // `cancel`/`update` classification is unaffected: those message kinds
+      // are never added to `foldedMessageIds`, so they're still present here.
       const calBundle = classifyOutlookCalendar(
-        item.messages,
+        survivingMessages,
         item.parentHeaders
       );
-      if (calBundle) {
+      // `kind === "rsvp"` is only ever a pre-filter for the fold step above,
+      // never a bundling signal: when the fold succeeds the message is gone
+      // from `survivingMessages` and this branch already can't see it, but
+      // when the fold does NOT happen (no MIME, no parseable calendar part,
+      // an ICS that fails to parse) the RSVP notification message is still
+      // here and would otherwise get bundled onto the event thread as an
+      // ordinary note — exactly the outcome the fold exists to prevent.
+      if (calBundle && calBundle.kind !== "rsvp") {
         plotThread.sources = [
           ...(plotThread.sources ?? []),
           `icaluid:${calBundle.uid}`,
@@ -1498,8 +1730,11 @@ export async function processConversationsFn(
         }
       }
 
-      // Compute mail signals from the parent message's headers.
-      const facetParent = sortConversation(item.messages).find(
+      // Compute mail signals from the parent message's headers. Also uses
+      // `survivingMessages` — otherwise a folded RSVP notification could be
+      // selected as the parent, pointing `signals.noteKey` at a note that no
+      // longer exists in `plotThread.notes`.
+      const facetParent = sortConversation(survivingMessages).find(
         (m) => !m.isDraft
       );
       if (facetParent) {
@@ -1514,7 +1749,7 @@ export async function processConversationsFn(
         };
       }
 
-      const isFlagged = isConversationFlagged(item.messages);
+      const isFlagged = isConversationFlagged(survivingMessages);
       const savedThreadId = await host.tools.integrations.saveLink(plotThread);
       if (!savedThreadId) continue; // Link was filtered (e.g., older than sync history)
 

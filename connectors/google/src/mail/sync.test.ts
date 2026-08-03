@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { CreateLinkDraft, NewLinkWithNotes, Uuid } from "@plotday/twister";
+import { priorRsvpKey } from "@plotday/rsvp-fold";
 
 import {
   GmailApi,
@@ -20,7 +21,6 @@ import {
   REACTION_SEND_DELAY_MS,
   sendReactionEmailFn,
 } from "./sync";
-import { priorRsvpKey } from "./rsvp-note";
 
 /** Decode the base64url raw message the Gmail send API would receive. */
 function decodeRawMessage(b64url: string): string {
@@ -1132,8 +1132,69 @@ describe("processEmailThreadsFn — attendee responses fold onto the event", () 
     // Two notes: the decline, then the reversal.
     expect(notes).toHaveLength(2);
     expect(notes[1]).toMatchObject({ content: "Beth Round accepted." });
-    // The outstanding non-acceptance is resolved, so the key is gone.
-    expect(store.has(key)).toBe(false);
+    // The key now records the last folded response for every emitted
+    // response, including an acceptance — not just outstanding
+    // non-acceptances — so a later repeat of this exact ACCEPTED is
+    // recognised as already folded instead of re-emitting.
+    expect(store.get(key)).toBe("ACCEPTED");
+
+    // A third pass re-delivers that same ACCEPTED response. This is the
+    // sequence the old store got wrong: it cleared its marker on every
+    // acceptance, so a repeated acceptance always looked unrecorded and
+    // would have re-emitted. The new store keeps the marker, so
+    // `alreadyFolded` recognises the repeat and no third note appears.
+    await processEmailThreadsFn(
+      host,
+      [rsvpThread("rsvp-accepted-again", replyIcs("ACCEPTED"))],
+      false,
+      "INBOX"
+    );
+    expect(notes).toHaveLength(2);
+  });
+
+  it("does not re-emit a note when the same conversation is processed again", async () => {
+    const { host } = makeHost();
+    const { notes, links } = captureSaves(host);
+    const thread = rsvpThread("rsvp-reprocess", replyIcs("DECLINED"));
+
+    await processEmailThreadsFn(host, [thread], false, "INBOX");
+    expect(notes).toHaveLength(1);
+
+    // Gmail's own history-based incremental sync can redeliver the same
+    // notification (a history replay, an at-least-once webhook) — this is
+    // the routine case, not a rare replay.
+    await processEmailThreadsFn(host, [thread], false, "INBOX");
+
+    // No second note: re-emitting one would re-apply its unread intent and
+    // drag the organiser's event thread back to unread for no new
+    // information. The message is still dropped from the mail side, though —
+    // no standalone email thread appears for it either time.
+    expect(notes).toHaveLength(1);
+    expect(links).toHaveLength(0);
+  });
+
+  it("does not re-emit a note when a commented acceptance is processed again", async () => {
+    // A bare (comment-less) repeat is suppressed by `shouldEmitRsvpNote`
+    // itself once there's no outstanding non-acceptance — `alreadyFolded`
+    // never even has to matter for that case. A COMMENTED acceptance is
+    // the one shape `shouldEmitRsvpNote` always says yes to on its own
+    // (its second rule: any comment earns a note), so `alreadyFolded` is
+    // the only thing standing between a redelivered commented acceptance
+    // and re-emitting on every redelivery.
+    const { host } = makeHost();
+    const { notes, links } = captureSaves(host);
+    const thread = rsvpThread(
+      "rsvp-comment-reprocess",
+      replyIcs("ACCEPTED", { comment: "Looking forward to it" })
+    );
+
+    await processEmailThreadsFn(host, [thread], false, "INBOX");
+    expect(notes).toHaveLength(1);
+
+    await processEmailThreadsFn(host, [thread], false, "INBOX");
+
+    expect(notes).toHaveLength(1);
+    expect(links).toHaveLength(0);
   });
 
   it("does not let a decline on one occurrence suppress an acceptance on another", async () => {

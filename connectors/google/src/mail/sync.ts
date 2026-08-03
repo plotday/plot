@@ -18,6 +18,13 @@
  */
 import { enrichLinkContactsFromGoogle } from "@plotday/google-contacts";
 import {
+  alreadyFolded,
+  composeRsvpNote,
+  isNonAcceptance,
+  priorRsvpKey,
+  shouldEmitRsvpNote,
+} from "@plotday/rsvp-fold";
+import {
   baseEmail,
   canonicalizeEmail,
   type CreateLinkDraft,
@@ -38,7 +45,6 @@ import type { WebhookRequest } from "@plotday/twister/tools/network";
 
 import {
   type AttachmentData,
-  type CalendarReply,
   GmailApi,
   GmailApiError,
   type GmailMessage,
@@ -70,7 +76,6 @@ import {
   type ClassifiedSendError,
   classifySendError,
 } from "./gmail-send-errors";
-import { composeRsvpNote, priorRsvpKey, shouldEmitRsvpNote } from "./rsvp-note";
 
 // ---------------------------------------------------------------------------
 // Persisted state shapes (shared with the connector)
@@ -1512,23 +1517,6 @@ async function resolveBatchIcsFn(
 }
 
 /**
- * Remember an outstanding decline/tentative so a later acceptance is recognised
- * as a reversal, and forget it once that acceptance arrives. Keeps the store
- * holding only unresolved non-acceptances.
- */
-async function recordRsvpOutcome(
-  host: GmailSyncHost,
-  key: string,
-  partstat: CalendarReply["partstat"]
-): Promise<void> {
-  if (partstat === "ACCEPTED") {
-    await host.clear(key);
-    return;
-  }
-  await host.set(key, partstat);
-}
-
-/**
  * Persists one transformed Gmail thread: sent-note dedup, unread-state
  * mirroring, facet computation, the `saveLink` round-trip, and star↔to-do
  * sync. Failures are logged and swallowed so one bad thread never aborts the
@@ -1575,21 +1563,33 @@ async function saveTransformedThread(
     if (replies.length > 0) {
       for (const reply of replies) {
         const priorKey = priorRsvpKey(reply.uid, reply.attendeeEmail, reply.occurrence);
-        // Only a bare acceptance consults prior state; every other response
-        // emits regardless, so skip the store round-trip. Each tools.* call
-        // spends the execution's request budget, and a backfill folds many
-        // responses at once.
-        const needsPriorState = reply.partstat === "ACCEPTED" && !reply.comment;
-        const hadPriorNonAccept = needsPriorState
-          ? Boolean(await host.get<string>(priorKey))
-          : false;
+        // Read on every response, not just a bare acceptance: `alreadyFolded`
+        // needs the stored value on every path, so there is no cheaper way to
+        // skip this round-trip anymore (there used to be one for the
+        // non-acceptance/commented-acceptance cases — traded away below).
+        const stored = await host.get<string>(priorKey);
+
+        // Re-processing a conversation re-runs this loop for a response
+        // already folded onto the event thread — Gmail history replay, a
+        // backfill overlap, at-least-once delivery. The note itself upserts
+        // by key, so re-saving it wouldn't duplicate it, but its `unread`
+        // intent would still be re-applied and drag the thread back to
+        // unread for anyone who already read it. Comparing against the
+        // stored partstat (not just presence) means a genuine change of
+        // response is never caught by this: an attendee who edits only their
+        // comment on an unchanged response gets no updated note, which is
+        // the accepted trade for not re-raising unread on every re-deliver.
+        if (alreadyFolded(stored, reply)) {
+          foldedMessageIds.add(reply.messageId);
+          continue;
+        }
 
         // A bare acceptance says nothing the event's guest list does not
         // already show. Drop the message rather than writing a note: a note
         // is the only thing that could mark the organiser's thread unread,
         // and marking it folded here keeps the responses-only conversation
         // from becoming an email thread of its own.
-        if (!shouldEmitRsvpNote(reply, hadPriorNonAccept)) {
+        if (!shouldEmitRsvpNote(reply, isNonAcceptance(stored))) {
           foldedMessageIds.add(reply.messageId);
           continue;
         }
@@ -1645,7 +1645,12 @@ async function saveTransformedThread(
         // `noteId` here would leave a deferred non-acceptance unrecorded
         // forever, wrongly treating a later bare acceptance as reversing
         // nothing.
-        await recordRsvpOutcome(host, priorKey, reply.partstat);
+        //
+        // Always set, never cleared: the key now holds the last response
+        // actually folded, for every emitted response (including an
+        // acceptance) — that's what lets `alreadyFolded` recognise a repeat
+        // of ANY partstat, not just an outstanding non-acceptance.
+        await host.set(priorKey, reply.partstat);
       }
 
       if (foldedMessageIds.size > 0) {
