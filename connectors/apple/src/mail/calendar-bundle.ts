@@ -15,6 +15,8 @@
  * and hands the decoded text to `classifyICS`).
  */
 
+import { icsProp } from "@plotday/rsvp-fold";
+
 /** Raw classification of one ICS blob, before the mail sync pass resolves
  *  whether the calendar product has already synced an event for that UID. */
 export type ClassifiedICS = { uid: string; kind: "cancel" | "update" };
@@ -37,23 +39,6 @@ const CALENDAR_MIME_TYPES = new Set(["text/calendar", "application/ics"]);
 /** Whether an attachment's MIME type is a calendar invite/update/reply part. */
 export function isCalendarAttachment(mimeType: string): boolean {
   return CALENDAR_MIME_TYPES.has(mimeType.toLowerCase());
-}
-
-/**
- * Unfold RFC 5545 continuation lines (CRLF/LF + leading space/tab is a
- * continuation of the previous line's value) and read a property's value.
- * Unscoped — matches the property anywhere in the ICS text, which is
- * correct for `METHOD` (a VCALENDAR-level property that sits outside
- * `BEGIN:VEVENT`/`END:VEVENT`; the existing `parseICSEvents`/`parseVEvent`
- * in `../calendar/ics-parser` parses only VEVENT-scoped properties and has
- * no `method` field at all) as well as for `UID`/`SEQUENCE` (VEVENT-scoped,
- * but a calendar invite email carries exactly one VEVENT).
- */
-function icsProp(ics: string, name: string): string | null {
-  const unfolded = ics.replace(/\r?\n[ \t]/g, "");
-  const re = new RegExp(`^${name}(?:;[^:\\r\\n]*)?:(.*)$`, "im");
-  const m = unfolded.match(re);
-  return m ? m[1].trim() : null;
 }
 
 /**

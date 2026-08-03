@@ -109,3 +109,52 @@ describe("classifyICS — the full classification matrix", () => {
     expect(classifyICS(folded)).toEqual({ uid: "evt-8-part1-part2", kind: "cancel" });
   });
 });
+
+describe("classifyICS — property reading after the shared-icsProp swap", () => {
+  it("reads a folded UID line (RFC 5545 continuation) the same as before", () => {
+    // A 75-octet line wrapped with CRLF + single space. The UID must come
+    // back joined, not truncated at the fold.
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "METHOD:CANCEL",
+      "BEGIN:VEVENT",
+      "UID:this-is-a-deliberately-long-identifier-that-the-generator-wrapped",
+      " -across-two-lines@example.test",
+      "SEQUENCE:1",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+
+    expect(classifyICS(ics)).toEqual({
+      uid: "this-is-a-deliberately-long-identifier-that-the-generator-wrapped-across-two-lines@example.test",
+      kind: "cancel",
+    });
+  });
+
+  it("ignores parameters on the property it reads", () => {
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "METHOD:REQUEST",
+      "BEGIN:VEVENT",
+      "UID;X-VENDOR-QUIRK=1:evt-params@example.test",
+      "SEQUENCE:3",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+
+    expect(classifyICS(ics)).toEqual({ uid: "evt-params@example.test", kind: "update" });
+  });
+
+  it("still skips a METHOD:REPLY (folding is not this function's job)", () => {
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "METHOD:REPLY",
+      "BEGIN:VEVENT",
+      "UID:evt-reply@example.test",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+
+    expect(classifyICS(ics)).toBeNull();
+  });
+});
