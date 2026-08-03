@@ -1986,10 +1986,15 @@ function replyMessage(uid = 51): ImapMessage {
   });
 }
 
-/** Run one `detectCalendarBundles` pass over a single reply message. */
+/**
+ * Run one `detectCalendarBundles` pass over a single reply message.
+ *
+ * `initial` puts the reply's thread root into `initialRoots`, i.e. this pass is
+ * ingesting it from history rather than receiving it as live mail.
+ */
 async function runFold(
   ics: string,
-  opts: { stored?: Record<string, unknown> } = {}
+  opts: { stored?: Record<string, unknown>; initial?: boolean } = {}
 ): Promise<{
   host: MailHost;
   savedNotes: Record<string, unknown>[];
@@ -2009,7 +2014,8 @@ async function runFold(
     "session-1",
     messages,
     meta,
-    new Set()
+    new Set(),
+    new Set(opts.initial ? ["invite@example.test"] : [])
   );
   return {
     host: built.host,
@@ -2042,6 +2048,18 @@ describe("detectCalendarBundles — attendee responses", () => {
     expect(await host.get(`rsvp:${REPLY_UID}:series:guest@example.test`)).toBe("DECLINED");
   });
 
+  it("does not mark the event thread unread for a response ingested from history", async () => {
+    // First connect backfills whatever history the plan grants, and every
+    // response in it would otherwise light up the event thread. Same
+    // discipline `transformMessages` applies to the mail it ingests — and the
+    // sole reason `initialRoots` is threaded through this function at all.
+    const { savedNotes } = await runFold(replyIcs({ partstat: "DECLINED" }), {
+      initial: true,
+    });
+    expect(savedNotes).toHaveLength(1);
+    expect(savedNotes[0].unread).toBe(false);
+  });
+
   it("writes a note for an acceptance that carries a personal comment", async () => {
     const { savedNotes } = await runFold(
       replyIcs({ partstat: "ACCEPTED", comment: "Running 10 minutes late" })
@@ -2068,27 +2086,17 @@ describe("detectCalendarBundles — attendee responses", () => {
     expect(savedNotes).toHaveLength(0);
   });
 
-  it("scopes the marker per occurrence, so a decline on one instance does not mask another", async () => {
-    // A decline on the 4 Aug occurrence must NOT make a bare acceptance on
-    // the 11 Aug occurrence read as a reversal — that would re-open the
-    // original bug for every recurring meeting.
-    const { savedNotes } = await runFold(
-      replyIcs({ partstat: "ACCEPTED", recurrenceId: "20260811T140000Z" }),
-      { stored: { [`rsvp:${REPLY_UID}:2026-08-04T14:00:00.000Z:guest@example.test`]: "DECLINED" } }
-    );
-    expect(savedNotes).toHaveLength(0);
-  });
-
-  it("keys the marker per occurrence across passes, so a decline on one instance never masks another", async () => {
-    // The seeded-marker test above cannot prove the scoping on its own: the
-    // SAME key expression both reads and writes, so dropping the occurrence
-    // from it moves both sides together and a pre-seeded occurrence-scoped
-    // marker simply stops matching — no note either way. Recording the 4 Aug
-    // decline through the real write path and only then answering the 11 Aug
-    // occurrence is what makes the scoping load-bearing: unscoped, the second
-    // pass reads the first pass's marker and takes a bare acceptance for a
-    // reversal, which is the original defect re-opened for every recurring
-    // meeting.
+  it("keys the marker per occurrence, so a decline on one instance never masks another", async () => {
+    // Both passes are needed. A single pass with a PRE-SEEDED marker proves
+    // nothing here: the same key expression both reads and writes, so dropping
+    // the occurrence from it moves both sides together and the seeded
+    // occurrence-scoped marker simply stops matching — no note either way, and
+    // the test passes just as happily against the broken code. Recording the
+    // 4 Aug decline through the real write path and only then answering the
+    // 11 Aug occurrence is what makes the scoping load-bearing: unscoped, the
+    // second pass reads the first pass's marker and takes a bare acceptance
+    // for a reversal, which is the original defect re-opened for every
+    // recurring meeting.
     const decline = calendarMessage({
       uid: 51,
       messageId: "<reply-aug4@example.test>",

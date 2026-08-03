@@ -517,6 +517,12 @@ export async function detectCalendarBundles(
   // with nothing recording it, so the next pass would re-emit it and re-raise
   // unread on a thread people had already read. Do not "tidy" these into one
   // place.
+  //
+  // Batching costs one thing a write per note would not: if a later `saveNote`
+  // in this pass throws, NO markers are written — including for responses
+  // already emitted before it, which are then re-emitted on the next pass.
+  // Accepted for the request budget, and it fails in the same direction as
+  // everything else here: a repeated note, never a missing one.
   if (rsvpMarkers.length > 0) await host.setMany(rsvpMarkers);
 
   return { bundles, foldedNoteKeys };
