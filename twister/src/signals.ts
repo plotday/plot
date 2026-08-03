@@ -9,6 +9,12 @@
  * facts a connector cannot see (does this user know this sender?).
  *
  * Every field is nullable — populate only what the source actually provides.
+ *
+ * Deliberately absent: a body-length field. The platform already holds the
+ * note content and already has an HTML-to-plain-text fallback path
+ * (`stripHtmlToText` in the API's thread helpers), so it derives body length
+ * itself instead of trusting a number connectors would each have to compute
+ * (and, historically, got wrong — see `derive-facets.ts`'s `toEmailSignals`).
  */
 
 /** Header and metadata signals from an email message. */
@@ -37,8 +43,6 @@ export type MailSignals = {
   isReply: boolean | null;
   /** Subject line, or null. */
   subject: string | null;
-  /** Length in characters of the extracted plain-text body. */
-  bodyLength: number | null;
   /**
    * The Authentication-Results header carrying the receiving MTA's own verdict.
    * The CONNECTOR selects which header to trust (only it knows its provider's

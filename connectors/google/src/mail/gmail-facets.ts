@@ -23,15 +23,15 @@ function trustedAuthResults(message: GmailMessage): string | null {
 const GMAIL_FLAG_LABELS = new Set(["IMPORTANT", "STARRED"]);
 
 /**
- * Extract the normalized mail signals for a Gmail message. `bodyLength` is the
- * character length of the extracted plain-text body — pass the length of the
- * same string the note will carry, so the platform's format thresholds match
- * what the connector saw.
+ * Extract the normalized mail signals for a Gmail message.
  *
  * This connector no longer classifies: it reports what it observed and the
- * platform decides.
+ * platform decides. Body length is not part of this contract — the platform
+ * already holds the note content and derives plain-text length from it
+ * itself (see `derive-facets.ts`'s `toEmailSignals`), rather than trusting a
+ * number each connector would otherwise have to compute independently.
  */
-export function gmailSignals(message: GmailMessage, bodyLength: number): MailSignals {
+export function gmailSignals(message: GmailMessage): MailSignals {
   const from = parseEmailAddress(getHeader(message, "From") ?? "");
   const labels = message.labelIds ?? [];
   return {
@@ -47,7 +47,6 @@ export function gmailSignals(message: GmailMessage, bodyLength: number): MailSig
     ccCount: parseEmailAddresses(getHeader(message, "Cc")).length,
     isReply: getHeader(message, "In-Reply-To") !== null || getHeader(message, "References") !== null,
     subject: getHeader(message, "Subject"),
-    bodyLength,
     authResults: trustedAuthResults(message),
     providerCategories: labels.filter((l) => GMAIL_CATEGORY_LABELS.has(l)),
     providerFlags: labels.filter((l) => GMAIL_FLAG_LABELS.has(l)),

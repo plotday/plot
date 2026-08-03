@@ -23,7 +23,8 @@ describe("gmailSignals", () => {
     // Previously asserted format: "reading", automation: "automated", reach:
     // "list" via classifyEmail. The automated/list verdict came from these two
     // headers; the reading/notification split came from body length, which is
-    // classifier logic now covered by derive-facets.test.ts, not this file.
+    // now classifier logic covered by the platform's own facet-derivation
+    // tests, not this file.
     const message = msg({
       headers: [
         ["From", "news@substack.com"],
@@ -33,7 +34,7 @@ describe("gmailSignals", () => {
         ["List-Unsubscribe", "<mailto:u@substack.com>"],
       ],
     });
-    const s = gmailSignals(message, 4000);
+    const s = gmailSignals(message);
     expect(s.listId).toBe("<news.substack.com>");
     expect(s.listUnsubscribe).toBe("<mailto:u@substack.com>");
   });
@@ -42,8 +43,9 @@ describe("gmailSignals", () => {
     // Previously asserted format: "message", automation: "human", reach:
     // "direct" via classifyEmail. The human verdict came from the absence of
     // list/precedence/auto-submitted signals (now classifier logic, covered
-    // by derive-facets.test.ts); the direct verdict came from a single To
-    // recipient (toCount), covered here plus by the toCount/ccCount case below.
+    // elsewhere on the platform side); the direct verdict came from a single
+    // To recipient (toCount), covered here plus by the toCount/ccCount case
+    // below.
     const message = msg({
       headers: [
         ["From", "jane@friends.com"],
@@ -51,7 +53,7 @@ describe("gmailSignals", () => {
         ["Subject", "Lunch?"],
       ],
     });
-    const s = gmailSignals(message, 500);
+    const s = gmailSignals(message);
     expect(s.listId).toBeNull();
     expect(s.precedence).toBeNull();
     expect(s.autoSubmitted).toBeNull();
@@ -62,8 +64,8 @@ describe("gmailSignals", () => {
   it("extracts CATEGORY_UPDATES as a provider category", () => {
     // Previously asserted format: "notification", automation: "automated" for
     // a GitHub notification. The automated verdict is classifier logic over
-    // the sender/labels (covered by derive-facets.test.ts); the label itself
-    // is the signal this connector is responsible for extracting.
+    // the sender/labels (covered elsewhere on the platform side); the label
+    // itself is the signal this connector is responsible for extracting.
     const message = msg({
       headers: [
         ["From", "notifications@github.com"],
@@ -72,7 +74,7 @@ describe("gmailSignals", () => {
       ],
       labelIds: ["CATEGORY_UPDATES"],
     });
-    const s = gmailSignals(message, 5);
+    const s = gmailSignals(message);
     expect(s.providerCategories).toEqual(["CATEGORY_UPDATES"]);
   });
 
@@ -91,7 +93,7 @@ describe("gmailSignals", () => {
         ["Authentication-Results", authResults],
       ],
     });
-    const s = gmailSignals(message, 100);
+    const s = gmailSignals(message);
     expect(s.authResults).toBe(authResults);
   });
 
@@ -104,7 +106,7 @@ describe("gmailSignals", () => {
         ["Authentication-Results", "spf1.example.net; spf=pass smtp.mailfrom=acme.com"],
       ],
     });
-    const s = gmailSignals(message, 100);
+    const s = gmailSignals(message);
     expect(s.authResults).toBeNull();
   });
 
@@ -116,7 +118,7 @@ describe("gmailSignals", () => {
         ["Cc", "c@example.com"],
       ],
     });
-    const s = gmailSignals(message, 100);
+    const s = gmailSignals(message);
     expect(s.toCount).toBe(2);
     expect(s.ccCount).toBe(1);
   });
