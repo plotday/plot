@@ -3287,10 +3287,9 @@ describe("channel message routing", () => {
   it("never resolves a Slack token while routing a channel message", async () => {
     // integrations.get(channelId) treats a deliberately-disabled channel's
     // falsy `enabled` as "never configured" and writes a migration fallback
-    // that re-enables it (workers/api/src/twist/tools/integrations.ts
-    // ~694-728). Calling it here, on every inbound channel message, would
-    // silently re-enable channels the user disabled. Identity must come
-    // only from the `slack_user_id` cache (see `cachedMentionContext`).
+    // that re-enables it. Calling it here, on every inbound channel message,
+    // would silently re-enable channels the user disabled. Identity must
+    // come only from the `slack_user_id` cache (see `cachedMentionContext`).
     const { slack, integrationsGet } = setup();
 
     await (slack as any).handleChannelMessage({

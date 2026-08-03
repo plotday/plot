@@ -35,7 +35,6 @@ import type {
   Thread,
 } from "@plotday/twister/plot";
 import type { WebhookRequest } from "@plotday/twister/tools/network";
-import type { Cta } from "@plotday/twister/facets";
 import { markdownToHtml } from "@plotday/twister/utils/markdown-html";
 
 import { enrichLinkContactsFromOutlook } from "./enrich";
@@ -55,7 +54,7 @@ import {
   type GraphMessage,
   type WellKnownFolders,
 } from "./graph-mail-api";
-import { outlookFacets } from "./outlook-facets";
+import { outlookSignals } from "./outlook-facets";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -1499,28 +1498,20 @@ export async function processConversationsFn(
         }
       }
 
-      // Compute classifier facets from the parent message's headers + body.
+      // Compute mail signals from the parent message's headers.
       const facetParent = sortConversation(item.messages).find(
         (m) => !m.isDraft
       );
       if (facetParent) {
-        const parentKey = facetParent.internetMessageId ?? facetParent.id;
-        const facetNote = plotThread.notes?.find(
-          (n) => "key" in n && (n as { key: string }).key === parentKey
-        );
-        const facetBody =
-          (facetNote as { content?: string } | undefined)?.content ??
-          plotThread.preview ??
-          "";
-        const { facets, cta } = outlookFacets(
-          item.parentHeaders,
-          facetParent,
-          facetBody
-        );
-        plotThread.facets = cta ? { ...facets, format: cta.kind } : facets;
-        if (cta && facetNote) {
-          (facetNote as { cta?: Cta | null }).cta = cta;
-        }
+        // `noteKey` points the platform at THIS message's note — same
+        // expression the note itself is keyed with (see
+        // graph-mail-api.ts) — so body-derived classification reads the
+        // message the headers came from, not whichever note happens to be
+        // first in this batch.
+        plotThread.signals = {
+          mail: outlookSignals(item.parentHeaders, facetParent),
+          noteKey: facetParent.internetMessageId ?? facetParent.id,
+        };
       }
 
       const isFlagged = isConversationFlagged(item.messages);

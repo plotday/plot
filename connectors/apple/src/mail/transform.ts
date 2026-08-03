@@ -1,9 +1,8 @@
 import type { ImapAddress, ImapMessage } from "@plotday/twister/tools/imap";
 import { ActionType, type Action, type NewContact, type NewLinkWithNotes } from "@plotday/twister";
-import type { Cta } from "@plotday/twister/facets";
 
 import { parse } from "../product-channel";
-import { appleMailFacets } from "./apple-facets";
+import { appleMailSignals } from "./apple-facets";
 import { buildAttachmentRef } from "./attachments";
 import { isCalendarAttachment, type CalendarBundle } from "./calendar-bundle";
 import { looksLikeHtml } from "./html";
@@ -361,15 +360,18 @@ export function transformMessages(
     const originator = msgs[0];
     const originatorFrom = originator.from && originator.from[0] ? originator.from[0] : null;
 
-    // Classifier facets are computed from the ORIGINATING message only (same
+    // Mail signals are computed from the ORIGINATING message only (same
     // "parent message" convention as the Gmail/Outlook connectors) — the
     // thread's overall nature (newsletter, notification, direct message) is
-    // set by how it started, not by whatever reply happens to be in this
-    // batch. `originatorBody` is recomputed below inside notes.map for the
-    // same message; cheap and pure, so duplicating it here (rather than
-    // threading the value through) keeps this block self-contained.
-    const originatorBody = bodyOf(originator);
-    const { facets, cta } = appleMailFacets(originator, originatorBody?.content ?? "");
+    // derived from how it started, not from whatever reply happens to be in
+    // this batch.
+    const signals = {
+      mail: appleMailSignals(originator),
+      // Points the platform at the originator's own note (same `noteKeyOf`
+      // the notes below are keyed with) so body-derived classification reads
+      // that message, not whichever note happens to be first in this batch.
+      noteKey: noteKeyOf(originator),
+    };
 
     // Union of participants for thread access.
     const participants = new Map<string, NewContact>();
@@ -396,9 +398,6 @@ export function transformMessages(
           : { author: from ? toContact(from) : null }),
         ...(actions ? { actions } : {}),
         accessContacts: messageContacts(m, ownEmail),
-        // A time-sensitive CTA (OTP/confirm) is only ever extracted from the
-        // originating message — see appleMailFacets above.
-        ...(m === originator && cta ? { cta: cta as Cta } : {}),
       };
     });
 
@@ -434,8 +433,8 @@ export function transformMessages(
     // precedence over `sentOnly`), and `title` has NO default at all: the
     // runtime substitutes the literal placeholder "Untitled",
     // PERMANENTLY, since every later pass for a still-Sent-only thread would
-    // also omit the key (`thread-helpers.ts`'s
-    // `cleanTitle(activity.title?.trim() || "Untitled")`). A degraded
+    // also omit the key (the platform's title-cleaning fallback substitutes
+    // "Untitled" whenever the title is empty). A degraded
     // "Re: …" subject from the Sent copy is strictly better than "Untitled",
     // and gets overwritten with the real subject the moment an inbound
     // message enters the window. See `sync.test.ts`'s "never 'Untitled'"
@@ -501,10 +500,7 @@ export function transformMessages(
       // owner-sent threads); explicit null when the sender is unknown, so a
       // From-less message is never mis-credited to the connector.
       author: originatorFrom ? toContact(originatorFrom) : null,
-      // A detected CTA overrides format with its own kind ("otp"/"confirm"),
-      // same convention as the Gmail/Outlook connectors — the classifier's
-      // generic format guess is superseded by the more specific signal.
-      facets: cta ? { ...facets, format: cta.kind } : facets,
+      signals,
       ...readState,
       ...(calendarBundle ? { sources: [`icaluid:${calendarBundle.uid}`] } : {}),
       ...(calendarBundle?.eventKnown || sentOnlyKnown

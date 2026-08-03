@@ -312,9 +312,33 @@ link.meta = { ...link.meta, syncProvider: "myprovider" };
 
 `onCreateLink` is the one exception: its return type is `CreateLinkResult`, where `channelId` is optional — the platform auto-fills it from `draft.channelId` (the channel the user composed into) if you omit it.
 
-## Classifier facets (optional)
+## Classifier signals (optional)
 
-Messaging-style connectors may set `link.facets` (`format` / `automation` / `reach` from `@plotday/twister/facets`) as internal classifier signal. Set a dimension only when a heuristic is confident; leave it `null`/omitted otherwise. See `google/src/mail/gmail-facets.ts` and `slack/src/slack-facets.ts`.
+Messaging-style connectors report the raw signals they observe and let the
+platform classify. Set `link.signals` (`@plotday/twister/signals`) — for email,
+`signals.mail` carries the header bundle, recipient counts, and the provider's
+own category vocabulary verbatim. Do not translate a provider's vocabulary or
+derive a verdict locally; the platform does both, so the logic can improve
+without redeploying every connector.
+
+The one judgement a connector still makes is selecting which
+`Authentication-Results` header to trust — only the connector knows its
+provider's `authserv-id`. Emit that header's value and let the platform parse it.
+
+When a link carries several notes (one per message in a conversation), also set
+`signals.noteKey` to the `key` of the note the signals were read from — the
+message you picked as the classification parent. Body-derived classification
+(how long the message is, what it links to) reads that note's content, so
+without the pointer the platform falls back to the link's first note, which on
+an incremental sync is often a later reply — and the thread's classification
+churns every time someone replies. Use the same expression the note was keyed
+with.
+
+`link.facets` (a finished `{format, automation, reach}` verdict) is still
+supported for connectors that have not migrated, and for non-email sources whose
+signals do not fit the mail shape. When a link carries both, `signals` wins.
+
+See `google/src/mail/gmail-facets.ts` and `apple/src/mail/apple-facets.ts`.
 
 ## Initial vs incremental sync (REQUIRED)
 

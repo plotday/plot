@@ -1,5 +1,4 @@
-import { classifyEmail, extractCta, extractLinkCandidates, type EmailSignals } from "@plotday/email-classifier";
-import type { Cta, ThreadFacets } from "@plotday/twister/facets";
+import type { MailSignals } from "@plotday/twister/signals";
 import type { GraphHeader, GraphMessage } from "./graph-mail-api";
 
 function header(headers: GraphHeader[] | null, name: string): string | null {
@@ -17,47 +16,33 @@ function trustedAuthResults(headers: GraphHeader[] | null): string | null {
   return null;
 }
 
-export type OutlookClassification = { facets: ThreadFacets; cta: Cta | null };
-
 /**
- * Compute facets and extract CTA for an Outlook conversation's parent message. `headers` is
- * the parent's internetMessageHeaders (separate single-message fetch; null
- * when that fetch failed — header-driven signals just stay null).
- * `inferenceClassification === "other"` (Focused Inbox's bulk bucket) maps to
- * the classifier's CATEGORY_UPDATES slot so short automated "Other" mail
- * classifies as notification, mirroring Gmail's category labels.
+ * Extract normalized mail signals for an Outlook conversation's parent message.
+ * `headers` is the parent's internetMessageHeaders (a separate single-message
+ * fetch; null when that fetch failed — header-driven signals then stay null).
+ *
+ * Focused Inbox's bucket is emitted verbatim ("focused" / "other"); mapping it
+ * onto a content category is the platform's decision, not the connector's.
  */
-export function outlookFacets(
-  headers: GraphHeader[] | null,
-  message: GraphMessage,
-  bodyText: string
-): OutlookClassification {
-  const html = message.body?.contentType === "html" ? (message.body.content ?? "") : "";
-  const signals: EmailSignals = {
+export function outlookSignals(headers: GraphHeader[] | null, message: GraphMessage): MailSignals {
+  return {
     listId: header(headers, "List-Id"),
     listUnsubscribe: header(headers, "List-Unsubscribe"),
     precedence: header(headers, "Precedence"),
     autoSubmitted: header(headers, "Auto-Submitted"),
     returnPath: header(headers, "Return-Path"),
-    importance:
-      message.importance ??
-      header(headers, "Importance") ??
-      header(headers, "X-Priority"),
+    importance: message.importance ?? header(headers, "Importance") ?? header(headers, "X-Priority"),
     fromAddress: message.from?.emailAddress?.address?.toLowerCase() ?? null,
     fromName: message.from?.emailAddress?.name ?? null,
-    recipientCount:
-      (message.toRecipients?.length ?? 0) + (message.ccRecipients?.length ?? 0),
+    toCount: message.toRecipients?.length ?? 0,
+    ccCount: message.ccRecipients?.length ?? 0,
     isReply:
       header(headers, "In-Reply-To") !== null ||
       header(headers, "References") !== null ||
       /^re:/i.test(message.subject ?? ""),
     subject: message.subject ?? null,
-    bodyText,
-    bodyLength: bodyText.length,
-    links: extractLinkCandidates(html),
     authResults: trustedAuthResults(headers),
-    gmailCategories:
-      message.inferenceClassification === "other" ? ["CATEGORY_UPDATES"] : [],
+    providerCategories: message.inferenceClassification ? [message.inferenceClassification] : [],
+    providerFlags: message.flag?.flagStatus === "flagged" ? ["FLAGGED"] : [],
   };
-  return { facets: classifyEmail(signals), cta: extractCta(signals) };
 }

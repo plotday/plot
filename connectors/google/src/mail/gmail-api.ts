@@ -624,11 +624,6 @@ export function getHeaders(message: GmailMessage, name: string): string[] {
     .map((h) => h.value);
 }
 
-/** Decoded HTML body for a message (empty string if none). For link extraction. */
-export function getMessageHtml(message: GmailMessage): string {
-  return findPartContent(message.payload, "text/html") ?? "";
-}
-
 /**
  * True when a mailing list (Google Groups, etc.) rewrote the `From` *address*
  * for DMARC alignment, so the From display name no longer belongs to the From

@@ -24,7 +24,6 @@ import {
   type NoteWriteBackResult,
   resolveOutboundReplyRecipients,
 } from "@plotday/twister";
-import type { Cta } from "@plotday/twister/facets";
 import { ActionType } from "@plotday/twister/plot";
 import type {
   Actor,
@@ -66,7 +65,7 @@ import {
   syncGmailMailboxIncremental,
   transformGmailThread,
 } from "./gmail-api";
-import { gmailFacets } from "./gmail-facets";
+import { gmailSignals } from "./gmail-facets";
 import {
   type ClassifiedSendError,
   classifySendError,
@@ -1851,9 +1850,9 @@ async function saveTransformedThread(
       }
     }
 
-    // Compute classifier facets from the parent message's headers + body.
-    // When the fold above dropped one or more notes, restrict the candidate
-    // to messages whose note survived — otherwise a folded RSVP notification
+    // Compute mail signals from the parent message's headers. When the fold
+    // above dropped one or more notes, restrict the candidate to messages
+    // whose note survived — otherwise a folded RSVP notification
     // (headers + snippet of an automated message) can still be picked here
     // and get a real human reply misclassified as automated. Skipped
     // entirely (same `.find()` as before) when nothing was folded, which is
@@ -1872,17 +1871,14 @@ async function saveTransformedThread(
         (survivingNoteKeys === null || survivingNoteKeys.has(m.id))
     );
     if (facetParent) {
-      // Use the parent message's full note body (not the short preview snippet)
-      // so the classifier's reading-vs-notification length split can fire.
-      const facetNote = plotThread.notes?.find(
-        (n) => "key" in n && (n as { key: string }).key === facetParent.id
-      );
-      const facetBody = facetNote?.content ?? plotThread.preview ?? "";
-      const { facets, cta } = gmailFacets(facetParent, facetBody);
-      plotThread.facets = cta ? { ...facets, format: cta.kind } : facets;
-      if (cta && facetNote) {
-        (facetNote as { cta?: Cta | null }).cta = cta;
-      }
+      // `noteKey` points the platform at THIS message's note (notes are keyed
+      // on the Gmail message id — see transformGmailThread), so body-derived
+      // classification reads the same message the headers came from rather
+      // than whichever note happens to be first in this batch.
+      plotThread.signals = {
+        mail: gmailSignals(facetParent),
+        noteKey: facetParent.id,
+      };
     }
 
     // Star ↔ todo sync: detect star changes and sync to Plot todo status.

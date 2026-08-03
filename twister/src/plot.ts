@@ -1,5 +1,6 @@
 import type { Cta, ThreadFacets } from "./facets";
 import type { NewSchedule, NewScheduleOccurrence, Schedule } from "./schedule";
+import type { LinkSignals } from "./signals";
 import { type Tag } from "./tag";
 import { type Callback } from "./tools/callbacks";
 import { type JSONValue } from "./utils/types";
@@ -1326,6 +1327,15 @@ export type NewLink = Partial<
      * no heuristic is confident. See `@plotday/twister/facets`.
      */
     facets?: ThreadFacets;
+    /**
+     * Raw signals this item was derived from (email headers, provider
+     * categories). The platform derives classification from these. Prefer this
+     * over `facets`: emitting signals lets classification improve without a
+     * connector redeploy. See `@plotday/twister/signals`.
+     *
+     * When both are set, `signals` wins.
+     */
+    signals?: LinkSignals;
     /**
      * The person who created this item in the external system.
      *
