@@ -888,6 +888,13 @@ export type NewNote = Partial<
      * Held notes are dropped after a bounded retry window. Ordering is not
      * guaranteed relative to notes that attached immediately, so set `created`
      * (as connectors already should) rather than relying on arrival order.
+     *
+     * At most one UNKEYED held note survives per `{ source }`: two deferred
+     * notes without a `key` addressed to the same still-unresolved source
+     * collapse onto a single held slot, and the second one you save silently
+     * replaces the first — it does not queue as a second note. If you may
+     * defer more than one note to the same unresolved source, give each a
+     * distinct `key` so they are held separately.
      */
     deferUntilThread?: boolean;
 
