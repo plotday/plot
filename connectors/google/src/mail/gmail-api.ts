@@ -9,7 +9,7 @@ import type {
 } from "@plotday/twister/plot";
 import { markdownToPlainText } from "@plotday/twister/utils/markdown";
 import { markdownToHtml } from "@plotday/twister/utils/markdown-html";
-import { isNoReplySender } from "@plotday/email-classifier";
+import { isNoReplySender } from "@plotday/twister/signals";
 
 
 export type GmailLabel = {

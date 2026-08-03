@@ -30,7 +30,6 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@plotday/email-classifier": "workspace:^",
     "@plotday/google-contacts": "workspace:^",
     "@plotday/twister": "workspace:^"
   },

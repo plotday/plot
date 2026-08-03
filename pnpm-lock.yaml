@@ -39,9 +39,6 @@ importers:
 
   connectors/apple:
     dependencies:
-      '@plotday/email-classifier':
-        specifier: workspace:^
-        version: link:../../libs/email-classifier
       '@plotday/twister':
         specifier: workspace:^
         version: link:../../twister
@@ -110,9 +107,6 @@ importers:
 
   connectors/google:
     dependencies:
-      '@plotday/email-classifier':
-        specifier: workspace:^
-        version: link:../../libs/email-classifier
       '@plotday/google-contacts':
         specifier: workspace:^
         version: link:../../libs/google-contacts
@@ -232,9 +226,6 @@ importers:
 
   connectors/outlook:
     dependencies:
-      '@plotday/email-classifier':
-        specifier: workspace:^
-        version: link:../../libs/email-classifier
       '@plotday/twister':
         specifier: workspace:^
         version: link:../../twister
