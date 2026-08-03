@@ -74,6 +74,13 @@ function buildFakeHost(opts: {
    * which is what the fold-marker ordering exists to control.
    */
   failSaveLinks?: boolean;
+  /**
+   * Make the Nth `saveNote` call (1-based) record itself and then throw, as a
+   * platform write that fails part-way through a pass would. Everything the
+   * pass wrote before it — including the fold markers of responses already
+   * saved — has to survive that throw, or the next pass re-emits those notes.
+   */
+  failSaveNoteOnCall?: number;
 }) {
   const stored = new Map<string, unknown>();
   const savedLinks: NewLinkWithNotes[] = [];
@@ -185,6 +192,7 @@ function buildFakeHost(opts: {
     saveNote: async (note: Record<string, unknown>): Promise<string | null> => {
       callLog.push("saveNote");
       savedNotes.push(note);
+      if (opts.failSaveNoteOnCall === savedNotes.length) throw new Error("saveNote failed");
       return "note-id";
     },
     setThreadToDo,
@@ -1990,6 +1998,139 @@ describe("detectCalendarBundles", () => {
       eventKnown: true,
     });
   });
+
+  it("never re-decides a root once recorded, even when a CANCEL arrives later", async () => {
+    // The other half of the gate split, and the one a message with no calendar
+    // part cannot reach: this root's decision is cached as "does not bundle",
+    // and a NEW calendar-bearing message on it is still fetched and examined.
+    // What must NOT happen is the classification running again — a root that
+    // flips from "no bundle" to "cancel" changes `sources`' sorted-minimum
+    // primary source, and `upsert_link` writes a SECOND link row because the
+    // old primary source is still on file.
+    const later = msg({
+      uid: 67,
+      messageId: "<cancel-late@example.test>",
+      references: ["<settled@example.test>"],
+      attachments: [CALENDAR_PART],
+    });
+    const { host, stored, fetchAttachmentCalls } = bundleHost({
+      attachments: {
+        [buildAttachmentRef("INBOX", 67, "2")]: icsBytes(
+          ics({ method: "CANCEL", uid: "evt-settled" })
+        ),
+      },
+    });
+    const meta = new Map<string, ThreadMeta>([
+      ["settled@example.test", { channelId: "mail:INBOX", bundle: { classified: null } }],
+    ]);
+
+    const { bundles } = await detectCalendarBundles(
+      host,
+      "session-1",
+      [{ ...later, mailbox: "INBOX" }],
+      meta,
+      new Set()
+    );
+
+    // Examined (that is the other gate), but the recorded decision stands.
+    expect(fetchAttachmentCalls).toHaveLength(1);
+    expect(bundles.has("settled@example.test")).toBe(false);
+    expect(meta.get("settled@example.test")!.bundle).toEqual({ classified: null });
+    expect(stored.get("cancel-email:evt-settled")).toBeUndefined();
+  });
+
+  it("does not let an attendee response settle the bundling question for its root", async () => {
+    // A response answers a question it was never asked. Classifying it would
+    // record the root as "evaluated, does not bundle" — permanently — so the
+    // rescheduling notice that arrives on the same root afterwards could never
+    // bundle the mail thread onto the event.
+    const reply = calendarMessage({
+      uid: 51,
+      messageId: "<reply-1@example.test>",
+      root: "<invite@example.test>",
+    });
+    const update = msg({
+      uid: 52,
+      messageId: "<update-late@example.test>",
+      references: ["<invite@example.test>"],
+      attachments: [CALENDAR_PART],
+    });
+    const { host } = bundleHost({
+      attachments: {
+        [buildAttachmentRef("INBOX", 51, "2")]: icsBytes(
+          replyIcs({ partstat: "DECLINED", uid: "evt-reply-only" })
+        ),
+        [buildAttachmentRef("INBOX", 52, "2")]: icsBytes(
+          ics({ method: "REQUEST", uid: "evt-reply-only", sequence: 2 })
+        ),
+      },
+    });
+    const meta = metaFor(["invite@example.test"]);
+
+    // Pass 1: the response alone. The root must be left UNDECIDED.
+    await detectCalendarBundles(
+      host,
+      "session-1",
+      [{ ...reply, mailbox: "INBOX" }],
+      meta,
+      new Set()
+    );
+    expect(meta.get("invite@example.test")!.bundle).toBeUndefined();
+
+    // Pass 2: the rescheduling notice threads onto the same root and still
+    // gets its say.
+    const { bundles } = await detectCalendarBundles(
+      host,
+      "session-1",
+      [
+        { ...reply, mailbox: "INBOX" },
+        { ...update, mailbox: "INBOX" },
+      ],
+      meta,
+      new Set()
+    );
+    expect(bundles.get("invite@example.test")).toEqual({
+      uid: "evt-reply-only",
+      kind: "update",
+      eventKnown: false,
+    });
+  });
+
+  it("caps the examined-part list so one thread cannot grow the document forever", async () => {
+    // A full SEEN_ICS_MAX (200) of already-examined parts, then one more. The
+    // oldest is dropped rather than the array growing without bound — this
+    // document is rewritten on every pass.
+    const priorKeys = Array.from({ length: 200 }, (_, i) => `seen-${i}@example.test`);
+    const newest = msg({
+      uid: 68,
+      messageId: "<seen-newest@example.test>",
+      references: ["<capped@example.test>"],
+      attachments: [CALENDAR_PART],
+    });
+    const { host } = bundleHost({
+      attachments: {
+        [buildAttachmentRef("INBOX", 68, "2")]: icsBytes(
+          ics({ method: "REQUEST", uid: "evt-capped", sequence: 0 })
+        ),
+      },
+    });
+    const meta = new Map<string, ThreadMeta>([
+      ["capped@example.test", { channelId: "mail:INBOX", seenIcs: priorKeys }],
+    ]);
+
+    await detectCalendarBundles(
+      host,
+      "session-1",
+      [{ ...newest, mailbox: "INBOX" }],
+      meta,
+      new Set()
+    );
+
+    const seen = meta.get("capped@example.test")!.seenIcs!;
+    expect(seen).toHaveLength(200);
+    expect(seen).not.toContain("seen-0@example.test");
+    expect(seen[seen.length - 1]).toBe("seen-newest@example.test");
+  });
 });
 
 const REPLY_UID = "evt-fold@example.test";
@@ -1999,16 +2140,20 @@ function replyIcs(opts: {
   partstat: "ACCEPTED" | "DECLINED" | "TENTATIVE";
   comment?: string;
   recurrenceId?: string;
-  /** The event being answered; defaults to the fold fixtures' own event. */
-  uid?: string;
+  /** The event being answered; defaults to the fold fixtures' own event.
+   *  `null` omits the UID line entirely (a malformed response). */
+  uid?: string | null;
+  /** The responder. Defaults to the fold fixtures' own guest. */
+  attendee?: { name: string; email: string };
 }): string {
+  const attendee = opts.attendee ?? { name: "Sam Guest", email: "guest@example.test" };
   return [
     "BEGIN:VCALENDAR",
     "METHOD:REPLY",
     "BEGIN:VEVENT",
-    `UID:${opts.uid ?? REPLY_UID}`,
+    ...(opts.uid === null ? [] : [`UID:${opts.uid ?? REPLY_UID}`]),
     ...(opts.recurrenceId ? [`RECURRENCE-ID:${opts.recurrenceId}`] : []),
-    `ATTENDEE;CN=Sam Guest;PARTSTAT=${opts.partstat}:mailto:guest@example.test`,
+    `ATTENDEE;CN=${attendee.name};PARTSTAT=${opts.partstat}:mailto:${attendee.email}`,
     ...(opts.comment ? [`COMMENT:${opts.comment}`] : []),
     "END:VEVENT",
     "END:VCALENDAR",
@@ -2216,6 +2361,122 @@ describe("detectCalendarBundles — attendee responses", () => {
     expect(built.savedNotes).toHaveLength(1);
     expect(built.fetchAttachmentCalls).toHaveLength(1);
     expect([...foldedNoteKeys]).toEqual(["reply-1@example.test"]);
+  });
+
+  it("records what it folded on the root's metadata", async () => {
+    const built = buildFakeHost({
+      appleId: "owner@example.test",
+      mailboxes: [box("INBOX", [replyMessage()])],
+      attachments: {
+        [buildAttachmentRef("INBOX", 51, "2")]: icsBytes(replyIcs({ partstat: "DECLINED" })),
+      },
+    });
+    const meta = new Map<string, ThreadMeta>([["invite@example.test", { channelId: "INBOX" }]]);
+    const changed = new Set<string>();
+
+    await detectCalendarBundles(
+      built.host,
+      "session-1",
+      [{ ...replyMessage(), mailbox: "INBOX" }],
+      meta,
+      changed
+    );
+
+    expect(meta.get("invite@example.test")!.foldedIcs).toEqual(["reply-1@example.test"]);
+    expect(changed.has("invite@example.test")).toBe(true);
+  });
+
+  it("keeps reporting a response folded on an earlier pass, without re-reading it", async () => {
+    // The fold has to outlive the fetch that discovered it. `seenIcs` keeps an
+    // already-examined response off IMAP, so nothing in a later pass re-parses
+    // it — if foldedness were derived from this pass's fetches, the response
+    // would silently return to the mail thread on the very next poll.
+    const built = buildFakeHost({
+      appleId: "owner@example.test",
+      mailboxes: [box("INBOX", [replyMessage()])],
+      attachments: {}, // a fetch would throw on lookup miss — that IS the assertion
+    });
+    const meta = new Map<string, ThreadMeta>([
+      [
+        "invite@example.test",
+        {
+          channelId: "INBOX",
+          bundle: { classified: null },
+          seenIcs: ["reply-1@example.test"],
+          foldedIcs: ["reply-1@example.test"],
+        },
+      ],
+    ]);
+
+    const { foldedNoteKeys } = await detectCalendarBundles(
+      built.host,
+      "session-1",
+      [{ ...replyMessage(), mailbox: "INBOX" }],
+      meta,
+      new Set()
+    );
+
+    expect([...foldedNoteKeys]).toEqual(["reply-1@example.test"]);
+    expect(built.fetchAttachmentCalls).toHaveLength(0);
+    expect(built.savedNotes).toHaveLength(0);
+  });
+
+  it("leaves a response carrying no event id as ordinary mail", async () => {
+    // No UID means no `icaluid:` thread to address and no way to scope the
+    // dedup marker, so there is nowhere to fold it TO. Better an ordinary mail
+    // note than a note attached to nothing.
+    const { host, savedNotes, foldedOf } = await runFold(
+      replyIcs({ partstat: "DECLINED", uid: null })
+    );
+
+    expect(savedNotes).toHaveLength(0);
+    expect(foldedOf).toHaveLength(0);
+  });
+
+  it("keeps the markers of responses already written when a later saveNote throws", async () => {
+    // Batching the markers into one write must not make them all-or-nothing:
+    // the first response is on its event thread for good, so losing its marker
+    // would have the next pass write that note again and re-raise unread on a
+    // thread people had read.
+    const first = calendarMessage({
+      uid: 51,
+      messageId: "<reply-first@example.test>",
+      root: "<invite@example.test>",
+    });
+    const second = calendarMessage({
+      uid: 52,
+      messageId: "<reply-second@example.test>",
+      root: "<invite@example.test>",
+    });
+    const built = buildFakeHost({
+      appleId: "owner@example.test",
+      mailboxes: [box("INBOX", [first, second])],
+      attachments: {
+        [buildAttachmentRef("INBOX", 51, "2")]: icsBytes(replyIcs({ partstat: "DECLINED" })),
+        [buildAttachmentRef("INBOX", 52, "2")]: icsBytes(
+          replyIcs({
+            partstat: "DECLINED",
+            attendee: { name: "Robin Guest", email: "robin@example.test" },
+          })
+        ),
+      },
+      failSaveNoteOnCall: 2,
+    });
+
+    await expect(
+      detectCalendarBundles(
+        built.host,
+        "session-1",
+        [
+          { ...first, mailbox: "INBOX" },
+          { ...second, mailbox: "INBOX" },
+        ],
+        new Map<string, ThreadMeta>([["invite@example.test", { channelId: "INBOX" }]]),
+        new Set()
+      )
+    ).rejects.toThrow("saveNote failed");
+
+    expect(await built.host.get(`rsvp:${REPLY_UID}:series:guest@example.test`)).toBe("DECLINED");
   });
 });
 
@@ -2461,6 +2722,67 @@ describe("mailSync — attendee responses end-to-end", () => {
     // event thread and saved nothing else, so a re-run must not write that
     // note a second time and drag a thread people had read back to unread.
     await mailSync(built.host, [INBOX_CHANNEL], RECENT_ISO).catch(() => {});
+    expect(built.savedNotes).toHaveLength(1);
+  });
+
+  it("keeps a folded response out of a mixed mail thread on EVERY later pass", async () => {
+    // A response stays inside the 30-day rescan window for a month, so the
+    // thread carrying it is rebuilt on every poll. The fold has to survive all
+    // of them — and it cannot be re-derived from the fetch, because an
+    // already-examined part is deliberately never fetched again.
+    const built = await declinePass();
+    expect(
+      noteKeys(linkFor(built.savedLinks, "icloud-mail:thread:invite@example.test"))
+    ).toEqual(["plain-52@example.test"]);
+    expect(built.savedNotes).toHaveLength(1);
+
+    built.savedLinks.length = 0;
+    await mailSync(built.host, [INBOX_CHANNEL], RECENT_ISO);
+
+    const link = linkFor(built.savedLinks, "icloud-mail:thread:invite@example.test");
+    expect(noteKeys(link)).toEqual(["plain-52@example.test"]);
+    // …and the thread is still described by the ordinary message, not
+    // re-titled and re-attributed to the responder.
+    expect(link.title).toBe("Re: Weekly sync");
+    // No second copy of the response on the event thread either.
+    expect(built.savedNotes).toHaveLength(1);
+  });
+
+  it("keeps a folded response off a BUNDLED root's thread on every later pass", async () => {
+    // The worst case. A bundled root's Plot thread IS the calendar event's
+    // thread, so a response that leaked back into the mail thread would be
+    // written straight onto the organiser's event thread as a raw email — and
+    // a note is exactly what marks that thread unread for everyone but its
+    // author, which is the outcome the fold exists to prevent.
+    const cancellation = {
+      ...calendarMessage({
+        uid: 50,
+        messageId: "<invite@example.test>",
+        root: "<invite@example.test>",
+        date: daysAgo(3),
+      }),
+      subject: "Cancelled: Weekly sync",
+    } as ImapMessage;
+    const built = buildFakeHost({
+      appleId: "owner@example.test",
+      mailboxes: [box("INBOX", [cancellation, replyMessage()])],
+      attachments: {
+        [buildAttachmentRef("INBOX", 50, "2")]: icsBytes(ics({ method: "CANCEL", uid: E2E_UID })),
+        [buildAttachmentRef("INBOX", 51, "2")]: icsBytes(E2E_DECLINE),
+      },
+    });
+
+    await mailSync(built.host, [INBOX_CHANNEL], RECENT_ISO);
+    const first = linkFor(built.savedLinks, "icloud-mail:thread:invite@example.test");
+    expect(first.sources).toEqual([`icaluid:${E2E_UID}`]);
+    expect(noteKeys(first)).toEqual(["invite@example.test"]);
+
+    built.savedLinks.length = 0;
+    await mailSync(built.host, [INBOX_CHANNEL], RECENT_ISO);
+
+    const second = linkFor(built.savedLinks, "icloud-mail:thread:invite@example.test");
+    expect(second.sources).toEqual([`icaluid:${E2E_UID}`]);
+    expect(noteKeys(second)).toEqual(["invite@example.test"]);
     expect(built.savedNotes).toHaveLength(1);
   });
 });
