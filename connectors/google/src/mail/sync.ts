@@ -1493,134 +1493,6 @@ export async function processEmailThreadsFn(
   await mapWithConcurrency(transformed, SAVE_CONCURRENCY, (item) =>
     saveTransformedThread(host, item, initialSync, icsByMessage)
   );
-
-  // Responses whose event had not synced when they arrived. Retried after the
-  // saves above so an event that landed in this very batch is already there.
-  await drainPendingRsvpsFn(host);
-}
-
-/** Storage prefix for responses awaiting their event. */
-const PENDING_RSVP_PREFIX = "pending-rsvp:";
-
-/**
- * How long a response keeps being retried before we stop. Past this the email
- * thread simply stays as it is — the response is still readable, just not
- * folded onto an event that never arrived.
- */
-const PENDING_RSVP_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-
-/** A response whose event thread had not synced when it first arrived. */
-type PendingRsvp = {
-  /**
-   * Gmail thread id. The retry re-fetches and re-parses the conversation
-   * rather than storing the parsed response, so it always reflects the
-   * current state of the mail and shares one code path with first-pass sync.
-   */
-  threadId: string;
-  channelId: string;
-  /**
-   * Whether the response was first seen during the initial backfill. Carried
-   * so the retry applies the same unread rule the first pass would have — a
-   * late fold must not be noisier than a timely one.
-   */
-  initialSync: boolean;
-  /** ISO timestamp of the first failed fold, for {@link PENDING_RSVP_TTL_MS}. */
-  firstSeen: string;
-};
-
-/**
- * Retries responses that could not fold because their event had not synced yet.
- *
- * The email thread was already saved when the fold first failed — dropping it
- * would have lost the response outright — so a successful retry has to retract
- * it: the note moves onto the event and the now-empty email thread is archived.
- * Only conversations that were nothing but responses are ever tracked (see
- * {@link saveTransformedThread}), so this can never archive real correspondence.
- *
- * Costs one storage list per pass and nothing else when there is nothing
- * pending, which is the overwhelmingly common case.
- */
-export async function drainPendingRsvpsFn(host: GmailSyncHost): Promise<void> {
-  const keys = await host.tools.store.list(PENDING_RSVP_PREFIX);
-  if (keys.length === 0) return;
-
-  const api = await getApiAnyFn(host);
-  if (!api) return;
-
-  for (const key of keys) {
-    const pending = await host.get<PendingRsvp>(key);
-    if (!pending) {
-      await host.clear(key);
-      continue;
-    }
-
-    if (Date.now() - new Date(pending.firstSeen).getTime() > PENDING_RSVP_TTL_MS) {
-      await host.clear(key);
-      continue;
-    }
-
-    try {
-      const thread = await api.getThread(pending.threadId);
-      const messages = thread.messages ?? [];
-      const icsByMessage = await resolveIcsByMessage(api, messages);
-      const replies = extractCalendarReplies(messages, icsByMessage);
-      if (replies.length === 0) {
-        // No longer a response conversation (message deleted, or the calendar
-        // part became unreadable). Nothing left to retry.
-        await host.clear(key);
-        continue;
-      }
-
-      let allFolded = true;
-      for (const reply of replies) {
-        const priorKey = priorRsvpKey(reply.uid, reply.attendeeEmail, reply.occurrence);
-        // Only a bare acceptance consults prior state; every other response
-        // emits regardless, so skip the store round-trip. Each tools.* call
-        // spends the execution's request budget, and a backfill folds many
-        // responses at once.
-        const needsPriorState = reply.partstat === "ACCEPTED" && !reply.comment;
-        const hadPriorNonAccept = needsPriorState
-          ? Boolean(await host.get<string>(priorKey))
-          : false;
-
-        // Same rule as the live path: a bare acceptance earns no note. It
-        // counts as folded so the retry still retracts the email thread.
-        if (!shouldEmitRsvpNote(reply, hadPriorNonAccept)) continue;
-
-        const noteId = await host.tools.integrations.saveNote({
-          thread: { source: `icaluid:${reply.uid}` },
-          key: reply.messageId,
-          content: composeRsvpNote(reply),
-          contentType: "markdown",
-          created: reply.sourceCreatedAt,
-          author: {
-            email: reply.attendeeEmail,
-            ...(reply.attendeeName ? { name: reply.attendeeName } : {}),
-          },
-          unread: !pending.initialSync,
-        });
-        if (!noteId) {
-          allFolded = false;
-          continue;
-        }
-        await recordRsvpOutcome(host, priorKey, reply.partstat);
-      }
-      // Retract only once every response reached the event, so a partially
-      // folded conversation is never left with nowhere to read the rest.
-      if (!allFolded) continue;
-
-      await host.tools.integrations.archiveLinks({
-        meta: { threadId: pending.threadId },
-      });
-      await host.clear(key);
-    } catch (error) {
-      // Leave the entry in place; the next pass retries it.
-      console.warn(
-        `[gmail] could not retry the folded response for thread ${pending.threadId}:`,
-        error
-      );
-    }
-  }
 }
 
 /**
@@ -1722,11 +1594,14 @@ async function saveTransformedThread(
           continue;
         }
 
-        // A miss means the calendar event has not synced yet (saveNote returns
-        // null when no thread carries `icaluid:<uid>`). Leave the note in place
-        // so the response still lands somewhere rather than vanishing. Expected,
-        // so not reported as an error.
-        const noteId = await host.tools.integrations.saveNote({
+        // saveNote returns null when no thread carries `icaluid:<uid>` yet —
+        // the calendar event has not synced. deferUntilThread has the
+        // platform hold the note and attach it once that thread appears,
+        // instead of us leaving it in the email thread as a fallback. The
+        // return value is not consulted: null now covers both "parked" and,
+        // in principle, "genuinely rejected", and deferUntilThread means we
+        // no longer need to tell those apart.
+        await host.tools.integrations.saveNote({
           thread: { source: `icaluid:${reply.uid}` },
           key: reply.messageId,
           content: composeRsvpNote(reply),
@@ -1741,35 +1616,38 @@ async function saveTransformedThread(
           // unread for every recipient except its author, so only an explicit
           // false overrides it.
           unread: !initialSync,
+          deferUntilThread: true,
         });
-        if (noteId) {
-          foldedMessageIds.add(reply.messageId);
-          await recordRsvpOutcome(host, priorKey, reply.partstat);
-        }
+        // Folded either way. A miss is now held by the platform rather than
+        // returned to us, so a responses-only conversation never creates an
+        // email thread even when the event is missing — the note is
+        // guaranteed to land eventually, but only if the sweep that attaches
+        // parked notes keeps working. A regression there loses the response
+        // silently instead of leaving it visibly stranded in the inbox.
+        //
+        // The more likely way to lose a response, though, is not a sweep
+        // regression: it's a user who has this Gmail channel enabled but no
+        // synced calendar for these events — a calendar on another provider,
+        // or the Calendar channel disabled. In that case nothing ever
+        // produces a thread carrying `icaluid:<uid>`, the held note never
+        // resolves, and it is dropped once it ages out of the platform's
+        // retry window. That is an accepted trade-off, not an oversight: it
+        // replaced a previous fallback that kept the response visible as its
+        // own email thread and retried for longer. We chose to stop creating
+        // that email thread for responses-only conversations even at the
+        // cost of losing the response outright for calendar-less recipients.
+        foldedMessageIds.add(reply.messageId);
+        // Recorded regardless of `noteId`: the decision to emit is what this
+        // bookkeeping tracks, and with deferUntilThread the platform now
+        // guarantees the note lands eventually even on a miss. Previously
+        // this only ran on an immediate attach, with the drain's own retry
+        // recording it later on success — with the drain gone, gating on
+        // `noteId` here would leave a deferred non-acceptance unrecorded
+        // forever, wrongly treating a later bare acceptance as reversing
+        // nothing.
+        await recordRsvpOutcome(host, priorKey, reply.partstat);
       }
 
-      // Any response that missed its event is worth retrying: the calendar
-      // often syncs seconds later. Only track a conversation that is nothing
-      // but responses — the retry retracts the email thread by archiving it,
-      // which must never hide a human reply.
-      const unfolded = replies.filter((r) => !foldedMessageIds.has(r.messageId));
-      const replyMessageIds = new Set(replies.map((r) => r.messageId));
-      const isResponsesOnly = plotThread.notes.every((note) => {
-        const noteKey = "key" in note ? (note as { key: string }).key : null;
-        return noteKey !== null && replyMessageIds.has(noteKey);
-      });
-      if (unfolded.length > 0 && isResponsesOnly) {
-        const key = `${PENDING_RSVP_PREFIX}${thread.id}`;
-        const existing = await host.get<PendingRsvp>(key);
-        await host.set(key, {
-          threadId: thread.id,
-          channelId,
-          initialSync,
-          // Preserved across passes so the retry window measures from the
-          // first failure, not from the most recent re-sync of the thread.
-          firstSeen: existing?.firstSeen ?? new Date().toISOString(),
-        } satisfies PendingRsvp);
-      }
       if (foldedMessageIds.size > 0) {
         plotThread.notes = plotThread.notes.filter((note) => {
           const noteKey = "key" in note ? (note as { key: string }).key : null;
