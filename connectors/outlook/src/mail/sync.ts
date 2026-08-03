@@ -1661,7 +1661,11 @@ export async function processConversationsFn(
       }
 
       if (plotThread.notes.length === 0) continue;
-      const isUnread = isConversationUnread(item.messages);
+      // Uses `survivingMessages`, NOT `item.messages`: an unread or flagged
+      // RSVP notification that was folded away must not drive the surviving
+      // thread's unread/to-do state — otherwise the thread shows unread (or
+      // becomes a to-do) with nothing in it the user can act on to clear it.
+      const isUnread = isConversationUnread(survivingMessages);
       if (initialSync) {
         plotThread.unread = isUnread;
         plotThread.archived = false;
@@ -1704,7 +1708,14 @@ export async function processConversationsFn(
         survivingMessages,
         item.parentHeaders
       );
-      if (calBundle) {
+      // `kind === "rsvp"` is only ever a pre-filter for the fold step above,
+      // never a bundling signal: when the fold succeeds the message is gone
+      // from `survivingMessages` and this branch already can't see it, but
+      // when the fold does NOT happen (no MIME, no parseable calendar part,
+      // an ICS that fails to parse) the RSVP notification message is still
+      // here and would otherwise get bundled onto the event thread as an
+      // ordinary note — exactly the outcome the fold exists to prevent.
+      if (calBundle && calBundle.kind !== "rsvp") {
         plotThread.sources = [
           ...(plotThread.sources ?? []),
           `icaluid:${calBundle.uid}`,
@@ -1735,7 +1746,7 @@ export async function processConversationsFn(
         };
       }
 
-      const isFlagged = isConversationFlagged(item.messages);
+      const isFlagged = isConversationFlagged(survivingMessages);
       const savedThreadId = await host.tools.integrations.saveLink(plotThread);
       if (!savedThreadId) continue; // Link was filtered (e.g., older than sync history)
 

@@ -74,10 +74,21 @@ function collectParts(raw: string): MimePart[] {
   ];
 }
 
+/** Decode a base64 string as UTF-8 text, not `atob`'s raw Latin-1 bytes — `COMMENT` is
+ * user-typed free text and `CN` is a display name, so accents, CJK, and emoji are routine. */
+function decodeBase64Utf8(data: string): string {
+  const binaryString = atob(data);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return new TextDecoder("utf-8").decode(bytes);
+}
+
 /** Decode a part's body per its Content-Transfer-Encoding — only the two encodings this reply shape uses. */
 function decodeBody(part: MimePart): string {
   if (part.transferEncoding.toLowerCase() === "base64") {
-    return atob(part.body.replace(/[\r\n]/g, ""));
+    return decodeBase64Utf8(part.body.replace(/[\r\n]/g, ""));
   }
   return part.body;
 }

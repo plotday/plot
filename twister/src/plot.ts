@@ -937,12 +937,15 @@ export type NewNote = Partial<
     /**
      * Whether this note should change the parent thread's read state.
      *
-     * - **omitted (default): leave read state alone.** The note surfaces the
-     *   thread in the feed without creating unread, and without clearing
-     *   unread that other notes already caused. This is the right default for
-     *   low-signal annotations.
+     * - **omitted (default): no explicit read-state write.** Attaching a note
+     *   still marks the thread unread for every recipient except the note's
+     *   author — there is no "leave read state alone" outcome. Pass an
+     *   explicit `false` if a note should NOT create unread (e.g. a
+     *   low-signal annotation, or a response that says nothing the thread
+     *   doesn't already show).
      * - `true`: mark the thread unread, except for the user who authored the
-     *   note — they have necessarily seen it.
+     *   note — they have necessarily seen it. Redundant with the default
+     *   behavior above; pass it when you want to be explicit at the call site.
      * - `false`: mark the thread read for the connection owner. Use when the
      *   external system reports the item as already read, so a two-way sync
      *   converges.

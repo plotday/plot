@@ -678,6 +678,15 @@ describe("processConversationsFn — attendee responses fold onto the event", ()
     expect(links).toHaveLength(1);
     const keys = (links[0].notes ?? []).map((n) => (n as { key?: string }).key);
     expect(keys).toEqual(["<msg-nomime>"]);
+
+    // The pre-filter still saw a `meetingAccepted` + iCalUId on this message,
+    // so `classifyOutlookCalendar` would classify it as `kind: "rsvp"` even
+    // though the fold itself failed. That classification must never append
+    // `icaluid:<uid>` to `sources` — otherwise this ordinary-mail thread (and
+    // any real correspondence sharing its conversation) gets bundled onto the
+    // calendar event's thread, marking the organiser unread for a plain
+    // notification email.
+    expect(links[0].sources ?? []).not.toContain(`icaluid:${uid}`);
   });
 
   it("leaves the message as ordinary mail when the MIME fetch itself misses (e.g. 404)", async () => {
@@ -696,6 +705,9 @@ describe("processConversationsFn — attendee responses fold onto the event", ()
 
     expect(notes).toHaveLength(0);
     expect(links).toHaveLength(1);
+    // Same reasoning as the no-parseable-MIME case above: a 404'd fetch still
+    // leaves an `rsvp`-classifiable message behind, and it must not bundle.
+    expect(links[0].sources ?? []).not.toContain(`icaluid:${uid}`);
   });
 
   it("keeps ordinary correspondence in its own email thread, dropping only the folded RSVP message", async () => {
@@ -734,6 +746,38 @@ describe("processConversationsFn — attendee responses fold onto the event", ()
     // notification (whose bodyPreview seeded transformOutlookConversation's
     // original preview since it sorted first).
     expect(links[0].preview).toBe("No problem, let's find another time.");
+  });
+
+  it("does not mark the surviving thread unread from a folded RSVP notification's own unread state", async () => {
+    const { host } = makeFoldHost();
+    const { notes, links } = captureSaves(host);
+    const uid = "uid-rsvp-unread-fold@example.test";
+    // The RSVP notification is unread in Outlook, but its note gets folded
+    // away. The surviving reply is already read.
+    const rsvp = {
+      ...rsvpMessage("msg-unread-fold-1", "conv-unread-fold", "meetingDeclined", uid),
+      isRead: false,
+    };
+    const reply = {
+      ...plainReplyMessage("msg-unread-fold-2", "conv-unread-fold"),
+      isRead: true,
+    };
+    mimeById.set("msg-unread-fold-1", rsvpMime(replyIcs("DECLINED", { uid })));
+
+    await processConversationsFn(
+      host,
+      [{ messages: [rsvp, reply], attachmentsByMessageId: new Map(), parentHeaders: null }],
+      false,
+      "inbox"
+    );
+
+    expect(notes).toHaveLength(1); // the folded RSVP note on the event thread
+    expect(links).toHaveLength(1);
+    // Computed from `survivingMessages` (just the read reply), not
+    // `item.messages` (which still has the unread RSVP) — otherwise the
+    // surviving thread would be marked unread with nothing in it the user
+    // can read to clear it.
+    expect(links[0].unread).toBe(false);
   });
 
   it("degrades a single candidate's failed MIME fetch to ordinary mail without aborting the rest of the batch", async () => {

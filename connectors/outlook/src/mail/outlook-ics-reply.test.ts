@@ -92,6 +92,30 @@ const MS_ICS_ACCEPTED = [
 ].join(CRLF);
 
 /**
+ * A synthetic Microsoft-shaped reply whose `CN` (display name) and `COMMENT`
+ * (free-text note) both carry non-ASCII characters — routine for real
+ * attendees and comments, but absent from every other fixture in this file,
+ * all of which are plain ASCII.
+ */
+const MS_ICS_ACCEPTED_UNICODE = [
+  "BEGIN:VCALENDAR",
+  "METHOD:REPLY",
+  "PRODID:Microsoft Exchange Server 2010",
+  "VERSION:2.0",
+  "BEGIN:VEVENT",
+  "ATTENDEE;PARTSTAT=ACCEPTED;CN=José Müller:mailto:jose@example.test",
+  "COMMENT;LANGUAGE=en-US:Café résumé 会議 🎉",
+  "UID:2sfjkg3asr2hofgcgfsi51ks84@google.com",
+  "SUMMARY;LANGUAGE=en-US:Accepted: Hey outlook",
+  "DTSTART;TZID=Eastern Standard Time:20260803T113000",
+  "DTEND;TZID=Eastern Standard Time:20260803T120000",
+  "SEQUENCE:0",
+  "X-MICROSOFT-CDO-ALLDAYEVENT:FALSE",
+  "END:VEVENT",
+  "END:VCALENDAR",
+].join(CRLF);
+
+/**
  * A synthetic, differently-shaped reply — not a real capture — used only to
  * prove the duplicate-attachment precedence test actually exercises
  * precedence rather than two identical parts happening to agree.
@@ -113,6 +137,19 @@ function b64(text: string): string {
   return btoa(text);
 }
 
+/**
+ * Base64-encode text as UTF-8 bytes, the way a real mail client encodes a
+ * non-ASCII `base64` part — plain `btoa` throws on any character outside
+ * Latin-1, so this is the only way to build a fixture with an accented name,
+ * CJK, or emoji in it.
+ */
+function b64Utf8(text: string): string {
+  const bytes = new TextEncoder().encode(text);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
 /** One MIME part: headers + a blank line + body, CRLF throughout. */
 function mimePart(headers: string[], body: string): string {
   return headers.join(CRLF) + CRLF + CRLF + body;
@@ -121,7 +158,7 @@ function mimePart(headers: string[], body: string): string {
 /**
  * A `multipart/mixed` Google-shaped message: a `multipart/alternative`
  * (text/plain, text/html, text/calendar) plus a sibling `application/ics`
- * attachment — the real captured shape (see fixtures README).
+ * attachment — the real captured shape.
  */
 function googleShapedMessage(opts: {
   calendarEncoding: "7bit" | "base64";
@@ -195,9 +232,14 @@ function googleShapedMessage(opts: {
 /**
  * A `multipart/alternative` Microsoft-shaped message — text/plain,
  * text/html, text/calendar (base64) — and critically NO attachment part at
- * all (per the fixtures README, `X-MS-Has-Attach` is empty for these).
+ * all: real Microsoft-generated meeting responses carry an empty
+ * `X-MS-Has-Attach` header, unlike Google's duplicate `application/ics`
+ * attachment.
  */
-function microsoftShapedMessage(icsBody: string): string {
+function microsoftShapedMessage(
+  icsBody: string,
+  encodeCalendar: (text: string) => string = b64
+): string {
   const boundary = "ms_boundary_0003";
   const plainPart = mimePart(
     ['Content-Type: text/plain; charset="us-ascii"', "Content-Transfer-Encoding: base64"],
@@ -208,8 +250,8 @@ function microsoftShapedMessage(icsBody: string): string {
     "<p>Ana Ruiz has accepted this invitation.</p>"
   );
   const calendarPart = mimePart(
-    ['Content-Type: text/calendar; method=REPLY; charset="us-ascii"', "Content-Transfer-Encoding: base64"],
-    b64(icsBody)
+    ['Content-Type: text/calendar; method=REPLY; charset="utf-8"', "Content-Transfer-Encoding: base64"],
+    encodeCalendar(icsBody)
   );
 
   const body =
@@ -316,6 +358,17 @@ describe("extractOutlookReply", () => {
     expect(reply).toMatchObject({
       partstat: "TENTATIVE",
       comment: "This is my reply for maybe",
+    });
+  });
+
+  it("decodes a base64 text/calendar part with non-ASCII text intact (accents, CJK, emoji)", () => {
+    const mime = microsoftShapedMessage(MS_ICS_ACCEPTED_UNICODE, b64Utf8);
+    const reply = extractOutlookReply(mime, FALLBACK);
+    expect(reply).toMatchObject({
+      partstat: "ACCEPTED",
+      attendeeName: "José Müller",
+      attendeeEmail: "jose@example.test",
+      comment: "Café résumé 会議 🎉",
     });
   });
 
