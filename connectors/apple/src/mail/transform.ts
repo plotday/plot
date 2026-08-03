@@ -256,7 +256,10 @@ export type TransformCtx = {
   /**
    * Note keys whose messages were folded onto a calendar event's thread by
    * `sync.ts`'s `detectCalendarBundles`. Their notes are dropped here so an
-   * attendee response does not ALSO appear as ordinary mail.
+   * attendee response does not ALSO appear as ordinary mail, and they are
+   * skipped when choosing the message the thread is described by — see the
+   * `surviving` set below, which drives `title`, `author` and
+   * `signals.noteKey`.
    *
    * Filtered at the NOTES level rather than by removing the messages from the
    * input: `allCopies` drives the Sent-only rule and dedupe, and removing an
@@ -317,8 +320,9 @@ export function bodyOf(msg: ImapMessage): { content: string; contentType: "html"
 /**
  * Group a batch of messages by thread root and build one NewLinkWithNotes per
  * thread. Notes are keyed by (stripped) Message-ID for idempotent upsert; the
- * link author is the earliest message's sender; accessContacts is the union of
- * every participant seen; the owner's own messages are credited via
+ * link author is the earliest message's sender (earliest that still carries a
+ * note here — see `TransformCtx.foldedNoteKeys`); accessContacts is the union
+ * of every participant seen; the owner's own messages are credited via
  * authoredBySelf.
  *
  * `messages` must be the COMPLETE visible message set for every thread it
@@ -372,8 +376,29 @@ export function transformMessages(
     // depends on which mailbox the merged pass happened to fetch first.
     const msgs = dedupeCopies(allCopies, homeMailbox).sort(compareMessages);
 
-    // Earliest message drives the thread's title + author.
-    const originator = msgs[0];
+    // The messages that will actually carry a note on this thread. A folded
+    // attendee response (see `TransformCtx.foldedNoteKeys`) has been attached
+    // to the event's own thread and has no note here, so it must not be the
+    // message the thread is described by: a conversation whose earliest
+    // in-window message is a response notification would otherwise be titled
+    // "Accepted: <event>", credited to the responder rather than to whoever
+    // started the conversation, and have `signals.noteKey` point at a note
+    // that is not on the link at all — leaving body-derived classification to
+    // fall back to some other message.
+    //
+    // Only the description is affected: the participant union, the read state
+    // and the Sent-only rule all still consider every copy of every message,
+    // because a responder is a real participant in the conversation whether or
+    // not their message is shown here.
+    const surviving = msgs.filter((m) => !ctx.foldedNoteKeys?.has(noteKeyOf(m)));
+
+    // Every message in this thread was folded onto a calendar event. Emitting
+    // the link anyway would create a titled row with no content. Checked
+    // before anything reads `surviving[0]`.
+    if (surviving.length === 0) continue;
+
+    // Earliest surviving message drives the thread's title + author.
+    const originator = surviving[0];
     const originatorFrom = originator.from && originator.from[0] ? originator.from[0] : null;
 
     // Mail signals are computed from the ORIGINATING message only (same
@@ -397,31 +422,25 @@ export function transformMessages(
       }
     }
 
-    const notes = msgs
-      .filter((m) => !ctx.foldedNoteKeys?.has(noteKeyOf(m)))
-      .map((m) => {
-        const key = noteKeyOf(m);
-        const body = bodyOf(m);
-        const from = m.from && m.from[0] ? m.from[0] : null;
-        const isOwner = from?.address.toLowerCase() === ownEmail;
-        const actions = attachmentActions(m);
-        return {
-          key,
-          content: body?.content ?? "",
-          contentType: body?.contentType ?? ("text" as const),
-          created: m.date,
-          // Owner's own messages: credit via authoredBySelf, leave author unset.
-          ...(isOwner
-            ? { authoredBySelf: true as const }
-            : { author: from ? toContact(from) : null }),
-          ...(actions ? { actions } : {}),
-          accessContacts: messageContacts(m, ownEmail),
-        };
-      });
-
-    // Every message in this thread was folded onto a calendar event. Emitting
-    // the link anyway would create a titled row with no content.
-    if (notes.length === 0) continue;
+    const notes = surviving.map((m) => {
+      const key = noteKeyOf(m);
+      const body = bodyOf(m);
+      const from = m.from && m.from[0] ? m.from[0] : null;
+      const isOwner = from?.address.toLowerCase() === ownEmail;
+      const actions = attachmentActions(m);
+      return {
+        key,
+        content: body?.content ?? "",
+        contentType: body?.contentType ?? ("text" as const),
+        created: m.date,
+        // Owner's own messages: credit via authoredBySelf, leave author unset.
+        ...(isOwner
+          ? { authoredBySelf: true as const }
+          : { author: from ? toContact(from) : null }),
+        ...(actions ? { actions } : {}),
+        accessContacts: messageContacts(m, ownEmail),
+      };
+    });
 
     // Incremental read-state (see TransformCtx.newMessages):
     //  - every message seen        → mark read (a read done in Apple Mail)

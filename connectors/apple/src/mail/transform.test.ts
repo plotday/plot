@@ -1025,6 +1025,50 @@ describe("transformMessages — folded attendee responses", () => {
     expect(links).toEqual([]);
   });
 
+  it("describes the thread from its earliest SURVIVING message, not from a folded response", () => {
+    // A response can arrive before any of the conversation's real
+    // correspondence is in the window — a guest declines an invitation, and
+    // only later does someone reply about rescheduling. The response has no
+    // note on this thread, so describing the thread with it would title the
+    // thread "Accepted: Weekly sync", credit it to the responder, and point
+    // `signals.noteKey` at a note the link does not carry.
+    const rsvp = msg({
+      uid: 1,
+      messageId: "<rsvp@example.test>",
+      references: [ROOT],
+      subject: "Accepted: Weekly sync",
+      from: [{ address: "guest@example.test", name: "Sam Guest" }],
+      date: new Date("2026-07-15T09:00:00Z"),
+      bodyText: "Sam Guest has accepted this invitation.",
+    });
+    const real = msg({
+      uid: 2,
+      messageId: "<real@example.test>",
+      references: [ROOT],
+      subject: "Re: Weekly sync",
+      from: [{ address: "jane@example.test", name: "Jane" }],
+      date: new Date("2026-07-15T10:00:00Z"),
+      bodyText: "Can we move this?",
+    });
+
+    const links = transform([rsvp, real], {
+      foldedNoteKeys: new Set(["rsvp@example.test"]),
+    });
+
+    expect(links).toHaveLength(1);
+    expect(links[0].title).toBe("Re: Weekly sync");
+    expect((links[0].author as { email?: string } | null)?.email).toBe("jane@example.test");
+    expect(links[0].signals?.noteKey).toBe("real@example.test");
+    // The classification pointer must name a note that is on the link.
+    expect((links[0].notes ?? []).map((n) => (n as { key?: string }).key)).toContain(
+      links[0].signals?.noteKey
+    );
+    // The responder is still a participant of the conversation.
+    expect(
+      (links[0].accessContacts ?? []).map((c) => (c as { email?: string }).email)
+    ).toContain("guest@example.test");
+  });
+
   it("is unaffected when nothing was folded", () => {
     const real = msg({ uid: 1, messageId: "<real@example.test>", references: [ROOT] });
     const links = transform([real]);
