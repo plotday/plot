@@ -1,4 +1,4 @@
-import type { Cta, ThreadFacets } from "./facets";
+import type { ThreadFacets } from "./facets";
 import type { NewSchedule, NewScheduleOccurrence, Schedule } from "./schedule";
 import type { LinkSignals } from "./signals";
 import { type Tag } from "./tag";
@@ -793,12 +793,6 @@ export type Note = ThreadCommon & {
   recipients?: ResolvedRecipient[] | null;
   /** Focus twist IDs (twists/connectors) mentioned for dispatch routing. Does not include user contacts. */
   mentions: ActorId[];
-  /**
-   * A time-sensitive call-to-action extracted from this note's message
-   * (OTP code or confirm link). Null when none detected. Set by the runtime
-   * from the connector's extraction; clients read it to show an ephemeral prompt.
-   */
-  cta: Cta | null;
   /** Group this note belongs to within its thread (e.g. a Trello checklist id). Null = ordinary note. */
   sectionKey: string | null;
   /** Display label for the group (e.g. the checklist name). */
