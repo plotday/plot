@@ -16,7 +16,6 @@ import {
   onCreateLinkFn,
   onNoteCreatedFn,
   onNoteReactionChangedFn,
-  drainPendingRsvpsFn,
   processEmailThreadsFn,
   REACTION_SEND_DELAY_MS,
   sendReactionEmailFn,
@@ -1235,9 +1234,26 @@ describe("processEmailThreadsFn — attendee responses fold onto the event", () 
     expect(keys).toContain(links[0].signals?.noteKey);
   });
 
-  it("keeps the email thread when the event thread cannot be resolved", async () => {
+  it("passes deferUntilThread so the platform holds a miss instead of us retrying it", async () => {
+    const { host } = makeHost();
+    const { notes } = captureSaves(host);
+
+    await processEmailThreadsFn(
+      host,
+      [rsvpThread("rsvp-declined", replyIcs("DECLINED"))],
+      false,
+      "INBOX"
+    );
+
+    expect(notes[0]).toMatchObject({ deferUntilThread: true });
+  });
+
+  it("drops the email thread on a miss too, since the note is now held rather than lost", async () => {
     const { host } = makeHost();
     // null = no thread carries `icaluid:<uid>` yet (calendar hasn't synced).
+    // The platform parks the deferUntilThread note rather than returning it
+    // to us, so the message is folded away exactly as a successful fold
+    // would be, and no standalone email thread is created for it.
     const { notes, links } = captureSaves(host, { noteId: null });
 
     await processEmailThreadsFn(
@@ -1248,178 +1264,8 @@ describe("processEmailThreadsFn — attendee responses fold onto the event", () 
     );
 
     expect(notes).toHaveLength(1);
-    expect(links).toHaveLength(1);
-    const keys = (links[0].notes ?? []).map(
-      (n) => (n as { key?: string }).key
-    );
-    expect(keys).toEqual(["rsvp-orphan-msg-1"]);
-  });
-
-  it("records a pending retry when the event has not synced yet", async () => {
-    const { host, store } = makeHost();
-    captureSaves(host, { noteId: null });
-
-    await processEmailThreadsFn(
-      host,
-      [rsvpThread("rsvp-pending", replyIcs("DECLINED"))],
-      false,
-      "INBOX"
-    );
-
-    expect(store.get("pending-rsvp:rsvp-pending")).toMatchObject({
-      threadId: "rsvp-pending",
-    });
-  });
-
-  it("does not track a conversation that also carries real correspondence", async () => {
-    const { host, store } = makeHost();
-    captureSaves(host, { noteId: null });
-
-    await processEmailThreadsFn(
-      host,
-      [
-        rsvpThread("rsvp-mixed", replyIcs("DECLINED"), {
-          withPlainReply: true,
-        }),
-      ],
-      false,
-      "INBOX"
-    );
-
-    // Archiving later must never hide a human reply, so a mixed conversation
-    // is left alone entirely.
-    expect(store.get("pending-rsvp:rsvp-mixed")).toBeUndefined();
-  });
-});
-
-describe("drainPendingRsvpsFn — retract once the event arrives", () => {
-  /** Seeds one pending entry and the Gmail thread the retry re-reads. */
-  function seedPending(
-    host: GmailSyncHost,
-    store: Map<string, unknown>,
-    opts: {
-      firstSeen?: string;
-      partstat?: "DECLINED" | "ACCEPTED" | "TENTATIVE";
-    } = {}
-  ) {
-    // Declined by default: a bare acceptance now writes no note, so it cannot
-    // exercise the fold-and-retract path these tests cover.
-    const gmailThread = rsvpThread(
-      "rsvp-late",
-      replyIcs(opts.partstat ?? "DECLINED")
-    );
-    store.set("pending-rsvp:rsvp-late", {
-      threadId: "rsvp-late",
-      channelId: "INBOX",
-      firstSeen: opts.firstSeen ?? new Date().toISOString(),
-    });
-    (host.tools.store.list as ReturnType<typeof vi.fn>).mockImplementation(
-      async (prefix: string) =>
-        [...store.keys()].filter((k) => k.startsWith(prefix))
-    );
-    vi.spyOn(GmailApi.prototype, "getThread").mockResolvedValue(gmailThread);
-  }
-
-  it("folds the response and archives the standalone email thread", async () => {
-    const { host, store } = makeHost();
-    const { notes } = captureSaves(host, { noteId: "N" });
-    seedPending(host, store);
-
-    await drainPendingRsvpsFn(host);
-
-    expect(notes).toHaveLength(1);
-    expect(notes[0]).toMatchObject({
-      thread: { source: "icaluid:uid-rsvp@google.com" },
-    });
-    expect(host.tools.integrations.archiveLinks).toHaveBeenCalledWith({
-      meta: { threadId: "rsvp-late" },
-    });
-    expect(store.has("pending-rsvp:rsvp-late")).toBe(false);
-  });
-
-  it("applies the same unread rule the first pass would have", async () => {
-    const { host, store } = makeHost();
-    const { notes } = captureSaves(host, { noteId: "N" });
-    const declined = rsvpThread("rsvp-late", replyIcs("DECLINED"));
-    store.set("pending-rsvp:rsvp-late", {
-      threadId: "rsvp-late",
-      channelId: "INBOX",
-      initialSync: false,
-      firstSeen: new Date().toISOString(),
-    });
-    (host.tools.store.list as ReturnType<typeof vi.fn>).mockImplementation(
-      async (prefix: string) =>
-        [...store.keys()].filter((k) => k.startsWith(prefix))
-    );
-    vi.spyOn(GmailApi.prototype, "getThread").mockResolvedValue(declined);
-
-    await drainPendingRsvpsFn(host);
-
-    // A decline is worth surfacing; an acceptance is not. Retrying must not
-    // change that, or a late fold is noisier than a timely one.
-    expect(notes[0]).toMatchObject({ unread: true });
-  });
-
-  it("leaves a response first seen during the initial backfill read", async () => {
-    const { host, store } = makeHost();
-    const { notes } = captureSaves(host, { noteId: "N" });
-    const declined = rsvpThread("rsvp-late", replyIcs("DECLINED"));
-    store.set("pending-rsvp:rsvp-late", {
-      threadId: "rsvp-late",
-      channelId: "INBOX",
-      initialSync: true,
-      firstSeen: new Date().toISOString(),
-    });
-    (host.tools.store.list as ReturnType<typeof vi.fn>).mockImplementation(
-      async (prefix: string) =>
-        [...store.keys()].filter((k) => k.startsWith(prefix))
-    );
-    vi.spyOn(GmailApi.prototype, "getThread").mockResolvedValue(declined);
-
-    await drainPendingRsvpsFn(host);
-
-    // Explicit false, not an omitted flag: omitting leaves the scoped-note
-    // trigger's unread standing, same convention as the live fold path.
-    expect(notes[0]).toMatchObject({ unread: false });
-  });
-
-  it("keeps the entry and archives nothing while the event is still missing", async () => {
-    const { host, store } = makeHost();
-    captureSaves(host, { noteId: null });
-    seedPending(host, store);
-
-    await drainPendingRsvpsFn(host);
-
-    expect(host.tools.integrations.archiveLinks).not.toHaveBeenCalled();
-    expect(store.has("pending-rsvp:rsvp-late")).toBe(true);
-  });
-
-  it("writes no note when the deferred response was a bare acceptance", async () => {
-    const { host, store } = makeHost();
-    const { notes } = captureSaves(host, { noteId: "N" });
-    seedPending(host, store, { partstat: "ACCEPTED" });
-
-    await drainPendingRsvpsFn(host);
-
-    expect(notes).toHaveLength(0);
-    // Still retracted: nothing was left for the standalone email thread to show.
-    expect(host.tools.integrations.archiveLinks).toHaveBeenCalledWith({
-      meta: { threadId: "rsvp-late" },
-    });
-    expect(store.has("pending-rsvp:rsvp-late")).toBe(false);
-  });
-
-  it("gives up on an entry older than the retry window", async () => {
-    const { host, store } = makeHost();
-    captureSaves(host, { noteId: "N" });
-    seedPending(host, store, {
-      firstSeen: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-    });
-
-    await drainPendingRsvpsFn(host);
-
-    expect(host.tools.integrations.archiveLinks).not.toHaveBeenCalled();
-    expect(store.has("pending-rsvp:rsvp-late")).toBe(false);
+    expect(notes[0]).toMatchObject({ deferUntilThread: true });
+    expect(links).toHaveLength(0);
   });
 });
 
