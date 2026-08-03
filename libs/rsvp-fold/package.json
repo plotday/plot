@@ -1,12 +1,5 @@
 {
-  "name": "@plotday/connector-google",
-  "plotTwistId": "6e9e441f-aeee-4142-a37b-62cfe79ac16d",
-  "displayName": "Gmail & Calendar",
-  "description": "Email, calendar, tasks, and contacts from your Google account.",
-  "category": "email",
-  "logoUrl": "https://api.iconify.design/logos/google-gmail.svg",
-  "publisher": "Plot",
-  "publisherUrl": "https://plot.day",
+  "name": "@plotday/rsvp-fold",
   "author": "Plot <team@plot.day> (https://plot.day)",
   "license": "MIT",
   "version": "0.1.0",
@@ -24,24 +17,19 @@
   "scripts": {
     "build": "tsc",
     "clean": "rm -rf dist",
-    "deploy": "plot deploy",
     "lint": "plot lint",
     "test": "vitest run",
     "test:watch": "vitest"
   },
-  "dependencies": {
-    "@plotday/google-contacts": "workspace:^",
-    "@plotday/rsvp-fold": "workspace:^",
-    "@plotday/twister": "workspace:^"
-  },
   "devDependencies": {
+    "@plotday/twister": "workspace:^",
     "typescript": "^5.9.3",
     "vitest": "^2.1.8"
   },
   "repository": {
     "type": "git",
     "url": "https://github.com/plotday/plot.git",
-    "directory": "connectors/google"
+    "directory": "libs/rsvp-fold"
   },
   "homepage": "https://plot.day",
   "bugs": {
@@ -50,11 +38,7 @@
   "keywords": [
     "plot",
     "connector",
-    "google",
-    "gmail",
     "calendar",
-    "tasks",
-    "contacts",
-    "messaging"
+    "rsvp"
   ]
 }

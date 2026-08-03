@@ -6,9 +6,27 @@
  * which the event thread already shows. Only the response itself and the
  * responder's personal note are new, so that is all these notes carry.
  */
-import type { CalendarReply } from "./gmail-api";
 
-const VERBS: Record<CalendarReply["partstat"], string> = {
+/**
+ * One attendee's response to a calendar invitation, in the shape the fold rule
+ * needs. Providers supply this from whatever they have — an iCalendar part, a
+ * provider-specific message type — so this library stays independent of any
+ * one of them.
+ */
+export type RsvpReply = {
+  partstat: "ACCEPTED" | "DECLINED" | "TENTATIVE";
+  /** Display name, when the provider gives one. */
+  attendeeName: string | null;
+  attendeeEmail: string;
+  /** The instance responded to; null when the response covers the whole series. */
+  occurrence: Date | null;
+  /** The occurrence was all-day — affects date formatting only. */
+  allDay: boolean;
+  /** The responder's personal note, when they wrote one. */
+  comment: string | null;
+};
+
+const VERBS: Record<RsvpReply["partstat"], string> = {
   DECLINED: "declined",
   ACCEPTED: "accepted",
   TENTATIVE: "tentatively accepted",
@@ -42,7 +60,7 @@ function blockquote(text: string): string {
  * response was to a single instance of a series, and appends the responder's
  * personal note as a blockquote when they wrote one.
  */
-export function composeRsvpNote(reply: CalendarReply): string {
+export function composeRsvpNote(reply: RsvpReply): string {
   const who = reply.attendeeName ?? reply.attendeeEmail;
   const verb = VERBS[reply.partstat];
   const where = reply.occurrence
@@ -70,7 +88,7 @@ export function composeRsvpNote(reply: CalendarReply): string {
  * which `hadPriorNonAccept` reports from connector-local storage.
  */
 export function shouldEmitRsvpNote(
-  reply: CalendarReply,
+  reply: RsvpReply,
   hadPriorNonAccept: boolean
 ): boolean {
   if (reply.partstat !== "ACCEPTED") return true;

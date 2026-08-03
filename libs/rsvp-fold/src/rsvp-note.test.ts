@@ -1,19 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import type { CalendarReply } from "./gmail-api";
 import { composeRsvpNote, shouldEmitRsvpNote, priorRsvpKey } from "./rsvp-note";
+import type { RsvpReply } from "./rsvp-note";
 
-function reply(overrides: Partial<CalendarReply> = {}): CalendarReply {
+function reply(overrides: Partial<RsvpReply> = {}): RsvpReply {
   return {
-    messageId: "m1",
-    uid: "uid-1@google.com",
     partstat: "DECLINED",
     attendeeName: "Beth Round",
     attendeeEmail: "beth@example.test",
     occurrence: null,
     allDay: false,
     comment: null,
-    sourceCreatedAt: new Date("2026-07-24T20:50:24Z"),
     ...overrides,
   };
 }

@@ -110,6 +110,9 @@ importers:
       '@plotday/google-contacts':
         specifier: workspace:^
         version: link:../../libs/google-contacts
+      '@plotday/rsvp-fold':
+        specifier: workspace:^
+        version: link:../../libs/rsvp-fold
       '@plotday/twister':
         specifier: workspace:^
         version: link:../../twister
@@ -301,6 +304,18 @@ importers:
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
+
+  libs/rsvp-fold:
+    devDependencies:
+      '@plotday/twister':
+        specifier: workspace:^
+        version: link:../../twister
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@25.0.3)
 
   scripts:
     devDependencies:

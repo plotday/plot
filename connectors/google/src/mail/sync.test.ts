@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { CreateLinkDraft, NewLinkWithNotes, Uuid } from "@plotday/twister";
+import { priorRsvpKey } from "@plotday/rsvp-fold";
 
 import {
   GmailApi,
@@ -20,7 +21,6 @@ import {
   REACTION_SEND_DELAY_MS,
   sendReactionEmailFn,
 } from "./sync";
-import { priorRsvpKey } from "./rsvp-note";
 
 /** Decode the base64url raw message the Gmail send API would receive. */
 function decodeRawMessage(b64url: string): string {

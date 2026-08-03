@@ -17,6 +17,7 @@
  * returns a descriptor and lets the caller own the scheduling.
  */
 import { enrichLinkContactsFromGoogle } from "@plotday/google-contacts";
+import { composeRsvpNote, priorRsvpKey, shouldEmitRsvpNote } from "@plotday/rsvp-fold";
 import {
   baseEmail,
   canonicalizeEmail,
@@ -70,7 +71,6 @@ import {
   type ClassifiedSendError,
   classifySendError,
 } from "./gmail-send-errors";
-import { composeRsvpNote, priorRsvpKey, shouldEmitRsvpNote } from "./rsvp-note";
 
 // ---------------------------------------------------------------------------
 // Persisted state shapes (shared with the connector)
