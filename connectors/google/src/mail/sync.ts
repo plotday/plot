@@ -1624,6 +1624,18 @@ async function saveTransformedThread(
         // guaranteed to land eventually, but only if the sweep that attaches
         // parked notes keeps working. A regression there loses the response
         // silently instead of leaving it visibly stranded in the inbox.
+        //
+        // The more likely way to lose a response, though, is not a sweep
+        // regression: it's a user who has this Gmail channel enabled but no
+        // synced calendar for these events — a calendar on another provider,
+        // or the Calendar channel disabled. In that case nothing ever
+        // produces a thread carrying `icaluid:<uid>`, the held note never
+        // resolves, and it is dropped once it ages out of the platform's
+        // retry window. That is an accepted trade-off, not an oversight: it
+        // replaced a previous fallback that kept the response visible as its
+        // own email thread and retried for longer. We chose to stop creating
+        // that email thread for responses-only conversations even at the
+        // cost of losing the response outright for calendar-less recipients.
         foldedMessageIds.add(reply.messageId);
         // Recorded regardless of `noteId`: the decision to emit is what this
         // bookkeeping tracks, and with deferUntilThread the platform now
