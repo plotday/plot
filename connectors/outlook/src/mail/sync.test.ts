@@ -538,6 +538,26 @@ describe("processConversationsFn — attendee responses fold onto the event", ()
     // non-acceptances — so a later repeat of this exact ACCEPTED is
     // recognised as already folded instead of re-emitting.
     expect(map.get(key)).toBe("ACCEPTED");
+
+    // A third pass re-delivers that same ACCEPTED response. This is the
+    // sequence the old store got wrong: it cleared its marker on every
+    // acceptance, so a repeated acceptance always looked unrecorded and
+    // would have re-emitted. The new store keeps the marker, so
+    // `alreadyFolded` recognises the repeat and no third note appears.
+    const acceptAgainMsg = rsvpMessage(
+      "msg-reversal-3",
+      "conv-reversal-3",
+      "meetingAccepted",
+      uid
+    );
+    mimeById.set("msg-reversal-3", rsvpMime(replyIcs("ACCEPTED", { uid })));
+    await processConversationsFn(
+      host,
+      [{ messages: [acceptAgainMsg], attachmentsByMessageId: new Map(), parentHeaders: null }],
+      false,
+      "inbox"
+    );
+    expect(notes).toHaveLength(2);
   });
 
   it("does not re-emit a note when the same conversation is processed again", async () => {

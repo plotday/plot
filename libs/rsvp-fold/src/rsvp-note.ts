@@ -132,13 +132,26 @@ export function alreadyFolded(
 /**
  * Storage key holding the last response actually folded onto the event thread
  * for one attendee on one event. Set on every response a connector emits a
- * note for — a bare acceptance leaves it unset because a bare acceptance
- * never gets a note (see {@link shouldEmitRsvpNote}).
+ * note for — never on one it suppresses. A bare acceptance leaves it unset
+ * ONLY when there was no prior non-acceptance, because that's the one case
+ * where no note is emitted (see {@link shouldEmitRsvpNote}); a bare
+ * acceptance that reverses a prior decline or tentative DOES get a note, and
+ * DOES set this key to `"ACCEPTED"` — that stored `"ACCEPTED"` is exactly
+ * what lets a later repeat of that same acceptance be recognised by
+ * {@link alreadyFolded} instead of re-emitted.
  *
  * The value serves two questions from the same marker: {@link isNonAcceptance}
  * reads it to tell whether an incoming acceptance is a genuine reversal, and
  * {@link alreadyFolded} reads it to tell whether an incoming response merely
  * repeats what this key already recorded.
+ *
+ * Call order matters and this library does not enforce it: read the stored
+ * marker, check {@link alreadyFolded} first, and only when that's false
+ * decide whether to emit via `shouldEmitRsvpNote(reply,
+ * isNonAcceptance(stored))`. Write the new partstat back with this key ONLY
+ * on the path that actually emits a note — never on the suppressed path,
+ * and never before deciding whether to emit, or the marker no longer
+ * reflects what the event thread carries.
  *
  * Not read from `schedule_contact`: the calendar product's own attendee sync
  * writes that same field from the event roster, so by the time an RSVP email is

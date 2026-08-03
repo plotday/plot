@@ -1137,6 +1137,19 @@ describe("processEmailThreadsFn — attendee responses fold onto the event", () 
     // non-acceptances — so a later repeat of this exact ACCEPTED is
     // recognised as already folded instead of re-emitting.
     expect(store.get(key)).toBe("ACCEPTED");
+
+    // A third pass re-delivers that same ACCEPTED response. This is the
+    // sequence the old store got wrong: it cleared its marker on every
+    // acceptance, so a repeated acceptance always looked unrecorded and
+    // would have re-emitted. The new store keeps the marker, so
+    // `alreadyFolded` recognises the repeat and no third note appears.
+    await processEmailThreadsFn(
+      host,
+      [rsvpThread("rsvp-accepted-again", replyIcs("ACCEPTED"))],
+      false,
+      "INBOX"
+    );
+    expect(notes).toHaveLength(2);
   });
 
   it("does not re-emit a note when the same conversation is processed again", async () => {
