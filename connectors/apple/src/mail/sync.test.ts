@@ -216,6 +216,44 @@ function daysAgo(days: number): Date {
   return new Date(Date.now() - days * DAY_MS);
 }
 
+/** A message carrying an inline text/calendar part at partNumber "2". */
+function calendarMessage(opts: {
+  uid: number;
+  messageId: string;
+  root: string;
+  date?: Date;
+}): ImapMessage {
+  return {
+    uid: opts.uid,
+    messageId: opts.messageId,
+    references: [opts.root],
+    subject: "Accepted: Weekly sync",
+    from: [{ address: "guest@example.test", name: "Sam Guest" }],
+    to: [{ address: "owner@example.test", name: "Owner" }],
+    date: opts.date ?? daysAgo(1),
+    flags: ["\\Seen"],
+    bodyText: "Sam Guest has accepted this invitation.",
+    attachments: [
+      { partNumber: "2", fileName: "attachment", mimeType: "text/calendar", size: 400, encoding: "7bit" },
+    ],
+  } as unknown as ImapMessage;
+}
+
+/** A message with no calendar part at all. */
+function plainMessage(opts: { uid: number; root: string }): ImapMessage {
+  return {
+    uid: opts.uid,
+    messageId: `<plain-${opts.uid}@example.test>`,
+    references: [opts.root],
+    subject: "Re: Weekly sync",
+    from: [{ address: "guest@example.test", name: "Sam Guest" }],
+    to: [{ address: "owner@example.test", name: "Owner" }],
+    date: daysAgo(1),
+    flags: ["\\Seen"],
+    bodyText: "See you there.",
+  } as unknown as ImapMessage;
+}
+
 /** The plan history floor most fixtures run under — inside the 30-day window,
  *  so `floor` and `recentSince` coincide and these tests exercise the merge
  *  rather than the window. The window itself is exercised by the tests that
@@ -1467,7 +1505,7 @@ describe("detectCalendarBundles", () => {
     const meta = metaFor(["invite@example.com"]);
     const changed = new Set<string>();
 
-    const bundles = await detectCalendarBundles(
+    const { bundles } = await detectCalendarBundles(
       host,
       "session-1",
       [{ ...m, mailbox: "INBOX" }],
@@ -1500,7 +1538,7 @@ describe("detectCalendarBundles", () => {
       knownEventUids: ["evt-known"],
     });
 
-    const bundles = await detectCalendarBundles(
+    const { bundles } = await detectCalendarBundles(
       host,
       "session-1",
       [{ ...m, mailbox: "INBOX" }],
@@ -1525,7 +1563,7 @@ describe("detectCalendarBundles", () => {
       },
     });
 
-    const bundles = await detectCalendarBundles(
+    const { bundles } = await detectCalendarBundles(
       host,
       "session-1",
       [{ ...m, mailbox: "INBOX" }],
@@ -1551,7 +1589,7 @@ describe("detectCalendarBundles", () => {
       },
     });
 
-    const bundles = await detectCalendarBundles(
+    const { bundles } = await detectCalendarBundles(
       host,
       "session-1",
       [{ ...m, mailbox: "INBOX" }],
@@ -1572,7 +1610,7 @@ describe("detectCalendarBundles", () => {
       },
     });
 
-    const bundles = await detectCalendarBundles(
+    const { bundles } = await detectCalendarBundles(
       host,
       "session-1",
       [{ ...m, mailbox: "INBOX" }],
@@ -1606,7 +1644,7 @@ describe("detectCalendarBundles", () => {
       },
     });
 
-    const bundles = await detectCalendarBundles(
+    const { bundles } = await detectCalendarBundles(
       host,
       "session-1",
       [
@@ -1628,7 +1666,7 @@ describe("detectCalendarBundles", () => {
     const m = msg({ uid: 56, messageId: "<plain@example.com>" });
     const { host, fetchAttachmentCalls } = bundleHost({});
 
-    const bundles = await detectCalendarBundles(
+    const { bundles } = await detectCalendarBundles(
       host,
       "session-1",
       [{ ...m, mailbox: "INBOX" }],
@@ -1650,7 +1688,7 @@ describe("detectCalendarBundles", () => {
     });
     const { host, fetchAttachmentCalls } = bundleHost({});
 
-    const bundles = await detectCalendarBundles(
+    const { bundles } = await detectCalendarBundles(
       host,
       "session-1",
       [{ ...m, mailbox: "INBOX" }],
@@ -1665,7 +1703,7 @@ describe("detectCalendarBundles", () => {
   it("returns an empty map for an empty message list (no I/O)", async () => {
     const { host, fetchAttachmentCalls } = bundleHost({});
 
-    const bundles = await detectCalendarBundles(host, "session-1", [], new Map(), new Set());
+    const { bundles } = await detectCalendarBundles(host, "session-1", [], new Map(), new Set());
 
     expect(fetchAttachmentCalls).toHaveLength(0);
     expect(bundles.size).toBe(0);
@@ -1685,7 +1723,7 @@ describe("detectCalendarBundles", () => {
       },
     });
 
-    const bundles = await detectCalendarBundles(
+    const { bundles } = await detectCalendarBundles(
       host,
       "session-1",
       [{ ...m, mailbox: SENT_BOX }],
@@ -1714,7 +1752,7 @@ describe("detectCalendarBundles", () => {
     const meta = metaFor(["cached@example.com"]);
     const merged: MailMessage[] = [{ ...m, mailbox: "INBOX" }];
 
-    const first = await detectCalendarBundles(host, "session-1", merged, meta, new Set());
+    const { bundles: first } = await detectCalendarBundles(host, "session-1", merged, meta, new Set());
     expect(first.get("cached@example.com")).toEqual({
       uid: "evt-cached",
       kind: "cancel",
@@ -1722,7 +1760,7 @@ describe("detectCalendarBundles", () => {
     });
     expect(fetchAttachmentCalls).toHaveLength(1);
 
-    const second = await detectCalendarBundles(host, "session-1", merged, meta, new Set());
+    const { bundles: second } = await detectCalendarBundles(host, "session-1", merged, meta, new Set());
     expect(second.get("cached@example.com")).toEqual({
       uid: "evt-cached",
       kind: "cancel",
@@ -1753,7 +1791,7 @@ describe("detectCalendarBundles", () => {
     });
     const meta = metaFor(["root-aged@example.com"]);
 
-    const first = await detectCalendarBundles(
+    const { bundles: first } = await detectCalendarBundles(
       host,
       "session-1",
       [
@@ -1773,7 +1811,7 @@ describe("detectCalendarBundles", () => {
     // Pass 2: only the in-window reply. Without the recorded decision the root
     // would silently un-bundle, flipping its primary `source` and creating a
     // duplicate link row.
-    const second = await detectCalendarBundles(
+    const { bundles: second } = await detectCalendarBundles(
       host,
       "session-1",
       [{ ...followUp, mailbox: "INBOX" }],
@@ -1800,16 +1838,102 @@ describe("detectCalendarBundles", () => {
     const meta = metaFor(["bare-cached@example.com"]);
     const merged: MailMessage[] = [{ ...m, mailbox: "INBOX" }];
 
-    const first = await detectCalendarBundles(host, "session-1", merged, meta, new Set());
+    const { bundles: first } = await detectCalendarBundles(host, "session-1", merged, meta, new Set());
     expect(first.has("bare-cached@example.com")).toBe(false);
     expect(fetchAttachmentCalls).toHaveLength(1);
     // "Evaluated, doesn't bundle" must stay distinguishable from "never
     // evaluated", hence the wrapping object.
     expect(meta.get("bare-cached@example.com")!.bundle).toEqual({ classified: null });
 
-    const second = await detectCalendarBundles(host, "session-1", merged, meta, new Set());
+    const { bundles: second } = await detectCalendarBundles(host, "session-1", merged, meta, new Set());
     expect(second.has("bare-cached@example.com")).toBe(false);
     expect(fetchAttachmentCalls).toHaveLength(1); // reused the recorded decision
+  });
+
+  it("still examines a NEW calendar message in a root whose bundle decision is already cached", async () => {
+    // The invite was ingested on an earlier pass and cached as "no bundle"
+    // (REQUEST/SEQUENCE 0). A reply then threads onto that same root. Before
+    // this gate split, the cache hit short-circuited the whole root and the
+    // reply's ICS was never fetched at all.
+    const replyIcs = ics({ method: "REPLY", uid: "evt-cached" });
+    const reply = calendarMessage({
+      uid: 51,
+      messageId: "<reply-1@example.test>",
+      root: "<invite@example.test>",
+    });
+    const { host, fetchAttachmentCalls } = buildFakeHost({
+      appleId: "owner@example.test",
+      mailboxes: [box("INBOX", [reply])],
+      attachments: { [buildAttachmentRef("INBOX", 51, "2")]: icsBytes(replyIcs) },
+    });
+    const fixtureMessages: MailMessage[] = [{ ...reply, mailbox: "INBOX" }];
+
+    const meta = new Map<string, ThreadMeta>([
+      ["invite@example.test", { channelId: "INBOX", bundle: { classified: null } }],
+    ]);
+    const changed = new Set<string>();
+
+    await detectCalendarBundles(host, "session-1", fixtureMessages, meta, changed);
+
+    expect(fetchAttachmentCalls).toHaveLength(1);
+    expect(meta.get("invite@example.test")!.seenIcs).toEqual(["reply-1@example.test"]);
+    expect(changed.has("invite@example.test")).toBe(true);
+  });
+
+  it("does not re-fetch a calendar part it has already examined", async () => {
+    const reply = calendarMessage({
+      uid: 51,
+      messageId: "<reply-1@example.test>",
+      root: "<invite@example.test>",
+    });
+    const { host, fetchAttachmentCalls } = buildFakeHost({
+      appleId: "owner@example.test",
+      mailboxes: [box("INBOX", [reply])],
+      attachments: {}, // a fetch would throw on lookup miss — that IS the assertion
+    });
+    const fixtureMessages: MailMessage[] = [{ ...reply, mailbox: "INBOX" }];
+
+    const meta = new Map<string, ThreadMeta>([
+      [
+        "invite@example.test",
+        { channelId: "INBOX", bundle: { classified: null }, seenIcs: ["reply-1@example.test"] },
+      ],
+    ]);
+
+    await detectCalendarBundles(host, "session-1", fixtureMessages, meta, new Set());
+
+    expect(fetchAttachmentCalls).toHaveLength(0);
+  });
+
+  it("keeps serving the cached bundle decision — a classification must never flip", async () => {
+    const plain = plainMessage({ uid: 60, root: "<invite@example.test>" });
+    const { host } = buildFakeHost({
+      appleId: "owner@example.test",
+      mailboxes: [box("INBOX", [plain])],
+      knownEventUids: ["evt-cached"],
+    });
+    const fixtureMessages: MailMessage[] = [{ ...plain, mailbox: "INBOX" }];
+
+    const meta = new Map<string, ThreadMeta>([
+      [
+        "invite@example.test",
+        { channelId: "INBOX", bundle: { classified: { uid: "evt-cached", kind: "cancel" } } },
+      ],
+    ]);
+
+    const { bundles } = await detectCalendarBundles(
+      host,
+      "session-1",
+      fixtureMessages,
+      meta,
+      new Set()
+    );
+
+    expect(bundles.get("invite@example.test")).toEqual({
+      uid: "evt-cached",
+      kind: "cancel",
+      eventKnown: true,
+    });
   });
 });
 
@@ -1839,10 +1963,12 @@ describe("mailSync — calendar thread bundling end-to-end", () => {
     expect("title" in link).toBe(false);
     expect(stored.get("cancel-email:evt-e2e")).toBeTruthy();
     // The decision is persisted on the root's single metadata document,
-    // alongside its home channel.
+    // alongside its home channel and the note keys whose calendar part has
+    // been read (what keeps a later pass from re-fetching the same ICS).
     expect(stored.get("thread:cancel-e2e@example.com")).toEqual({
       channelId: "mail:INBOX",
       bundle: { classified: { uid: "evt-e2e", kind: "cancel" } },
+      seenIcs: ["cancel-e2e@example.com"],
     });
   });
 

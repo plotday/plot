@@ -12,6 +12,7 @@ import type { MailboxCursor, MailHost, MailSyncState } from "./mail-host";
 import {
   mailSource,
   messageKey,
+  noteKeyOf,
   rootMessageId,
   transformMessages,
   type MailMessage,
@@ -74,7 +75,26 @@ export type ThreadMeta = {
    * distinguishable (see `detectCalendarBundles`'s CACHING doc).
    */
   bundle?: { classified: ClassifiedICS | null };
+  /**
+   * Note keys (see `noteKeyOf`) whose calendar part has already been fetched
+   * and examined. Distinct from `bundle`, which is a per-ROOT decision that
+   * must never flip: this is per-MESSAGE, and exists so a root whose bundling
+   * question is already settled still looks at messages that arrived since.
+   *
+   * Required, not an optimisation. `alreadyFolded` stops a duplicate note but
+   * not the IMAP fetch, and inside the 30-day rescan window an RSVP would
+   * otherwise be re-fetched on every pass — roughly 2,900 times, at up to two
+   * round-trips each, against a ~1,000-request execution budget.
+   *
+   * Capped at SEEN_ICS_MAX, oldest dropped. Growth is bounded in practice by
+   * how many responses one meeting draws, but this document is rewritten every
+   * pass and an unbounded array is not worth the tail risk.
+   */
+  seenIcs?: string[];
 };
+
+/** Cap on `ThreadMeta.seenIcs`; see its doc. */
+const SEEN_ICS_MAX = 200;
 
 function threadMetaKey(rootId: string): string {
   return `thread:${rootId}`;
@@ -250,6 +270,20 @@ export async function reconcileTodoFlags(
  *    on file. Persisting the decision once means the classification can never
  *    flip after the fact.
  *
+ * That cache short-circuits the per-ROOT decision ONLY. Per-MESSAGE
+ * examination continues on every pass: a root whose bundling question is
+ * already settled still fetches calendar parts it has not read before
+ * (tracked in `ThreadMeta.seenIcs`). This matters because a root is the first
+ * `References` entry and calendar systems thread response notifications onto
+ * the invitation's Message-ID — so those later messages arrive on a root that
+ * was settled by the pass which ingested the invitation, and gating the whole
+ * root on the cache would mean never looking at them.
+ *
+ * Returns the per-root `bundles` map plus `foldedNoteKeys`: note keys of
+ * messages this function consumed itself, so the caller can leave them out of
+ * the thread's notes. Nothing is consumed yet — the set is always empty — but
+ * callers are written against the final shape.
+ *
  * The caller owns the store I/O: `meta` arrives pre-loaded (one read per root
  * for the pass, shared with home-channel resolution) and is MUTATED in place
  * with any new decision, with the root added to `changed` so the caller
@@ -267,8 +301,9 @@ export async function detectCalendarBundles(
   messages: MailMessage[],
   meta: Map<string, ThreadMeta>,
   changed: Set<string>
-): Promise<Map<string, CalendarBundle>> {
+): Promise<{ bundles: Map<string, CalendarBundle>; foldedNoteKeys: Set<string> }> {
   const bundles = new Map<string, CalendarBundle>();
+  const foldedNoteKeys = new Set<string>();
   let knownUids: Set<string> | null = null;
   const resolveEventKnown = async (uid: string): Promise<boolean> => {
     if (knownUids === null) knownUids = await host.knownEventUids();
@@ -276,11 +311,22 @@ export async function detectCalendarBundles(
   };
 
   for (const [root, msgs] of groupByRoot(messages).entries()) {
-    // Reuse an earlier pass's decision before doing anything else — see the
-    // CACHING doc above for why this must not be gated behind "does THIS
-    // pass have a calendar part" (the ICS-bearing message may have aged out
-    // of the window while the thread itself is still active).
-    const persisted = meta.get(root)?.bundle;
+    const entry = meta.get(root);
+
+    // The cached BUNDLE decision is served unchanged — see the CACHING doc:
+    // a classification that flips changes `sources`' sorted-minimum primary
+    // source and makes `upsert_link` create a second link row. It is consulted
+    // before anything else, so a root whose ICS-bearing message has aged out
+    // of the window keeps its decision even when this pass's messages carry
+    // no calendar part at all.
+    //
+    // What is deliberately NOT skipped is the per-message scan below. A root
+    // is the first `References` entry, and calendar systems thread response
+    // notifications onto the invite's Message-ID — so the root carrying an
+    // RSVP is usually the invite's root, already cached as "no bundle" from
+    // the pass that ingested the invite. Returning early here (as this code
+    // used to) means an RSVP is never looked at.
+    const persisted = entry?.bundle;
     if (persisted) {
       if (persisted.classified) {
         bundles.set(root, {
@@ -288,25 +334,48 @@ export async function detectCalendarBundles(
           eventKnown: await resolveEventKnown(persisted.classified.uid),
         });
       }
-      continue;
     }
 
-    // Not yet classified. Cheap in-memory check (no I/O) — only
-    // calendar-bearing threads ever touch IMAP below, and only those get a
-    // decision recorded (a thread with no calendar part yet is simply
-    // re-checked next pass in case one arrives later).
-    const calendarMsgs = msgs.filter((m) =>
-      (m.attachments ?? []).some((a) => isCalendarAttachment(a.mimeType))
+    // Fetch every calendar part not yet examined. The cheap in-memory filter
+    // keeps threads with no calendar part off IMAP entirely, and `seenIcs`
+    // keeps a part that has already been read off it on every later pass
+    // within the rescan window.
+    const seen = new Set(entry?.seenIcs ?? []);
+    const icsByKey = new Map<string, string>();
+    const unexamined = msgs.filter(
+      (m) =>
+        (m.attachments ?? []).some((a) => isCalendarAttachment(a.mimeType)) &&
+        !seen.has(noteKeyOf(m))
     );
-    if (calendarMsgs.length === 0) continue;
 
-    let classified: ClassifiedICS | null = null;
-    for (const m of calendarMsgs) {
+    for (const m of unexamined) {
       const part = (m.attachments ?? []).find((a) => isCalendarAttachment(a.mimeType))!;
-
       await host.imap.selectMailbox(session, m.mailbox);
       const bytes = await host.imap.fetchAttachment(session, m.uid, part.partNumber);
       const ics = new TextDecoder("utf-8").decode(bytes);
+      icsByKey.set(noteKeyOf(m), ics);
+      seen.add(noteKeyOf(m));
+    }
+
+    if (entry && unexamined.length > 0) {
+      entry.seenIcs = [...seen].slice(-SEEN_ICS_MAX);
+      changed.add(root);
+    }
+
+    // Everything past here is the ONE-TIME bundling classification; a root
+    // that already has a decision keeps it.
+    if (persisted) continue;
+
+    // Nothing to classify from: either no calendar part at all, or every part
+    // was read on an earlier pass (in which case a decision was recorded then
+    // and `persisted` already sent us round). Leave the root undecided so a
+    // part arriving on a later pass is still evaluated.
+    if (icsByKey.size === 0) continue;
+
+    let classified: ClassifiedICS | null = null;
+    for (const m of msgs) {
+      const ics = icsByKey.get(noteKeyOf(m));
+      if (!ics) continue;
       classified = classifyICS(ics);
       if (!classified) continue; // bare invite or RSVP — check the thread's other messages
 
@@ -318,7 +387,6 @@ export async function detectCalendarBundles(
 
     // Record the decision — including explicit "no bundle" — so this root is
     // never re-evaluated on a later pass (see the caching doc above).
-    const entry = meta.get(root);
     if (entry) {
       entry.bundle = { classified };
       changed.add(root);
@@ -328,7 +396,7 @@ export async function detectCalendarBundles(
       bundles.set(root, { ...classified, eventKnown: await resolveEventKnown(classified.uid) });
     }
   }
-  return bundles;
+  return { bundles, foldedNoteKeys };
 }
 
 /** How one mailbox is being read this pass. */
@@ -619,6 +687,11 @@ export async function mailSync(
       nextMeta.set(root, {
         channelId,
         ...(prev?.bundle ? { bundle: prev.bundle } : {}),
+        // Carried forward, like `bundle`: this map is rebuilt from scratch
+        // every pass, so anything not copied here is lost, and a dropped
+        // `seenIcs` means every calendar part in the rescan window is
+        // re-fetched on every poll.
+        ...(prev?.seenIcs ? { seenIcs: prev.seenIcs } : {}),
       });
       if (!prev || prev.channelId !== channelId) changedMeta.add(root);
     }
@@ -634,7 +707,7 @@ export async function mailSync(
       initialRoots.add(root);
     }
 
-    const calendarBundles = await detectCalendarBundles(
+    const { bundles: calendarBundles } = await detectCalendarBundles(
       host,
       session,
       merged,

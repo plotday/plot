@@ -84,8 +84,13 @@ function compareMessages(a: MailMessage, b: MailMessage): number {
   return a.uid - b.uid;
 }
 
-/** The note key for one message: its stripped Message-ID, else a uid fallback. */
-function noteKeyOf(m: MailMessage): string {
+/**
+ * Stable per-message identity: the note `key` a message's note is written
+ * under. Exported because `sync.ts` records examined calendar parts and folded
+ * RSVPs under the SAME identity — a set keyed differently would never match
+ * the notes it is meant to filter.
+ */
+export function noteKeyOf(m: MailMessage): string {
   return m.messageId ? stripAngle(m.messageId) : `uid-${m.uid}`;
 }
 
