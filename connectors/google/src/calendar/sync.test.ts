@@ -11,6 +11,7 @@ import type { Thread } from "@plotday/twister";
 import type { CalendarSyncHost } from "./sync";
 import {
   buildEventSources,
+  calendarHistoryFloor,
   cancelEventWithApiFn,
   cancellationWasSelfInitiatedFn,
   extractRSVPParamsFn,
@@ -2146,5 +2147,20 @@ describe("processCalendarEventsFn — initial-sync occurrence round-trips", () =
     expect(large.calls.clearMany).toBe(1);
     // The whole page costs a handful of round-trips, not one per occurrence.
     expect(totalRoundTrips(large.calls)).toBeLessThan(10);
+  });
+});
+
+describe("calendarHistoryFloor", () => {
+  it("is exactly 366 days before now, so annual events stay in window", () => {
+    const now = new Date("2026-08-03T12:00:00.000Z");
+    const floor = calendarHistoryFloor(now);
+    const days = (now.getTime() - floor.getTime()) / (24 * 60 * 60 * 1000);
+    expect(days).toBe(366);
+  });
+
+  it("keeps an event dated exactly one year ago inside the window", () => {
+    const now = new Date("2026-08-03T12:00:00.000Z");
+    const oneYearAgo = new Date("2025-08-03T12:00:00.000Z");
+    expect(oneYearAgo >= calendarHistoryFloor(now)).toBe(true);
   });
 });

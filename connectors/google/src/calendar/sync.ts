@@ -283,17 +283,15 @@ export async function firstSeenAtFn(
 }
 
 /**
- * Start of the history window the initial backfill imports: Jan 1 of two
- * calendar years ago (mirrors the `historyMin` computed when the quick pass
- * transitions to the full pass). Events scheduled before this were never
- * imported, so a cancellation for one can only materialise a phantom thread.
+ * How far back the initial backfill imports: 366 days — a year and a day, so an
+ * annual event is always inside the window. Events scheduled before this were
+ * never imported, so a cancellation for one can only materialise a phantom
+ * thread (see `cancellationIsForUnimportedEventFn`).
  */
+export const CALENDAR_HISTORY_DAYS = 366;
+
 export function calendarHistoryFloor(now: Date = new Date()): Date {
-  const floor = new Date(now);
-  floor.setFullYear(floor.getFullYear() - 2);
-  floor.setMonth(0, 1);
-  floor.setHours(0, 0, 0, 0);
-  return floor;
+  return new Date(now.getTime() - CALENDAR_HISTORY_DAYS * 24 * 60 * 60 * 1000);
 }
 
 /**
