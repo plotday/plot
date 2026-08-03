@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   classifyOutlookCalendar,
   conversationSource,
@@ -15,6 +15,8 @@ import {
   type GraphHeader,
   type GraphMessage,
 } from "./graph-mail-api";
+
+afterEach(() => vi.unstubAllGlobals());
 
 const msg = (over: Partial<GraphMessage>): GraphMessage => ({
   id: "id-1",
@@ -285,21 +287,39 @@ describe("GraphMailApi queries", () => {
     );
   });
 
-  it("getMimeContent requests $value and returns the raw text (not JSON-parsed)", async () => {
-    const calls: Array<{ method: string; url: string }> = [];
-    const api = new GraphMailApi("tok");
-    api.call = async (method: string, url: string) => {
-      calls.push({ method, url });
-      return "MIME-Version: 1.0\r\nFrom: a@b.c\r\n\r\nbody";
-    };
-    const result = await api.getMimeContent("msg-1");
-    expect(calls).toEqual([
-      {
-        method: "GET",
-        url: "https://graph.microsoft.com/v1.0/me/messages/msg-1/$value",
-      },
-    ]);
-    expect(result).toBe("MIME-Version: 1.0\r\nFrom: a@b.c\r\n\r\nbody");
+  it("getMimeContent requests $value and returns the raw MIME text intact", async () => {
+    // Exercises the REAL call() implementation (fetch is mocked, call() is
+    // not) — a raw MIME body is never valid JSON, so this only passes if
+    // call()'s `raw` branch actually returns response.text() instead of
+    // falling through to JSON.parse(text), and if getMimeContent actually
+    // threads `raw: true` through to call(). A stubbed call() (as the
+    // other tests in this file use for asserting request shape) can't
+    // catch either regression, since it never runs call()'s body at all.
+    const rawMime =
+      "MIME-Version: 1.0\r\nFrom: a@b.c\r\nContent-Type: text/calendar; method=REPLY\r\n\r\nBEGIN:VCALENDAR\r\nEND:VCALENDAR";
+    const fetchMock = vi.fn(async (input: string | URL) => {
+      expect(String(input)).toBe(
+        "https://graph.microsoft.com/v1.0/me/messages/msg-1/$value"
+      );
+      // Deliberately NOT valid JSON — proves call() didn't JSON.parse it.
+      expect(() => JSON.parse(rawMime)).toThrow();
+      return new Response(rawMime, { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await new GraphMailApi("tok").getMimeContent("msg-1");
+
+    expect(result).toBe(rawMime);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("getMimeContent returns null on 404 (message deleted upstream)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("gone", { status: 404 }))
+    );
+    const result = await new GraphMailApi("tok").getMimeContent("msg-1");
+    expect(result).toBeNull();
   });
 });
 

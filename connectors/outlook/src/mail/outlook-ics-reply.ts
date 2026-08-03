@@ -88,6 +88,13 @@ function decodeBody(part: MimePart): string {
  * attachment when both are present. Returns `null` when the message carries
  * neither (not a meeting response at all) or when the calendar part itself
  * doesn't parse as a reply (see `parseIcsReply`).
+ *
+ * `fallback.email` is currently unused — only `.name` reaches
+ * `parseIcsReply`, which deliberately has no email fallback (Task 3's
+ * `IcsReplyFallback`): an `ATTENDEE` line with no resolvable address is
+ * dropped rather than misattributed to whoever merely delivered the
+ * notification. `.email` is accepted here anyway so a caller can pass the
+ * message's `From` (name + address) straight through without destructuring.
  */
 export function extractOutlookReply(
   mime: string,

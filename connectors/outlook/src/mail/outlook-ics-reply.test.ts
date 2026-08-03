@@ -323,4 +323,29 @@ describe("extractOutlookReply", () => {
     const mime = plainMessage();
     expect(extractOutlookReply(mime, FALLBACK)).toBeNull();
   });
+
+  it("degrades safely (returns null, does not throw) on malformed MIME: a multipart Content-Type with no boundary= parameter", () => {
+    const mime = [
+      "MIME-Version: 1.0",
+      "From: Beth Round <beth@example.test>",
+      "Content-Type: multipart/mixed",
+      "",
+      "whatever body — there is no boundary to split on",
+    ].join(CRLF);
+    expect(() => extractOutlookReply(mime, FALLBACK)).not.toThrow();
+    expect(extractOutlookReply(mime, FALLBACK)).toBeNull();
+  });
+
+  it("degrades safely (returns null, does not throw) on a truncated multipart body (no closing boundary, no parts at all)", () => {
+    const mime = [
+      "MIME-Version: 1.0",
+      "From: Beth Round <beth@example.test>",
+      'Content-Type: multipart/mixed; boundary="cut_off_boundary"',
+      "",
+      "the connection dropped mid-download and this body was never a real",
+      "multipart payload — no --cut_off_boundary delimiter appears anywhere",
+    ].join(CRLF);
+    expect(() => extractOutlookReply(mime, FALLBACK)).not.toThrow();
+    expect(extractOutlookReply(mime, FALLBACK)).toBeNull();
+  });
 });
