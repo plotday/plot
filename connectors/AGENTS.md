@@ -712,7 +712,7 @@ Add to `pnpm-workspace.yaml` if not already covered by a glob.
 
 Every directory under `connectors/` is a deployable connector. Shared code that isn't a connection
 in its own right lives in `../libs/` — currently `@plotday/google-contacts` (contact enrichment
-under a shared Google auth) and `@plotday/email-classifier`.
+under a shared Google auth).
 
 **Composite connectors** (`google/`, `outlook/`) offer several products under one OAuth grant. Each
 product's sync lives in its own subdirectory of the connector's `src/` — `google/src/{mail,calendar,tasks}`,

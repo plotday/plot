@@ -6,7 +6,7 @@ import type {
   NewContact,
   NewLinkWithNotes,
 } from "@plotday/twister/plot";
-import { isNoReplySender } from "@plotday/email-classifier";
+import { isNoReplySender } from "@plotday/twister/signals";
 import { stripQuotedReply } from "./email-parsing";
 
 export type GraphRecipient = {

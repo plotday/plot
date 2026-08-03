@@ -1228,8 +1228,8 @@ type NewContactBase = {
    * notify@payments.interac.ca, which puts a different person's name on every
    * message. When two different names are seen for such an address, the
    * runtime suppresses its name and it displays as the email address instead.
-   * Connectors set this from the email classifier (isNoReplySender). Omitted ⇒
-   * treated as false (normal identity trust).
+   * Connectors set this from `isNoReplySender` in the signals entry point.
+   * Omitted ⇒ treated as false (normal identity trust).
    */
   automated?: boolean;
   /**
