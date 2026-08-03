@@ -98,9 +98,47 @@ export function shouldEmitRsvpNote(
 }
 
 /**
- * Storage key holding an outstanding decline/tentative for one attendee on one
- * event. Written when such a response is folded, cleared when that attendee
- * later accepts — so the store only ever holds unresolved non-acceptances.
+ * Whether a stored fold marker represents an outstanding non-acceptance — a
+ * decline or a tentative the attendee has not since reversed.
+ *
+ * Pass the result as `shouldEmitRsvpNote`'s `hadPriorNonAccept`. Reading the
+ * VALUE rather than testing for presence is what lets one marker serve both
+ * this question and {@link alreadyFolded}.
+ */
+export function isNonAcceptance(stored: string | null | undefined): boolean {
+  return stored === "DECLINED" || stored === "TENTATIVE";
+}
+
+/**
+ * Whether this exact response has already been folded onto the event thread.
+ *
+ * Re-emitting a note the thread already carries is not harmless: the note
+ * upserts by key, but its unread intent is applied again and marks the thread
+ * unread for every recipient but the author — so a recipient who has since read
+ * the thread sees it go unread again for no new information. Providers re-deliver
+ * the same response routinely (a mail subscription that fires on `updated`, a
+ * re-sync, a webhook replay), so this must be checked before emitting.
+ *
+ * Compares the stored marker against the incoming `partstat`, so a genuine
+ * CHANGE of response (decline then accept) is not suppressed.
+ */
+export function alreadyFolded(
+  stored: string | null | undefined,
+  reply: RsvpReply
+): boolean {
+  return stored === reply.partstat;
+}
+
+/**
+ * Storage key holding the last response actually folded onto the event thread
+ * for one attendee on one event. Set on every response a connector emits a
+ * note for — a bare acceptance leaves it unset because a bare acceptance
+ * never gets a note (see {@link shouldEmitRsvpNote}).
+ *
+ * The value serves two questions from the same marker: {@link isNonAcceptance}
+ * reads it to tell whether an incoming acceptance is a genuine reversal, and
+ * {@link alreadyFolded} reads it to tell whether an incoming response merely
+ * repeats what this key already recorded.
  *
  * Not read from `schedule_contact`: the calendar product's own attendee sync
  * writes that same field from the event roster, so by the time an RSVP email is

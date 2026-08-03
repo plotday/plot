@@ -1132,8 +1132,32 @@ describe("processEmailThreadsFn — attendee responses fold onto the event", () 
     // Two notes: the decline, then the reversal.
     expect(notes).toHaveLength(2);
     expect(notes[1]).toMatchObject({ content: "Beth Round accepted." });
-    // The outstanding non-acceptance is resolved, so the key is gone.
-    expect(store.has(key)).toBe(false);
+    // The key now records the last folded response for every emitted
+    // response, including an acceptance — not just outstanding
+    // non-acceptances — so a later repeat of this exact ACCEPTED is
+    // recognised as already folded instead of re-emitting.
+    expect(store.get(key)).toBe("ACCEPTED");
+  });
+
+  it("does not re-emit a note when the same conversation is processed again", async () => {
+    const { host } = makeHost();
+    const { notes, links } = captureSaves(host);
+    const thread = rsvpThread("rsvp-reprocess", replyIcs("DECLINED"));
+
+    await processEmailThreadsFn(host, [thread], false, "INBOX");
+    expect(notes).toHaveLength(1);
+
+    // Gmail's own history-based incremental sync can redeliver the same
+    // notification (a history replay, an at-least-once webhook) — this is
+    // the routine case, not a rare replay.
+    await processEmailThreadsFn(host, [thread], false, "INBOX");
+
+    // No second note: re-emitting one would re-apply its unread intent and
+    // drag the organiser's event thread back to unread for no new
+    // information. The message is still dropped from the mail side, though —
+    // no standalone email thread appears for it either time.
+    expect(notes).toHaveLength(1);
+    expect(links).toHaveLength(0);
   });
 
   it("does not let a decline on one occurrence suppress an acceptance on another", async () => {

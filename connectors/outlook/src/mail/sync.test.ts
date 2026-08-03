@@ -533,8 +533,39 @@ describe("processConversationsFn — attendee responses fold onto the event", ()
     // Two notes: the decline, then the reversal.
     expect(notes).toHaveLength(2);
     expect(notes[1]).toMatchObject({ content: "Beth Round accepted." });
-    // The outstanding non-acceptance is resolved, so the key is gone.
-    expect(map.has(key)).toBe(false);
+    // The key now records the last folded response for every emitted
+    // response, including an acceptance — not just outstanding
+    // non-acceptances — so a later repeat of this exact ACCEPTED is
+    // recognised as already folded instead of re-emitting.
+    expect(map.get(key)).toBe("ACCEPTED");
+  });
+
+  it("does not re-emit a note when the same conversation is processed again", async () => {
+    const { host } = makeFoldHost();
+    const { notes, links } = captureSaves(host);
+    const uid = "uid-rsvp-reprocess@example.test";
+    const msg = rsvpMessage("msg-reprocess", "conv-reprocess", "meetingDeclined", uid);
+    mimeById.set("msg-reprocess", rsvpMime(replyIcs("DECLINED", { uid })));
+    const conversation = {
+      messages: [msg],
+      attachmentsByMessageId: new Map(),
+      parentHeaders: null,
+    };
+
+    await processConversationsFn(host, [conversation], false, "inbox");
+    expect(notes).toHaveLength(1);
+
+    // Graph's subscription fires on `updated` as well as `created`, and the
+    // drain re-fetches the whole conversation for any notified message —
+    // this is the routine case, not a rare replay.
+    await processConversationsFn(host, [conversation], false, "inbox");
+
+    // No second note: re-emitting one would re-apply its unread intent and
+    // drag the organiser's event thread back to unread for no new
+    // information. The message is still dropped from the mail side, though —
+    // no standalone email thread appears for it either time.
+    expect(notes).toHaveLength(1);
+    expect(links).toHaveLength(0);
   });
 
   it("does not let a decline on one occurrence suppress an acceptance on another", async () => {
@@ -819,37 +850,4 @@ describe("processConversationsFn — attendee responses fold onto the event", ()
     expect(notes[0]).toMatchObject({ thread: { source: `icaluid:${goodUid}` } });
   });
 
-  it("does not read prior state for a decline, a tentative, or a commented acceptance", async () => {
-    const { host } = makeFoldHost();
-    captureSaves(host);
-    const getSpy = host.get as ReturnType<typeof vi.fn>;
-
-    const shapes: Array<{
-      partstat: "DECLINED" | "TENTATIVE" | "ACCEPTED";
-      meetingMessageType: "meetingDeclined" | "meetingTentativelyAccepted" | "meetingAccepted";
-      comment?: string;
-    }> = [
-      { partstat: "DECLINED", meetingMessageType: "meetingDeclined" },
-      { partstat: "TENTATIVE", meetingMessageType: "meetingTentativelyAccepted" },
-      { partstat: "ACCEPTED", meetingMessageType: "meetingAccepted", comment: "Sounds good" },
-    ];
-
-    for (const shape of shapes) {
-      getSpy.mockClear();
-      const uid = `uid-no-prior-read-${shape.partstat}@example.test`;
-      const msgId = `msg-no-prior-read-${shape.partstat}`;
-      const msg = rsvpMessage(msgId, `conv-no-prior-read-${shape.partstat}`, shape.meetingMessageType, uid);
-      mimeById.set(msgId, rsvpMime(replyIcs(shape.partstat, { uid, comment: shape.comment })));
-
-      await processConversationsFn(
-        host,
-        [{ messages: [msg], attachmentsByMessageId: new Map(), parentHeaders: null }],
-        false,
-        "inbox"
-      );
-
-      const priorKey = priorRsvpKey(uid, "beth@example.test", null);
-      expect(getSpy).not.toHaveBeenCalledWith(priorKey);
-    }
-  });
 });

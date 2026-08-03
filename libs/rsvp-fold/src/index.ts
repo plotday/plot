@@ -1,5 +1,7 @@
 export {
+  alreadyFolded,
   composeRsvpNote,
+  isNonAcceptance,
   shouldEmitRsvpNote,
   priorRsvpKey,
   type RsvpReply,

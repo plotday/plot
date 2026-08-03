@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { composeRsvpNote, shouldEmitRsvpNote, priorRsvpKey } from "./rsvp-note";
+import {
+  alreadyFolded,
+  composeRsvpNote,
+  isNonAcceptance,
+  shouldEmitRsvpNote,
+  priorRsvpKey,
+} from "./rsvp-note";
 import type { RsvpReply } from "./rsvp-note";
 
 function reply(overrides: Partial<RsvpReply> = {}): RsvpReply {
@@ -104,6 +110,31 @@ describe("shouldEmitRsvpNote", () => {
     expect(shouldEmitRsvpNote(reply({ partstat: "ACCEPTED", comment: "" }), false)).toBe(
       false
     );
+  });
+});
+
+describe("alreadyFolded", () => {
+  it("suppresses a repeat of the same response", () => {
+    expect(alreadyFolded("DECLINED", reply({ partstat: "DECLINED" }))).toBe(true);
+    expect(alreadyFolded("ACCEPTED", reply({ partstat: "ACCEPTED" }))).toBe(true);
+  });
+  it("does not suppress a changed response", () => {
+    expect(alreadyFolded("DECLINED", reply({ partstat: "ACCEPTED" }))).toBe(false);
+    expect(alreadyFolded("ACCEPTED", reply({ partstat: "DECLINED" }))).toBe(false);
+  });
+  it("does not suppress when nothing was ever folded", () => {
+    expect(alreadyFolded(null, reply({ partstat: "DECLINED" }))).toBe(false);
+    expect(alreadyFolded(undefined, reply({ partstat: "ACCEPTED" }))).toBe(false);
+  });
+});
+
+describe("isNonAcceptance", () => {
+  it("is true only for a decline or a tentative", () => {
+    expect(isNonAcceptance("DECLINED")).toBe(true);
+    expect(isNonAcceptance("TENTATIVE")).toBe(true);
+    expect(isNonAcceptance("ACCEPTED")).toBe(false);
+    expect(isNonAcceptance(null)).toBe(false);
+    expect(isNonAcceptance(undefined)).toBe(false);
   });
 });
 
