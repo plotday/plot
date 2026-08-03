@@ -253,6 +253,17 @@ export type TransformCtx = {
    * `@plotday/twister/plot`.
    */
   calendarBundles?: Map<string, CalendarBundle>;
+  /**
+   * Note keys whose messages were folded onto a calendar event's thread by
+   * `sync.ts`'s `detectCalendarBundles`. Their notes are dropped here so an
+   * attendee response does not ALSO appear as ordinary mail.
+   *
+   * Filtered at the NOTES level rather than by removing the messages from the
+   * input: `allCopies` drives the Sent-only rule and dedupe, and removing an
+   * inbound response from it could make a mixed thread look Sent-only and
+   * change its read-state handling.
+   */
+  foldedNoteKeys?: Set<string>;
 };
 
 function toContact(a: ImapAddress): NewContact {
@@ -386,25 +397,31 @@ export function transformMessages(
       }
     }
 
-    const notes = msgs.map((m) => {
-      const key = noteKeyOf(m);
-      const body = bodyOf(m);
-      const from = m.from && m.from[0] ? m.from[0] : null;
-      const isOwner = from?.address.toLowerCase() === ownEmail;
-      const actions = attachmentActions(m);
-      return {
-        key,
-        content: body?.content ?? "",
-        contentType: body?.contentType ?? ("text" as const),
-        created: m.date,
-        // Owner's own messages: credit via authoredBySelf, leave author unset.
-        ...(isOwner
-          ? { authoredBySelf: true as const }
-          : { author: from ? toContact(from) : null }),
-        ...(actions ? { actions } : {}),
-        accessContacts: messageContacts(m, ownEmail),
-      };
-    });
+    const notes = msgs
+      .filter((m) => !ctx.foldedNoteKeys?.has(noteKeyOf(m)))
+      .map((m) => {
+        const key = noteKeyOf(m);
+        const body = bodyOf(m);
+        const from = m.from && m.from[0] ? m.from[0] : null;
+        const isOwner = from?.address.toLowerCase() === ownEmail;
+        const actions = attachmentActions(m);
+        return {
+          key,
+          content: body?.content ?? "",
+          contentType: body?.contentType ?? ("text" as const),
+          created: m.date,
+          // Owner's own messages: credit via authoredBySelf, leave author unset.
+          ...(isOwner
+            ? { authoredBySelf: true as const }
+            : { author: from ? toContact(from) : null }),
+          ...(actions ? { actions } : {}),
+          accessContacts: messageContacts(m, ownEmail),
+        };
+      });
+
+    // Every message in this thread was folded onto a calendar event. Emitting
+    // the link anyway would create a titled row with no content.
+    if (notes.length === 0) continue;
 
     // Incremental read-state (see TransformCtx.newMessages):
     //  - every message seen        → mark read (a read done in Apple Mail)

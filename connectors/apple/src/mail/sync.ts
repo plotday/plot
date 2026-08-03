@@ -839,7 +839,7 @@ export async function mailSync(
     // `initialRoots` is what keeps a first-connect backfill quiet: a response
     // folded onto an event thread from history must not mark it unread, the
     // same discipline `transformMessages` applies to the mail it ingests.
-    const { bundles: calendarBundles } = await detectCalendarBundles(
+    const { bundles: calendarBundles, foldedNoteKeys } = await detectCalendarBundles(
       host,
       session,
       merged,
@@ -856,6 +856,7 @@ export async function mailSync(
       newMessages,
       sentMailbox: sentBox,
       calendarBundles,
+      foldedNoteKeys,
     });
     if (links.length > 0) await host.integrations.saveLinks(links);
 

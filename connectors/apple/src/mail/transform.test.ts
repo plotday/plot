@@ -983,3 +983,52 @@ describe("transformMessages — signals", () => {
   // test suites, which dropped their equivalent CTA cases outright rather
   // than replacing them with a signal assertion.
 });
+
+describe("transformMessages — folded attendee responses", () => {
+  const ROOT = "<root@example.test>";
+
+  it("drops a folded message's note but keeps the rest of the conversation", () => {
+    const real = msg({
+      uid: 1,
+      messageId: "<real@example.test>",
+      references: [ROOT],
+      bodyText: "Can we move this?",
+    });
+    const rsvp = msg({
+      uid: 2,
+      messageId: "<rsvp@example.test>",
+      references: [ROOT],
+      bodyText: "Sam declined.",
+    });
+
+    const links = transform([real, rsvp], {
+      foldedNoteKeys: new Set(["rsvp@example.test"]),
+    });
+
+    expect(links).toHaveLength(1);
+    expect(links[0].notes!.map((n) => (n as { key: string }).key)).toEqual(["real@example.test"]);
+  });
+
+  it("emits NO link at all for a thread that was nothing but responses", () => {
+    // Without this guard the thread becomes a titled email link with zero
+    // notes — an empty row in the user's list for a response that has
+    // already been folded onto the event.
+    const rsvp = msg({
+      uid: 2,
+      messageId: "<rsvp@example.test>",
+      references: [ROOT],
+      bodyText: "Sam declined.",
+    });
+
+    const links = transform([rsvp], { foldedNoteKeys: new Set(["rsvp@example.test"]) });
+
+    expect(links).toEqual([]);
+  });
+
+  it("is unaffected when nothing was folded", () => {
+    const real = msg({ uid: 1, messageId: "<real@example.test>", references: [ROOT] });
+    const links = transform([real]);
+    expect(links).toHaveLength(1);
+    expect(links[0].notes).toHaveLength(1);
+  });
+});
