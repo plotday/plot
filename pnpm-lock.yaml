@@ -229,6 +229,9 @@ importers:
 
   connectors/outlook:
     dependencies:
+      '@plotday/rsvp-fold':
+        specifier: workspace:^
+        version: link:../../libs/rsvp-fold
       '@plotday/twister':
         specifier: workspace:^
         version: link:../../twister

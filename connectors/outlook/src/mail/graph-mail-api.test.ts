@@ -261,7 +261,7 @@ describe("GraphMailApi queries", () => {
       "microsoft.graph.eventMessage/meetingMessageType"
     );
     expect(calls[0]?.$expand).toBe(
-      "microsoft.graph.eventMessage/event($select=iCalUId)"
+      "microsoft.graph.eventMessage/event($select=iCalUId,originalStart,type)"
     );
   });
 
@@ -281,7 +281,7 @@ describe("GraphMailApi queries", () => {
       "microsoft.graph.eventMessage/meetingMessageType"
     );
     expect(calls[0]?.$expand).toBe(
-      "microsoft.graph.eventMessage/event($select=iCalUId)"
+      "microsoft.graph.eventMessage/event($select=iCalUId,originalStart,type)"
     );
   });
 });
@@ -346,13 +346,59 @@ describe("classifyOutlookCalendar", () => {
     ).toEqual({ uid: "uid-1", kind: "cancel" });
   });
 
-  it("skips RSVP responses (accept/decline/tentative)", () => {
+  it("classifies an acceptance, a decline and a tentative as rsvp", () => {
+    for (const [type, partstat] of [
+      ["meetingAccepted", "ACCEPTED"],
+      ["meetingDeclined", "DECLINED"],
+      ["meetingTentativelyAccepted", "TENTATIVE"],
+    ] as const) {
+      expect(
+        classifyOutlookCalendar(
+          [msg({ meetingMessageType: type, event: { iCalUId: "u" } })],
+          null
+        )
+      ).toMatchObject({ uid: "u", kind: "rsvp", partstat });
+    }
+  });
+
+  it("carries the occurrence for a response to one instance of a series", () => {
+    const r = classifyOutlookCalendar(
+      [
+        msg({
+          meetingMessageType: "meetingAccepted",
+          event: {
+            iCalUId: "u",
+            type: "occurrence",
+            originalStart: "2026-08-04T14:00:00Z",
+          },
+        }),
+      ],
+      null
+    );
+    expect(r).toMatchObject({ kind: "rsvp", partstat: "ACCEPTED" });
+    expect((r as { occurrence: Date }).occurrence).toEqual(
+      new Date("2026-08-04T14:00:00Z")
+    );
+  });
+
+  it("leaves occurrence null for a response to the whole series", () => {
+    const r = classifyOutlookCalendar(
+      [msg({ meetingMessageType: "meetingAccepted", event: { iCalUId: "u", type: "singleInstance" } })],
+      null
+    );
+    expect((r as { occurrence: Date | null }).occurrence).toBeNull();
+  });
+
+  it("still prefers cancel and request over an rsvp in the same conversation", () => {
     expect(
       classifyOutlookCalendar(
-        [msg({ meetingMessageType: "meetingAccepted", event: { iCalUId: "u" } })],
+        [
+          msg({ meetingMessageType: "meetingAccepted", event: { iCalUId: "u" } }),
+          msg({ meetingMessageType: "meetingCancelled", event: { iCalUId: "u" } }),
+        ],
         null
       )
-    ).toBeNull();
+    ).toMatchObject({ kind: "cancel" });
   });
 
   it("skips a qualifying meetingMessageType without an event.iCalUId", () => {

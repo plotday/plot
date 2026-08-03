@@ -7,6 +7,7 @@ import type {
   NewLinkWithNotes,
 } from "@plotday/twister/plot";
 import { isNoReplySender } from "@plotday/twister/signals";
+import type { RsvpReply } from "@plotday/rsvp-fold";
 import { stripQuotedReply } from "./email-parsing";
 
 export type GraphRecipient = {
@@ -43,7 +44,7 @@ export type GraphMessage = {
   internetMessageHeaders?: GraphHeader[];
   "@odata.type"?: string;
   meetingMessageType?: string;
-  event?: { iCalUId?: string };
+  event?: { iCalUId?: string; originalStart?: string; type?: string };
 };
 
 export type GraphMailFolder = {
@@ -303,7 +304,11 @@ export class GraphMailApi {
         // 'event' on type 'microsoft.graph.message'". The OData type-cast
         // segment scopes the expand to items that are actually eventMessages;
         // plain messages just come back without an `event` field.
-        $expand: "microsoft.graph.eventMessage/event($select=iCalUId)",
+        // originalStart + type let classifyOutlookCalendar tell a response to
+        // one occurrence of a recurring series apart from a series-wide
+        // response — both share the same iCalUId.
+        $expand:
+          "microsoft.graph.eventMessage/event($select=iCalUId,originalStart,type)",
       };
       if (args.since) {
         params.$filter = `receivedDateTime ge ${args.since.toISOString()}`;
@@ -345,7 +350,11 @@ export class GraphMailApi {
       $filter: `conversationId eq ${odataQuote(conversationId)}`,
       $top: "100",
       $select: MESSAGE_SELECT_COLLECTION,
-      $expand: "microsoft.graph.eventMessage/event($select=iCalUId)",
+      // originalStart + type let classifyOutlookCalendar tell a response to
+      // one occurrence of a recurring series apart from a series-wide
+      // response — both share the same iCalUId.
+      $expand:
+        "microsoft.graph.eventMessage/event($select=iCalUId,originalStart,type)",
     });
     for (let page = 0; page < 5; page++) {
       messages.push(...((data?.value as GraphMessage[] | undefined) ?? []));
@@ -650,25 +659,42 @@ export function sortConversation(messages: GraphMessage[]): GraphMessage[] {
   );
 }
 
+/** Graph's meeting-response type → the shared fold rule's `partstat`. */
+const RSVP_PARTSTAT: Record<string, RsvpReply["partstat"]> = {
+  meetingAccepted: "ACCEPTED",
+  meetingDeclined: "DECLINED",
+  meetingTentativelyAccepted: "TENTATIVE",
+};
+
 /**
  * Classify an Outlook conversation's relationship to a calendar event for
  * bundling onto the event's Plot thread. Two signals: our own
  * `X-Plot-Event-UID` header on the parent's raw headers (a Plot-sent reply
  * chain — checked first, regardless of any message-derived signal), or a
- * message's Graph meeting-message metadata (update/cancellation).
+ * message's Graph meeting-message metadata (update/cancellation/RSVP).
  *
  * Graph's `meetingMessageType` doesn't distinguish a brand-new invite from
  * an update/reschedule to an existing meeting the way Exchange Web
  * Services' `MeetingRequestType` (fullUpdate/informationalUpdate/
  * newMeetingRequest) does — Graph has no equivalent property, so every
  * `meetingRequest` bundles onto its event's thread here, new invite or not.
- * RSVP responses (accept/decline/tentative) fall through and are skipped,
- * since they match neither branch below.
+ * Cancel and update are checked across the whole conversation before RSVP is
+ * considered at all, in a separate pass — so a conversation carrying both a
+ * response and a cancellation/update still classifies as the stronger kind
+ * regardless of which message comes first. RSVP responses
+ * (accept/decline/tentative) carry the occurrence they responded to (`null`
+ * for a whole-series response) so callers can key dedup state per-occurrence
+ * rather than per-series.
  */
 export function classifyOutlookCalendar(
   messages: GraphMessage[],
   parentHeaders: GraphHeader[] | null
-): { uid: string; kind: "reply" | "update" | "cancel" } | null {
+): {
+  uid: string;
+  kind: "reply" | "update" | "cancel" | "rsvp";
+  partstat?: RsvpReply["partstat"];
+  occurrence?: Date | null;
+} | null {
   const hdr = (parentHeaders ?? []).find(
     (h) => h.name.toLowerCase() === "x-plot-event-uid"
   );
@@ -678,6 +704,21 @@ export function classifyOutlookCalendar(
     if (!uid) continue;
     if (m.meetingMessageType === "meetingCancelled") return { uid, kind: "cancel" };
     if (m.meetingMessageType === "meetingRequest") return { uid, kind: "update" };
+  }
+  for (const m of messages) {
+    const uid = m.event?.iCalUId;
+    if (!uid) continue;
+    const partstat = m.meetingMessageType
+      ? RSVP_PARTSTAT[m.meetingMessageType]
+      : undefined;
+    if (partstat) {
+      const occurrence =
+        (m.event?.type === "occurrence" || m.event?.type === "exception") &&
+        m.event?.originalStart
+          ? new Date(m.event.originalStart)
+          : null;
+      return { uid, kind: "rsvp", partstat, occurrence };
+    }
   }
   return null;
 }
