@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { parseIcsReply } from "./ics-reply";
 
-const FALLBACK = { name: null, email: "fallback@example.test" };
+const FALLBACK = { name: null };
 
 /**
  * Real capture from a Google Calendar-generated reply (bare acceptance, no
@@ -101,10 +101,7 @@ const BASE = [
 
 describe("parseIcsReply", () => {
   it("reads PARTSTAT and attendee from a Google-generated reply", () => {
-    const r = parseIcsReply(GOOGLE_ACCEPTED, {
-      name: null,
-      email: "fallback@example.test",
-    });
+    const r = parseIcsReply(GOOGLE_ACCEPTED, { name: null });
     expect(r).toMatchObject({
       partstat: "ACCEPTED",
       attendeeName: "Beth Round",
@@ -115,10 +112,7 @@ describe("parseIcsReply", () => {
   });
 
   it("reads Google's X-RESPONSE-COMMENT parameter", () => {
-    const r = parseIcsReply(GOOGLE_TENTATIVE, {
-      name: null,
-      email: "fallback@example.test",
-    });
+    const r = parseIcsReply(GOOGLE_TENTATIVE, { name: null });
     expect(r).toMatchObject({
       partstat: "TENTATIVE",
       comment: "This is my reply for maybe",
@@ -126,10 +120,7 @@ describe("parseIcsReply", () => {
   });
 
   it("reads Microsoft's COMMENT property", () => {
-    const r = parseIcsReply(MS_ACCEPTED, {
-      name: null,
-      email: "fallback@example.test",
-    });
+    const r = parseIcsReply(MS_ACCEPTED, { name: null });
     expect(r).toMatchObject({
       partstat: "ACCEPTED",
       attendeeName: "Ana Ruiz",
@@ -138,30 +129,30 @@ describe("parseIcsReply", () => {
     });
   });
 
-  it("falls back to the supplied sender when the ATTENDEE has no CN", () => {
-    const r = parseIcsReply(BASE, {
-      name: "Fallback Name",
-      email: "fallback@example.test",
-    });
+  it("prefers the COMMENT property over X-RESPONSE-COMMENT when both are present", () => {
+    // Not a real-world combination (each provider only ever emits one), but
+    // pins the precedence so a future reordering of the `||` chain is caught.
+    const both = MS_ACCEPTED.replace(
+      "ATTENDEE;PARTSTAT=ACCEPTED;CN=Ana Ruiz:mailto:ana@example.test",
+      'ATTENDEE;PARTSTAT=ACCEPTED;CN=Ana Ruiz;X-RESPONSE-COMMENT="from the parameter":mailto:ana@example.test'
+    );
+    const r = parseIcsReply(both, { name: null });
+    expect(r?.comment).toBe("Uh huh, here's my comment");
+  });
+
+  it("falls back to the supplied sender name when the ATTENDEE has no CN", () => {
+    const r = parseIcsReply(BASE, { name: "Fallback Name" });
     expect(r).toMatchObject({
       attendeeName: "Fallback Name",
-      // The ATTENDEE line's own mailto still wins over the fallback email.
       attendeeEmail: "beth@example.test",
     });
   });
 
-  it("falls back to the supplied email when the ATTENDEE line has no address", () => {
+  it("returns null when the ATTENDEE line has no resolvable address (no email fallback — a malformed address drops the reply rather than misattributing it to the notification's sender)", () => {
     // The property line still ends in a colon (an ATTENDEE line always has
     // one) — only the address after `mailto:` is missing.
     const noAddress = BASE.replace("mailto:beth@example.test", "mailto:");
-    const r = parseIcsReply(noAddress, FALLBACK);
-    expect(r?.attendeeEmail).toBe("fallback@example.test");
-  });
-
-  it("returns null when neither the ATTENDEE line nor the fallback has an email", () => {
-    const noAddress = BASE.replace("mailto:beth@example.test", "mailto:");
-    const r = parseIcsReply(noAddress, { name: null, email: "" });
-    expect(r).toBeNull();
+    expect(parseIcsReply(noAddress, { name: "Notification Sender" })).toBeNull();
   });
 
   it("returns null for a non-REPLY method", () => {

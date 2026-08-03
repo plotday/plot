@@ -5,4 +5,4 @@ export {
   type RsvpReply,
 } from "./rsvp-note";
 
-export { parseIcsReply, type IcsReplyFallback } from "./ics-reply";
+export { parseIcsReply, icsProp, type IcsReplyFallback } from "./ics-reply";

@@ -6,8 +6,8 @@
  * only in where the responder's personal note lives (a `COMMENT` property vs.
  * an `X-RESPONSE-COMMENT` parameter on the `ATTENDEE` line) and this parser
  * reads both. A connector resolves the raw ICS text itself (it may arrive
- * inline or as an attachment) and supplies a fallback identity for when the
- * `ATTENDEE` line omits a `CN`/address of its own.
+ * inline or as an attachment) and supplies a fallback display name for when
+ * the `ATTENDEE` line omits a `CN` of its own.
  */
 
 import type { RsvpReply } from "./rsvp-note";
@@ -25,8 +25,14 @@ function matchIcsLine(ics: string, name: string): RegExpMatchArray | null {
   return unfolded.match(re);
 }
 
-/** Unfold RFC 5545 lines (CRLF + leading space/tab is a continuation) and read a property. */
-function icsProp(ics: string, name: string): string | null {
+/**
+ * Unfold RFC 5545 lines (CRLF + leading space/tab is a continuation) and read
+ * a property's value. General-purpose enough that connectors also use it
+ * directly for lookups that have nothing to do with a reply (e.g. reading
+ * `METHOD`/`UID`/`SEQUENCE` to classify a calendar message), so it's exported
+ * alongside `parseIcsReply` rather than kept private.
+ */
+export function icsProp(ics: string, name: string): string | null {
   const m = matchIcsLine(ics, name);
   return m ? m[2].trim() : null;
 }
@@ -86,22 +92,24 @@ function unescapeIcsText(value: string): string {
 }
 
 /**
- * The sender identity to fall back on when the `ATTENDEE` line itself omits a
- * `CN` (display name) or, more rarely, an address. Connectors typically parse
- * this from the message's own From header.
+ * The display name to fall back on when the `ATTENDEE` line itself omits a
+ * `CN`. Connectors typically parse this from the message's own From header.
+ * There is deliberately no email fallback: an `ATTENDEE` line with no
+ * resolvable address is not a response from anyone in particular, so it is
+ * dropped rather than attributed to whoever merely delivered the
+ * notification (e.g. a calendar system's own notification address).
  */
 export type IcsReplyFallback = {
   name: string | null;
-  email: string;
 };
 
 /**
  * Parse one attendee response from a `METHOD:REPLY` iCalendar body.
  *
  * Returns `null` when the body isn't a reply, carries no usable `ATTENDEE`
- * (no address, from the line itself or the supplied fallback), or carries a
- * `PARTSTAT` other than `ACCEPTED`/`DECLINED`/`TENTATIVE` (`NEEDS-ACTION`
- * means there is no response yet, so it yields nothing).
+ * (no resolvable address on the line itself), or carries a `PARTSTAT` other
+ * than `ACCEPTED`/`DECLINED`/`TENTATIVE` (`NEEDS-ACTION` means there is no
+ * response yet, so it yields nothing).
  */
 export function parseIcsReply(
   ics: string,
@@ -113,11 +121,10 @@ export function parseIcsReply(
   if (!attendeeLine) return null;
   const sep = attendeeLine.lastIndexOf(":");
   const params = parseIcsParams(attendeeLine.slice(0, sep));
-  const attendeeEmail =
-    attendeeLine
-      .slice(sep + 1)
-      .trim()
-      .replace(/^mailto:/i, "") || fallback.email;
+  const attendeeEmail = attendeeLine
+    .slice(sep + 1)
+    .trim()
+    .replace(/^mailto:/i, "");
   if (!attendeeEmail) return null;
 
   const partstat = (params.PARTSTAT ?? "").toUpperCase();

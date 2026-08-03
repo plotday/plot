@@ -10,7 +10,7 @@ import type {
 import { markdownToPlainText } from "@plotday/twister/utils/markdown";
 import { markdownToHtml } from "@plotday/twister/utils/markdown-html";
 import { isNoReplySender } from "@plotday/twister/signals";
-import { parseIcsReply } from "@plotday/rsvp-fold";
+import { icsProp, parseIcsReply } from "@plotday/rsvp-fold";
 
 
 export type GmailLabel = {
@@ -769,27 +769,6 @@ function normalizeMessageId(raw: string | null): string | null {
 }
 
 /**
- * Unfold RFC 5545 lines (CRLF + leading space/tab is a continuation) and
- * match one property line: group 1 is its parameter section (leading `;`
- * included, or `""` when there are none), group 2 is its value. Used by
- * `icsProp` for the property lookups `classifyCalendarThread` still needs
- * locally (`METHOD`, `UID`, `SEQUENCE`) — the params+value variant of this
- * helper (`icsPropLine`) moved to `@plotday/rsvp-fold` along with the rest of
- * the reply parse.
- */
-function matchIcsLine(ics: string, name: string): RegExpMatchArray | null {
-  const unfolded = ics.replace(/\r?\n[ \t]/g, "");
-  const re = new RegExp(`^${name}((?:;[^:\\r\\n]*)?):(.*)$`, "im");
-  return unfolded.match(re);
-}
-
-/** Unfold RFC 5545 lines (CRLF + leading space/tab is a continuation) and read a property. */
-function icsProp(ics: string, name: string): string | null {
-  const m = matchIcsLine(ics, name);
-  return m ? m[2].trim() : null;
-}
-
-/**
  * MIME types an iCalendar part is delivered under. Google and Exchange use
  * `text/calendar`; a sizeable minority of senders use `application/ics`.
  */
@@ -984,11 +963,9 @@ export function extractCalendarReplies(
     const uid = icsProp(ics, "UID");
     if (!uid) continue;
 
-    const from = parseEmailAddress(getHeader(message, "From") ?? "");
-    const reply = parseIcsReply(ics, {
-      name: from?.name ?? null,
-      email: from?.email ?? "",
-    });
+    const fromName =
+      parseEmailAddress(getHeader(message, "From") ?? "")?.name ?? null;
+    const reply = parseIcsReply(ics, { name: fromName });
     if (!reply) continue;
 
     const comment = reply.comment ?? commentFromBody(message);
