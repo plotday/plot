@@ -44,7 +44,7 @@ export type GraphMessage = {
   internetMessageHeaders?: GraphHeader[];
   "@odata.type"?: string;
   meetingMessageType?: string;
-  event?: { iCalUId?: string; originalStart?: string; type?: string };
+  event?: { iCalUId?: string };
 };
 
 export type GraphMailFolder = {
@@ -188,13 +188,17 @@ export class GraphMailApi {
    * folder moves — attachment refs and the msg-channel cache depend on it)
    * plus html body-content. Returns null on 404 (deleted upstream). Retries
    * once on 429/503 honoring Retry-After (capped 15s).
+   *
+   * `raw: true` returns the response body as text without JSON-parsing it —
+   * for endpoints like `$value` that return `message/rfc822`, not JSON.
    */
   public async call(
     method: string,
     url: string,
     params?: Record<string, string>,
     body?: unknown,
-    extraHeaders?: Record<string, string>
+    extraHeaders?: Record<string, string>,
+    raw?: boolean
   ): Promise<any> {
     const query = params ? `?${new URLSearchParams(params)}` : "";
     const headers: Record<string, string> = {
@@ -225,8 +229,9 @@ export class GraphMailApi {
           await response.text()
         );
       }
-      if (response.status === 202 || response.status === 204) return {};
+      if (response.status === 202 || response.status === 204) return raw ? "" : {};
       const text = await response.text();
+      if (raw) return text;
       return text ? JSON.parse(text) : {};
     }
   }
@@ -304,11 +309,10 @@ export class GraphMailApi {
         // 'event' on type 'microsoft.graph.message'". The OData type-cast
         // segment scopes the expand to items that are actually eventMessages;
         // plain messages just come back without an `event` field.
-        // originalStart + type let classifyOutlookCalendar tell a response to
-        // one occurrence of a recurring series apart from a series-wide
-        // response — both share the same iCalUId.
-        $expand:
-          "microsoft.graph.eventMessage/event($select=iCalUId,originalStart,type)",
+        // iCalUId is all classifyOutlookCalendar needs — the occurrence an
+        // RSVP responded to is read from the reply's own ICS
+        // (RECURRENCE-ID) instead of trusted from Graph.
+        $expand: "microsoft.graph.eventMessage/event($select=iCalUId)",
       };
       if (args.since) {
         params.$filter = `receivedDateTime ge ${args.since.toISOString()}`;
@@ -350,11 +354,10 @@ export class GraphMailApi {
       $filter: `conversationId eq ${odataQuote(conversationId)}`,
       $top: "100",
       $select: MESSAGE_SELECT_COLLECTION,
-      // originalStart + type let classifyOutlookCalendar tell a response to
-      // one occurrence of a recurring series apart from a series-wide
-      // response — both share the same iCalUId.
-      $expand:
-        "microsoft.graph.eventMessage/event($select=iCalUId,originalStart,type)",
+      // iCalUId is all classifyOutlookCalendar needs — the occurrence an
+      // RSVP responded to is read from the reply's own ICS (RECURRENCE-ID)
+      // instead of trusted from Graph.
+      $expand: "microsoft.graph.eventMessage/event($select=iCalUId)",
     });
     for (let page = 0; page < 5; page++) {
       messages.push(...((data?.value as GraphMessage[] | undefined) ?? []));
@@ -374,6 +377,25 @@ export class GraphMailApi {
       { $select: "internetMessageHeaders" }
     )) as { internetMessageHeaders?: GraphHeader[] } | null;
     return data?.internetMessageHeaders ?? null;
+  }
+
+  /**
+   * The message's raw MIME source (`GET .../$value`), as text. Needed for
+   * reading a meeting reply's `text/calendar` part: a Microsoft-generated
+   * reply carries no `application/ics` attachment at all, so
+   * `listAttachments`/`getAttachment` would silently miss it — see
+   * `extractOutlookReply` in `outlook-ics-reply.ts`. Returns null on 404
+   * (message deleted upstream, same as the other single-message getters).
+   */
+  async getMimeContent(messageId: string): Promise<string | null> {
+    return this.call(
+      "GET",
+      `${GRAPH}/me/messages/${encodeURIComponent(messageId)}/$value`,
+      undefined,
+      undefined,
+      undefined,
+      true
+    );
   }
 
   async listAttachments(messageId: string): Promise<GraphAttachmentMeta[]> {
@@ -667,22 +689,6 @@ const RSVP_PARTSTAT: Record<string, RsvpReply["partstat"]> = {
 };
 
 /**
- * Parse Graph's `originalStart` (an ISO 8601 instant) into a `Date`,
- * validating rather than trusting `new Date(string)` — a malformed or
- * truncated value yields `Invalid Date`, not a thrown error, and that value
- * would otherwise flow into `RsvpReply.occurrence` and reach
- * `priorRsvpKey`'s unconditional `occurrence.toISOString()`, throwing
- * `RangeError: Invalid time value` and crashing the sync pass. `null` here
- * degrades to a series-scoped key instead — the same safe outcome as a
- * genuine whole-series response (see `parseIcsDate` in the Gmail connector
- * for the same pattern against ICS dates).
- */
-function parseOriginalStart(value: string): Date | null {
-  const ms = Date.parse(value);
-  return Number.isNaN(ms) ? null : new Date(ms);
-}
-
-/**
  * Classify an Outlook conversation's relationship to a calendar event for
  * bundling onto the event's Plot thread. Two signals: our own
  * `X-Plot-Event-UID` header on the parent's raw headers (a Plot-sent reply
@@ -697,10 +703,12 @@ function parseOriginalStart(value: string): Date | null {
  * Cancel and update are checked across the whole conversation before RSVP is
  * considered at all, in a separate pass — so a conversation carrying both a
  * response and a cancellation/update still classifies as the stronger kind
- * regardless of which message comes first. RSVP responses
- * (accept/decline/tentative) carry the occurrence they responded to (`null`
- * for a whole-series response) so callers can key dedup state per-occurrence
- * rather than per-series.
+ * regardless of which message comes first. The `partstat` on an RSVP
+ * classification is a cheap pre-filter for deciding a message is worth an
+ * ICS fetch — the fold itself must prefer the value read from the reply's
+ * own ICS (`parseIcsReply`), which is also where the occurrence a response
+ * targets (`RECURRENCE-ID`) is read from; Graph's own metadata carries
+ * neither reliably enough to be a source of truth.
  */
 export function classifyOutlookCalendar(
   messages: GraphMessage[],
@@ -709,7 +717,6 @@ export function classifyOutlookCalendar(
   uid: string;
   kind: "reply" | "update" | "cancel" | "rsvp";
   partstat?: RsvpReply["partstat"];
-  occurrence?: Date | null;
 } | null {
   const hdr = (parentHeaders ?? []).find(
     (h) => h.name.toLowerCase() === "x-plot-event-uid"
@@ -727,14 +734,7 @@ export function classifyOutlookCalendar(
     const partstat = m.meetingMessageType
       ? RSVP_PARTSTAT[m.meetingMessageType]
       : undefined;
-    if (partstat) {
-      const occurrence =
-        (m.event?.type === "occurrence" || m.event?.type === "exception") &&
-        m.event?.originalStart
-          ? parseOriginalStart(m.event.originalStart)
-          : null;
-      return { uid, kind: "rsvp", partstat, occurrence };
-    }
+    if (partstat) return { uid, kind: "rsvp", partstat };
   }
   return null;
 }

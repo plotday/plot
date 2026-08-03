@@ -261,7 +261,7 @@ describe("GraphMailApi queries", () => {
       "microsoft.graph.eventMessage/meetingMessageType"
     );
     expect(calls[0]?.$expand).toBe(
-      "microsoft.graph.eventMessage/event($select=iCalUId,originalStart,type)"
+      "microsoft.graph.eventMessage/event($select=iCalUId)"
     );
   });
 
@@ -281,8 +281,25 @@ describe("GraphMailApi queries", () => {
       "microsoft.graph.eventMessage/meetingMessageType"
     );
     expect(calls[0]?.$expand).toBe(
-      "microsoft.graph.eventMessage/event($select=iCalUId,originalStart,type)"
+      "microsoft.graph.eventMessage/event($select=iCalUId)"
     );
+  });
+
+  it("getMimeContent requests $value and returns the raw text (not JSON-parsed)", async () => {
+    const calls: Array<{ method: string; url: string }> = [];
+    const api = new GraphMailApi("tok");
+    api.call = async (method: string, url: string) => {
+      calls.push({ method, url });
+      return "MIME-Version: 1.0\r\nFrom: a@b.c\r\n\r\nbody";
+    };
+    const result = await api.getMimeContent("msg-1");
+    expect(calls).toEqual([
+      {
+        method: "GET",
+        url: "https://graph.microsoft.com/v1.0/me/messages/msg-1/$value",
+      },
+    ]);
+    expect(result).toBe("MIME-Version: 1.0\r\nFrom: a@b.c\r\n\r\nbody");
   });
 });
 
@@ -359,48 +376,6 @@ describe("classifyOutlookCalendar", () => {
         )
       ).toMatchObject({ uid: "u", kind: "rsvp", partstat });
     }
-  });
-
-  it("carries the occurrence for a response to one instance of a series", () => {
-    const r = classifyOutlookCalendar(
-      [
-        msg({
-          meetingMessageType: "meetingAccepted",
-          event: {
-            iCalUId: "u",
-            type: "occurrence",
-            originalStart: "2026-08-04T14:00:00Z",
-          },
-        }),
-      ],
-      null
-    );
-    expect(r).toMatchObject({ kind: "rsvp", partstat: "ACCEPTED" });
-    expect((r as { occurrence: Date }).occurrence).toEqual(
-      new Date("2026-08-04T14:00:00Z")
-    );
-  });
-
-  it("leaves occurrence null for a response to the whole series", () => {
-    const r = classifyOutlookCalendar(
-      [msg({ meetingMessageType: "meetingAccepted", event: { iCalUId: "u", type: "singleInstance" } })],
-      null
-    );
-    expect((r as { occurrence: Date | null }).occurrence).toBeNull();
-  });
-
-  it("degrades a malformed originalStart on an occurrence to occurrence: null instead of an Invalid Date", () => {
-    const r = classifyOutlookCalendar(
-      [
-        msg({
-          meetingMessageType: "meetingAccepted",
-          event: { iCalUId: "u", type: "occurrence", originalStart: "not-a-date" },
-        }),
-      ],
-      null
-    );
-    expect(r).toMatchObject({ kind: "rsvp", partstat: "ACCEPTED" });
-    expect((r as { occurrence: Date | null }).occurrence).toBeNull();
   });
 
   it("still prefers cancel and request over an rsvp in the same conversation", () => {
