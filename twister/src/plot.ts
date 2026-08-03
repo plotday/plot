@@ -870,6 +870,28 @@ export type NewNote = Partial<
     authoredBySelf?: boolean;
 
     /**
+     * Keep this note until its thread exists, instead of dropping it.
+     *
+     * A note addressed by `{ source }` normally resolves immediately, and
+     * `saveNote` returns `null` when no thread carries that source — which for
+     * a connector usually means the item this note belongs to has not synced
+     * yet. Set this to have the platform hold the note and attach it as soon
+     * as a thread with that source appears, rather than making you store and
+     * retry it yourself.
+     *
+     * Recommended for any `{ source }`-addressed note whose target is synced
+     * by a different product or connector and may therefore lag. Leave it
+     * unset when a miss means the note is genuinely undeliverable: `null` is
+     * then the signal you want, and holding the note would accumulate payloads
+     * for a thread that will never arrive.
+     *
+     * Held notes are dropped after a bounded retry window. Ordering is not
+     * guaranteed relative to notes that attached immediately, so set `created`
+     * (as connectors already should) rather than relying on arrival order.
+     */
+    deferUntilThread?: boolean;
+
+    /**
      * Format of the note content. Determines how the note is processed:
      * - 'text': Plain text that will be converted to markdown (auto-links URLs, preserves line breaks)
      * - 'markdown': Already in markdown format (default, no conversion)
