@@ -67,6 +67,13 @@ function buildFakeHost(opts: {
    * synced yet), which is the common case for these mail-only fixtures.
    */
   knownEventUids?: string[];
+  /**
+   * Make `saveLinks` record its call and then throw, as a platform write
+   * that fails would. `mailSync` has no catch around it, so the throw leaves
+   * the pass — everything written BEFORE the save is exactly what survives,
+   * which is what the fold-marker ordering exists to control.
+   */
+  failSaveLinks?: boolean;
 }) {
   const stored = new Map<string, unknown>();
   const savedLinks: NewLinkWithNotes[] = [];
@@ -95,6 +102,11 @@ function buildFakeHost(opts: {
 
   const mailboxes = new Map<string, MailboxFixture>();
   for (const box of opts.mailboxes) mailboxes.set(box.name, box);
+
+  /** Mutable so a test can add an attachment between two passes (see
+   *  `addMessage`), which `opts.attachments` alone could not express when the
+   *  caller passed none to begin with. */
+  const attachments: Record<string, Uint8Array> = { ...(opts.attachments ?? {}) };
 
   const imap = {
     connect: async (): Promise<ImapSession> => "session-1",
@@ -155,7 +167,7 @@ function buildFakeHost(opts: {
     ): Promise<Uint8Array> => {
       fetchAttachmentCalls.push({ mailbox: selected, uid, partNumber });
       const key = buildAttachmentRef(selected, uid, partNumber);
-      const bytes = opts.attachments?.[key];
+      const bytes = attachments[key];
       if (!bytes) throw new Error(`no such attachment part: ${key}`);
       return bytes;
     },
@@ -166,6 +178,7 @@ function buildFakeHost(opts: {
     saveLinks: async (links: NewLinkWithNotes[]): Promise<(string | null)[]> => {
       callLog.push("saveLinks");
       saveLinksCalls.push(links);
+      if (opts.failSaveLinks) throw new Error("saveLinks failed");
       savedLinks.push(...links);
       return links.map(() => null);
     },
@@ -209,6 +222,12 @@ function buildFakeHost(opts: {
   return {
     host,
     stored,
+    // The live mailbox fixtures and attachment bytes, so a test can deliver a
+    // message BETWEEN two passes over the same host (see `addMessage`) —
+    // which is the only way to exercise a response arriving after the
+    // invitation it threads onto.
+    mailboxes,
+    attachments,
     savedLinks,
     saveLinksCalls,
     savedNotes,
@@ -316,6 +335,23 @@ function box(
     },
     searchUids: uids,
     messagesByUid: new Map(messages.map((m) => [m.uid, m])),
+  };
+}
+
+/**
+ * Deliver a message into a live mailbox fixture between two passes, as a
+ * server would: it becomes searchable, fetchable, and moves UIDNEXT. Mutating
+ * the fixture in place (rather than rebuilding the host) is what keeps the
+ * second pass reading the FIRST pass's stored cursors and thread metadata.
+ */
+function addMessage(fixture: MailboxFixture, message: ImapMessage): void {
+  fixture.messagesByUid.set(message.uid, message);
+  fixture.searchUids = [...fixture.searchUids, message.uid];
+  fixture.status = {
+    ...fixture.status,
+    exists: fixture.messagesByUid.size,
+    uidNext: Math.max(fixture.status.uidNext, message.uid + 1),
+    unseen: [...fixture.messagesByUid.values()].filter((m) => !m.flags.includes("\\Seen")).length,
   };
 }
 
@@ -2282,5 +2318,167 @@ describe("mailSync — calendar thread bundling end-to-end", () => {
 
     await mailSync(host, [INBOX_CHANNEL], RECENT_ISO);
     expect(fetchAttachmentCalls).toHaveLength(1); // read back from the store
+  });
+});
+
+/** The event both end-to-end fixtures answer. */
+const E2E_UID = "evt-e2e@example.test";
+const E2E_MARKER = `rsvp:${E2E_UID}:series:guest@example.test`;
+
+/** A `METHOD:REPLY` declining `E2E_UID`. */
+const E2E_DECLINE = [
+  "BEGIN:VCALENDAR",
+  "METHOD:REPLY",
+  "BEGIN:VEVENT",
+  `UID:${E2E_UID}`,
+  "ATTENDEE;CN=Sam Guest;PARTSTAT=DECLINED:mailto:guest@example.test",
+  "END:VEVENT",
+  "END:VCALENDAR",
+].join("\r\n");
+
+/**
+ * Where in `callLog` the `setMany` invocation whose keys satisfy `match`
+ * happened, or -1.
+ *
+ * A pass makes TWO `setMany` calls — the fold markers, flushed before
+ * `saveLinks`, and the per-root `ThreadMeta`, written deliberately after it —
+ * and `callLog` records only the method name. So an ordering assertion has to
+ * identify WHICH write it means by the keys that write carried; a bare
+ * `indexOf`/`lastIndexOf("setMany")` silently asserts about the other one.
+ * The nth `"setMany"` entry in `callLog` is `setManyCalls[n]`.
+ */
+function setManyPosition(
+  built: { callLog: string[]; setManyCalls: string[][] },
+  match: (keys: string[]) => boolean
+): number {
+  const nth = built.setManyCalls.findIndex(match);
+  if (nth < 0) return -1;
+  let seen = -1;
+  for (let i = 0; i < built.callLog.length; i++) {
+    if (built.callLog[i] !== "setMany") continue;
+    seen++;
+    if (seen === nth) return i;
+  }
+  return -1;
+}
+
+/**
+ * One `mailSync` pass over a thread carrying a DECLINED response AND ordinary
+ * correspondence.
+ *
+ * The ordinary message is load-bearing, not scenery: a thread of nothing but
+ * folded responses emits no link at all, so `saveLinks` is never called and
+ * there is no write for the marker flush to be ordered against.
+ */
+async function declinePass(opts: { failSaveLinks?: boolean } = {}) {
+  const built = buildFakeHost({
+    appleId: "owner@example.test",
+    mailboxes: [
+      box("INBOX", [
+        calendarMessage({
+          uid: 51,
+          messageId: "<reply-1@example.test>",
+          root: "<invite@example.test>",
+        }),
+        plainMessage({ uid: 52, root: "<invite@example.test>" }),
+      ]),
+    ],
+    attachments: { [buildAttachmentRef("INBOX", 51, "2")]: icsBytes(E2E_DECLINE) },
+    ...(opts.failSaveLinks ? { failSaveLinks: true } : {}),
+  });
+
+  // A throwing `saveLinks` must not abort the test — the assertion is about
+  // what survived, not that the pass succeeded.
+  await mailSync(built.host, [INBOX_CHANNEL], RECENT_ISO).catch(() => {});
+  return built;
+}
+
+describe("mailSync — attendee responses end-to-end", () => {
+  it("folds a decline that arrives on a LATER pass than the invite it threads onto", async () => {
+    // The case a single-pass fixture cannot reach. Pass 1 ingests the
+    // invitation, classifies its root as "no bundle" and records that
+    // decision; pass 2's response threads onto that same root, so it is only
+    // seen at all if the cached root keeps being examined for new messages.
+    const invite = {
+      ...calendarMessage({
+        uid: 50,
+        messageId: "<invite@example.test>",
+        root: "<invite@example.test>",
+        date: daysAgo(3),
+      }),
+      subject: "Invitation: Weekly sync",
+    } as ImapMessage;
+    const reply = calendarMessage({
+      uid: 51,
+      messageId: "<reply-1@example.test>",
+      root: "<invite@example.test>",
+      date: daysAgo(1),
+    });
+
+    const built = buildFakeHost({
+      appleId: "owner@example.test",
+      mailboxes: [box("INBOX", [invite])],
+      attachments: {
+        [buildAttachmentRef("INBOX", 50, "2")]: icsBytes(
+          ics({ method: "REQUEST", uid: E2E_UID, sequence: 0 })
+        ),
+      },
+    });
+
+    await mailSync(built.host, [INBOX_CHANNEL], RECENT_ISO);
+    expect(built.savedNotes).toHaveLength(0);
+    expect(linkFor(built.savedLinks, "icloud-mail:thread:invite@example.test").title).toBe(
+      "Invitation: Weekly sync"
+    );
+
+    // Pass 2: the response arrives, threading onto the invitation's Message-ID.
+    addMessage(built.mailboxes.get("INBOX")!, reply);
+    built.attachments[buildAttachmentRef("INBOX", 51, "2")] = icsBytes(E2E_DECLINE);
+    built.savedLinks.length = 0;
+
+    await mailSync(built.host, [INBOX_CHANNEL], RECENT_ISO);
+
+    expect(built.savedNotes).toHaveLength(1);
+    expect(built.savedNotes[0]).toMatchObject({
+      thread: { source: `icaluid:${E2E_UID}` },
+      key: "reply-1@example.test",
+      content: "Sam Guest declined.",
+    });
+    // …and the response is not ALSO left in the mail thread, which still
+    // carries only the invitation's own note.
+    expect(noteKeys(linkFor(built.savedLinks, "icloud-mail:thread:invite@example.test"))).toEqual([
+      "invite@example.test",
+    ]);
+  });
+
+  it("writes every fold marker BEFORE saveLinks", async () => {
+    const built = await declinePass();
+
+    const firstSaveLinks = built.callLog.indexOf("saveLinks");
+    expect(firstSaveLinks).toBeGreaterThan(-1);
+
+    const markerWrite = setManyPosition(built, (keys) => keys.some((k) => k.startsWith("rsvp:")));
+    expect(markerWrite).toBeGreaterThan(-1);
+    expect(markerWrite).toBeLessThan(firstSaveLinks);
+
+    // The other write goes the other way ON PURPOSE (see `mailSync`): thread
+    // metadata is persisted AFTER the save so a throw re-runs the initial-sync
+    // discipline. Asserted here so "make both writes early" is not mistaken
+    // for a fix if the marker ordering ever regresses.
+    const metaWrite = setManyPosition(built, (keys) => keys.some((k) => k.startsWith("thread:")));
+    expect(metaWrite).toBeGreaterThan(firstSaveLinks);
+  });
+
+  it("keeps the marker written when saveLinks throws, so the note is not re-emitted", async () => {
+    const built = await declinePass({ failSaveLinks: true });
+
+    expect(built.callLog).toContain("saveLinks"); // the pass really got that far
+    expect(await built.host.get(E2E_MARKER)).toBe("DECLINED");
+
+    // The point of writing the marker first: this pass left a note on the
+    // event thread and saved nothing else, so a re-run must not write that
+    // note a second time and drag a thread people had read back to unread.
+    await mailSync(built.host, [INBOX_CHANNEL], RECENT_ISO).catch(() => {});
+    expect(built.savedNotes).toHaveLength(1);
   });
 });
