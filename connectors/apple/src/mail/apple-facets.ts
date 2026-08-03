@@ -1,5 +1,4 @@
-import { classifyEmail, extractCta, extractLinkCandidates, type EmailSignals } from "@plotday/email-classifier";
-import type { Cta, ThreadFacets } from "@plotday/twister/facets";
+import type { MailSignals } from "@plotday/twister/signals";
 import type { MailMessage } from "./transform";
 
 /**
@@ -35,16 +34,12 @@ function trustedAuthResults(results: string[] | undefined): string | null {
   return null;
 }
 
-export type AppleMailClassification = { facets: ThreadFacets; cta: Cta | null };
-
 /**
- * Compute facets and extract CTA for an Apple Mail (IMAP) message. `bodyText`
- * is the extracted body used for the length heuristic (pass the same string
- * the note will carry).
+ * Extract normalized mail signals for an Apple Mail (IMAP) message.
  */
-export function appleMailFacets(message: MailMessage, bodyText: string): AppleMailClassification {
+export function appleMailSignals(message: MailMessage): MailSignals {
   const from = message.from && message.from[0] ? message.from[0] : null;
-  const signals: EmailSignals = {
+  return {
     listId: message.listId ?? null,
     listUnsubscribe: message.listUnsubscribe ?? null,
     precedence: message.precedence ?? null,
@@ -53,14 +48,12 @@ export function appleMailFacets(message: MailMessage, bodyText: string): AppleMa
     importance: message.importance ?? message.xPriority ?? null,
     fromAddress: from?.address.toLowerCase() ?? null,
     fromName: from?.name ?? null,
-    recipientCount: (message.to?.length ?? 0) + (message.cc?.length ?? 0),
+    toCount: message.to?.length ?? 0,
+    ccCount: message.cc?.length ?? 0,
     isReply: message.inReplyTo != null || (message.references?.length ?? 0) > 0,
     subject: message.subject ?? null,
-    bodyText,
-    bodyLength: bodyText.length,
-    links: extractLinkCandidates(message.bodyHtml ?? ""),
     authResults: trustedAuthResults(message.authenticationResults),
-    gmailCategories: [],
+    providerCategories: [],
+    providerFlags: [],
   };
-  return { facets: classifyEmail(signals), cta: extractCta(signals) };
 }

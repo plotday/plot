@@ -936,22 +936,22 @@ describe("transformMessages — Sent-only roots", () => {
   });
 });
 
-describe("transformMessages — facets", () => {
-  it("sets link.facets from the thread's originating (earliest) message", () => {
-    const originator = msg({ listId: "<news.example.com>", bodyText: "x".repeat(2000) });
+describe("transformMessages — signals", () => {
+  it("sets link.signals.mail from the thread's originating (earliest) message", () => {
+    // Previously asserted format: "reading", automation: "automated", reach:
+    // "list" via classifyEmail run over the originator's facets. The
+    // automated/list verdict came from the List-Id header below; the
+    // reading/notification split came from body length, which is now
+    // classifier logic covered platform-side, not this file.
+    const originator = msg({ listId: "<news.example.com>" });
     const link = transform([originator])[0];
-    expect(link.facets).toEqual({
-      format: "reading",
-      automation: "automated",
-      reach: "list",
-    });
+    expect(link.signals?.mail?.listId).toBe("<news.example.com>");
   });
 
-  it("classifies from the ORIGINATOR even when a later reply in the thread looks different", () => {
+  it("computes signals from the ORIGINATOR even when a later reply in the thread looks different", () => {
     const originator = msg({
       messageId: "<root@example.com>",
       listId: "<news.example.com>",
-      bodyText: "x".repeat(2000),
       date: new Date("2026-07-15T09:00:00Z"),
     });
     const reply = msg({
@@ -964,33 +964,16 @@ describe("transformMessages — facets", () => {
       date: new Date("2026-07-15T10:00:00Z"),
     });
     const link = transform([originator, reply])[0];
-    // Still classified off the newsletter-shaped originator, not the short
+    // Still computed off the newsletter-shaped originator, not the short
     // human reply — matches Gmail/Outlook's "parent message" convention.
-    expect(link.facets?.reach).toBe("list");
+    expect(link.signals?.mail?.listId).toBe("<news.example.com>");
   });
 
-  it("attaches an extracted CTA to the originating note and overrides facets.format with cta.kind", () => {
-    const originator = msg({
-      from: [{ address: "security@example.com", name: "Example Security" }],
-      subject: "Your verification code",
-      bodyText: "Your one-time code is 482913. It expires in 10 minutes.",
-    });
-    const link = transform([originator])[0];
-    expect(link.facets?.format).toBe("otp");
-    const note = link.notes?.[0];
-    expect(note?.cta).toEqual({
-      kind: "otp",
-      // serviceName() strips SERVICE_NOISE words like "Security" from the
-      // From display name — see @plotday/email-classifier/extract-cta.ts.
-      service: "Example",
-      code: "482913",
-      url: null,
-    });
-  });
-
-  it("leaves cta unset on the note when no CTA is detected", () => {
-    const originator = msg({ bodyText: "just saying hi" });
-    const link = transform([originator])[0];
-    expect(link.notes?.[0].cta).toBeFalsy();
-  });
+  // The CTA-extraction cases previously here ("attaches an extracted CTA to
+  // the originating note …", "leaves cta unset on the note when no CTA is
+  // detected") are dropped, not converted: CTA extraction moved server-side
+  // (the platform now derives it from signals), so there is no connector
+  // behavior left for them to cover — matching Gmail's and Outlook's facet
+  // test suites, which dropped their equivalent CTA cases outright rather
+  // than replacing them with a signal assertion.
 });

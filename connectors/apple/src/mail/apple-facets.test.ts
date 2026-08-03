@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appleMailFacets } from "./apple-facets";
+import { appleMailSignals } from "./apple-facets";
 import type { MailMessage } from "./transform";
 
 function msg(over: Partial<MailMessage>): MailMessage {
@@ -13,74 +13,72 @@ function msg(over: Partial<MailMessage>): MailMessage {
   };
 }
 
-describe("appleMailFacets", () => {
-  it("newsletter with List-Id → automated/list", () => {
-    const { facets } = appleMailFacets(
-      msg({ listId: "<news.example.com>" }),
-      "x".repeat(2000)
-    );
-    expect(facets.automation).toBe("automated");
-    expect(facets.reach).toBe("list");
-    expect(facets.format).toBe("reading");
+describe("appleMailSignals", () => {
+  it("extracts a List-Id header from a newsletter", () => {
+    // Previously asserted automation: "automated", reach: "list", format:
+    // "reading" via classifyEmail. The automated/list verdict came from this
+    // header; the reading/notification split came from body length, which is
+    // now classifier logic covered platform-side, not this file.
+    const s = appleMailSignals(msg({ listId: "<news.example.com>" }));
+    expect(s.listId).toBe("<news.example.com>");
   });
 
-  it("plain human reply → human/direct/message", () => {
-    const { facets } = appleMailFacets(
-      msg({ inReplyTo: "<a@b>", subject: "Re: Hi" }),
-      "short"
-    );
-    expect(facets.automation).toBe("human");
-    expect(facets.reach).toBe("direct");
-    expect(facets.format).toBe("message");
+  it("marks a message as a reply when In-Reply-To is present", () => {
+    // Previously asserted automation: "human", reach: "direct", format:
+    // "message" for a plain human reply. The human/direct verdict is
+    // classifier logic over the absence of list/precedence headers and the
+    // recipient count (covered platform-side); the reply signal itself is
+    // what this connector is responsible for extracting.
+    const s = appleMailSignals(msg({ inReplyTo: "<a@b>", subject: "Re: Hi" }));
+    expect(s.isReply).toBe(true);
   });
 
-  it("short automated mail from a no-reply sender → notification", () => {
-    const { facets } = appleMailFacets(
-      msg({ from: [{ address: "no-reply@svc.com" }] }),
-      "tiny"
-    );
-    expect(facets.automation).toBe("automated");
-    expect(facets.format).toBe("notification");
+  it("extracts a no-reply sender's address verbatim (lowercased)", () => {
+    // Previously asserted automation: "automated", format: "notification"
+    // for a short automated mail from a no-reply sender. That verdict came
+    // from classifier logic over the sender-address pattern and body
+    // length (now platform-side); the address extraction itself is what
+    // this connector is responsible for.
+    const s = appleMailSignals(msg({ from: [{ address: "No-Reply@SVC.com" }] }));
+    expect(s.fromAddress).toBe("no-reply@svc.com");
   });
 
-  it("message with no facet-signal headers degrades gracefully", () => {
-    const { facets } = appleMailFacets(msg({}), "hello there");
-    expect(facets.automation).toBe("human");
-    expect(facets.reach).toBe("direct");
+  it("extracts no automation signals for a message with no facet-signal headers", () => {
+    // Previously asserted automation: "human", reach: "direct" for a message
+    // with none of the automation-indicating headers set. Same classifier
+    // logic as above, covered platform-side.
+    const s = appleMailSignals(msg({}));
+    expect(s.listId).toBeNull();
+    expect(s.precedence).toBeNull();
+    expect(s.autoSubmitted).toBeNull();
+    expect(s.isReply).toBe(false);
   });
 
-  it("extracts a confirm cta from an HTML body link with a trusted iCloud auth-results", () => {
+  it("captures a trusted iCloud Authentication-Results header verbatim", () => {
+    // Previously exercised CTA extraction from an HTML body link alongside
+    // trusted-DMARC selection; CTA extraction moved server-side (the
+    // platform now derives it from signals), so only the authserv-id
+    // selection — connector-only knowledge — remains here.
+    const authResults = "icloud.com; spf=pass smtp.mailfrom=contoso.com; dkim=pass header.d=contoso.com; dmarc=pass header.from=contoso.com";
     const message = msg({
       from: [{ address: "hello@contoso.com", name: "Contoso" }],
-      subject: "Confirm your account",
-      bodyHtml: `<p>Welcome</p><a href="https://contoso.com/verify?token=xyz">Confirm your account</a>`,
-      authenticationResults: [
-        "icloud.com; spf=pass smtp.mailfrom=contoso.com; dkim=pass header.d=contoso.com; dmarc=pass header.from=contoso.com",
-      ],
+      authenticationResults: [authResults],
     });
-    const { facets, cta } = appleMailFacets(
-      message,
-      "Welcome Confirm your account"
-    );
-    expect(cta).toEqual({
-      kind: "confirm",
-      service: "Contoso",
-      code: null,
-      url: "https://contoso.com/verify?token=xyz",
-    });
-    expect(facets).not.toBeNull();
+    const s = appleMailSignals(message);
+    expect(s.authResults).toBe(authResults);
   });
 
   it("accepts a trusted iCloud auth-results reported by a specific mail-exchanger subdomain", () => {
+    // Coverage that the suffix match (authservId.endsWith(".icloud.com")),
+    // not just an exact "icloud.com" match, still accepts a real
+    // mail-exchanger sub-host like mx05.mail.icloud.com.
+    const authResults = "mx05.mail.icloud.com; dmarc=pass header.from=contoso.com";
     const message = msg({
       from: [{ address: "hello@contoso.com", name: "Contoso" }],
-      bodyHtml: `<a href="https://contoso.com/verify">Confirm your account</a>`,
-      authenticationResults: [
-        "mx05.mail.icloud.com; dmarc=pass header.from=contoso.com",
-      ],
+      authenticationResults: [authResults],
     });
-    const { cta } = appleMailFacets(message, "Confirm your account");
-    expect(cta?.kind).toBe("confirm");
+    const s = appleMailSignals(message);
+    expect(s.authResults).toBe(authResults);
   });
 
   it("finds the DMARC verdict when iCloud splits SPF/DKIM/DMARC/BIMI across separate Authentication-Results headers", () => {
@@ -93,49 +91,51 @@ describe("appleMailFacets", () => {
     // ends with .icloud.com" pick would return it and the DMARC regex would
     // never match — this test pins that the correct (dmarc=-bearing) header
     // is found regardless of header order.
+    const dmarcResult = "dmarc.icloud.com; dmarc=pass header.from=contoso.com";
     const message = msg({
       from: [{ address: "hello@contoso.com", name: "Contoso" }],
-      bodyHtml: `<a href="https://contoso.com/verify">Confirm your account</a>`,
       authenticationResults: [
         "bimi.icloud.com; bimi=pass header.d=contoso.com header.selector=default policy.authority=pass",
-        "dmarc.icloud.com; dmarc=pass header.from=contoso.com",
+        dmarcResult,
         "dkim-verifier.icloud.com; dkim=pass header.d=contoso.com header.i=@contoso.com",
         "spf.icloud.com; spf=pass smtp.mailfrom=contoso.com",
       ],
     });
-    const { cta } = appleMailFacets(message, "Confirm your account");
-    expect(cta).toEqual({
-      kind: "confirm",
-      service: "Contoso",
-      code: null,
-      url: "https://contoso.com/verify",
-    });
+    const s = appleMailSignals(message);
+    expect(s.authResults).toBe(dmarcResult);
   });
 
   it("rejects a spoofed authserv-id that merely contains icloud.com", () => {
     // evil-icloud.com.attacker.com should NOT match after the suffix tightening.
     const message = msg({
       from: [{ address: "no-reply@victim.com", name: "Victim" }],
-      bodyHtml: `<a href="https://victim.com/confirm">Confirm</a>`,
-      authenticationResults: [
-        "evil-icloud.com.attacker.com; dmarc=pass header.from=victim.com",
-      ],
+      authenticationResults: ["evil-icloud.com.attacker.com; dmarc=pass header.from=victim.com"],
     });
-    const { cta } = appleMailFacets(message, "Confirm");
-    // Without trusted auth-results the link host can't be validated → no confirm cta.
-    expect(cta?.kind).not.toBe("confirm");
+    const s = appleMailSignals(message);
+    expect(s.authResults).toBeNull();
   });
 
   it("selects Importance over X-Priority, falling back to X-Priority when Importance is absent", () => {
-    const withImportance = appleMailFacets(
-      msg({ importance: "high", xPriority: "1" }),
-      "hi"
+    const withImportance = appleMailSignals(msg({ importance: "high", xPriority: "1" }));
+    expect(withImportance.importance).toBe("high");
+    const withXPriorityOnly = appleMailSignals(msg({ xPriority: "1" }));
+    expect(withXPriorityOnly.importance).toBe("1");
+  });
+
+  it("emits To and Cc counts separately", () => {
+    const s = appleMailSignals(
+      msg({
+        to: [{ address: "me@icloud.com" }, { address: "friend@x.com" }],
+        cc: [{ address: "cc@x.com" }],
+      })
     );
-    const withXPriorityOnly = appleMailFacets(msg({ xPriority: "1" }), "hi");
-    // Both just need to not throw and to have run the classifier — importance
-    // itself isn't asserted on `facets` directly (it's carried as raw signal),
-    // so this test pins that the fallback wiring doesn't crash either way.
-    expect(withImportance.facets).not.toBeNull();
-    expect(withXPriorityOnly.facets).not.toBeNull();
+    expect(s.toCount).toBe(2);
+    expect(s.ccCount).toBe(1);
+  });
+
+  it("always emits empty provider categories and flags — IMAP has no equivalent", () => {
+    const s = appleMailSignals(msg({}));
+    expect(s.providerCategories).toEqual([]);
+    expect(s.providerFlags).toEqual([]);
   });
 });
