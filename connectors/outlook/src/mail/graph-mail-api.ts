@@ -667,6 +667,22 @@ const RSVP_PARTSTAT: Record<string, RsvpReply["partstat"]> = {
 };
 
 /**
+ * Parse Graph's `originalStart` (an ISO 8601 instant) into a `Date`,
+ * validating rather than trusting `new Date(string)` — a malformed or
+ * truncated value yields `Invalid Date`, not a thrown error, and that value
+ * would otherwise flow into `RsvpReply.occurrence` and reach
+ * `priorRsvpKey`'s unconditional `occurrence.toISOString()`, throwing
+ * `RangeError: Invalid time value` and crashing the sync pass. `null` here
+ * degrades to a series-scoped key instead — the same safe outcome as a
+ * genuine whole-series response (see `parseIcsDate` in the Gmail connector
+ * for the same pattern against ICS dates).
+ */
+function parseOriginalStart(value: string): Date | null {
+  const ms = Date.parse(value);
+  return Number.isNaN(ms) ? null : new Date(ms);
+}
+
+/**
  * Classify an Outlook conversation's relationship to a calendar event for
  * bundling onto the event's Plot thread. Two signals: our own
  * `X-Plot-Event-UID` header on the parent's raw headers (a Plot-sent reply
@@ -715,7 +731,7 @@ export function classifyOutlookCalendar(
       const occurrence =
         (m.event?.type === "occurrence" || m.event?.type === "exception") &&
         m.event?.originalStart
-          ? new Date(m.event.originalStart)
+          ? parseOriginalStart(m.event.originalStart)
           : null;
       return { uid, kind: "rsvp", partstat, occurrence };
     }

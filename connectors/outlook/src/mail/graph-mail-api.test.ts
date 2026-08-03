@@ -389,6 +389,20 @@ describe("classifyOutlookCalendar", () => {
     expect((r as { occurrence: Date | null }).occurrence).toBeNull();
   });
 
+  it("degrades a malformed originalStart on an occurrence to occurrence: null instead of an Invalid Date", () => {
+    const r = classifyOutlookCalendar(
+      [
+        msg({
+          meetingMessageType: "meetingAccepted",
+          event: { iCalUId: "u", type: "occurrence", originalStart: "not-a-date" },
+        }),
+      ],
+      null
+    );
+    expect(r).toMatchObject({ kind: "rsvp", partstat: "ACCEPTED" });
+    expect((r as { occurrence: Date | null }).occurrence).toBeNull();
+  });
+
   it("still prefers cancel and request over an rsvp in the same conversation", () => {
     expect(
       classifyOutlookCalendar(
