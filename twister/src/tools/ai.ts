@@ -269,7 +269,7 @@ export enum AIModel {
   // rather than failing — but new code should name a 3.x member directly.
   /** @deprecated Withdrawn by Google. Use {@link AIModel.GEMINI_31_PRO}. */
   GEMINI_25_PRO = "google/gemini-2.5-pro",
-  /** @deprecated Superseded. Use {@link AIModel.GEMINI_35_FLASH}. */
+  /** @deprecated Withdrawn by Google. Use {@link AIModel.GEMINI_35_FLASH}. */
   GEMINI_25_FLASH = "google/gemini-2.5-flash",
   /** @deprecated Withdrawn by Google. Use {@link AIModel.GEMINI_35_FLASH_LITE}. */
   GEMINI_25_FLASH_LITE = "google/gemini-2.5-flash-lite",
