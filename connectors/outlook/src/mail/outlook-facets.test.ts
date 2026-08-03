@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { outlookFacets } from "./outlook-facets";
+import { outlookSignals } from "./outlook-facets";
 import type { GraphMessage } from "./graph-mail-api";
 
 const m = (over: Partial<GraphMessage>): GraphMessage => ({
@@ -11,53 +11,58 @@ const m = (over: Partial<GraphMessage>): GraphMessage => ({
   ...over,
 });
 
-describe("outlookFacets", () => {
-  it("newsletter with List-Id → automated/list", () => {
-    const { facets } = outlookFacets(
-      [{ name: "List-Id", value: "<news.example.com>" }],
-      m({}),
-      "x".repeat(2000)
-    );
-    expect(facets.automation).toBe("automated");
-    expect(facets.reach).toBe("list");
-    expect(facets.format).toBe("reading");
+describe("outlookSignals", () => {
+  it("captures a List-Id header, marking the message as list mail", () => {
+    // Previously asserted format: "reading", automation: "automated", reach:
+    // "list" via outlookFacets/classifyEmail. The automated/list verdict came
+    // from this header; the reading/notification split came from body
+    // length, which is now classifier logic covered by the platform's own
+    // facet-derivation tests, not this file.
+    const s = outlookSignals([{ name: "List-Id", value: "<news.example.com>" }], m({}));
+    expect(s.listId).toBe("<news.example.com>");
   });
 
-  it("plain human reply → human/direct/message", () => {
-    const { facets } = outlookFacets(
-      [{ name: "In-Reply-To", value: "<a@b>" }],
-      m({ subject: "Re: Hi" }),
-      "short"
-    );
-    expect(facets.automation).toBe("human");
-    expect(facets.reach).toBe("direct");
-    expect(facets.format).toBe("message");
+  it("marks a message as a reply when In-Reply-To is present", () => {
+    // Previously asserted format: "message", automation: "human", reach:
+    // "direct". The human/direct verdict is classifier logic over the
+    // absence of list/precedence headers and the recipient count (covered
+    // elsewhere on the platform side); the reply signal itself is what this
+    // connector is responsible for extracting.
+    const s = outlookSignals([{ name: "In-Reply-To", value: "<a@b>" }], m({ subject: "Re: Hi" }));
+    expect(s.isReply).toBe(true);
   });
 
-  it("short Other-inbox automated mail → notification (no headers available)", () => {
-    const { facets } = outlookFacets(
+  it("emits the provider's own inference classification verbatim", () => {
+    // Previously asserted automation: "automated", format: "notification" for
+    // a short Focused-Inbox "Other" message. The Focused/Other bucket used to
+    // be mapped onto a Gmail category locally; that mapping is now the
+    // platform's decision, so the connector just reports the provider's own
+    // bucket name verbatim.
+    const s = outlookSignals(
       null,
       m({
         inferenceClassification: "other",
         from: { emailAddress: { address: "noreply@svc.com" } },
-      }),
-      "tiny"
+      })
     );
-    expect(facets.automation).toBe("automated");
-    expect(facets.format).toBe("notification");
+    expect(s.providerCategories).toEqual(["other"]);
   });
 
-  it("null headers degrade gracefully", () => {
-    const { facets } = outlookFacets(null, m({}), "hello there");
-    expect(facets.automation).toBe("human");
-    expect(facets.reach).toBe("direct");
+  it("null headers degrade gracefully — header-driven signals stay null", () => {
+    const s = outlookSignals(null, m({}));
+    expect(s.listId).toBeNull();
+    expect(s.listUnsubscribe).toBeNull();
+    expect(s.precedence).toBeNull();
+    expect(s.isReply).toBe(false);
   });
 
-  it("extracts a confirm cta from an HTML body link with trusted EOP auth-results", () => {
-    // Outlook has no decode bug (body.content is already a plain string), so this
-    // is coverage-only: verifies the full outlookFacets path (HTML link extraction +
-    // DMARC trust) works end-to-end and that the tightened authserv-id suffix match
-    // still accepts a real EOP sub-domain like bl0pr01.prod.protection.outlook.com.
+  it("captures the trusted EOP Authentication-Results header verbatim", () => {
+    // Previously exercised CTA extraction from an HTML body link alongside
+    // trusted-EOP selection; CTA extraction moved server-side (the platform
+    // now derives it from signals), so only the authserv-id selection —
+    // connector-only knowledge — remains here. Also coverage that the
+    // tightened authserv-id suffix match still accepts a real EOP sub-domain
+    // like bl0pr01.prod.protection.outlook.com.
     const headers = [
       {
         name: "Authentication-Results",
@@ -68,21 +73,9 @@ describe("outlookFacets", () => {
     const message = m({
       from: { emailAddress: { address: "hello@contoso.com", name: "Contoso" } },
       subject: "Confirm your account",
-      body: {
-        contentType: "html",
-        content: `<p>Welcome</p><a href="https://contoso.com/verify?token=xyz">Confirm your account</a>`,
-      },
     });
-    const { facets, cta } = outlookFacets(headers, message, "Welcome Confirm your account");
-    expect(cta).toEqual({
-      kind: "confirm",
-      service: "Contoso",
-      code: null,
-      url: "https://contoso.com/verify?token=xyz",
-    });
-    // outlookFacets returns raw classifyEmail output; the caller merges cta.kind into
-    // facets.format (see outlook-mail.ts: `cta ? { ...facets, format: cta.kind } : facets`).
-    expect(facets).not.toBeNull();
+    const s = outlookSignals(headers, message);
+    expect(s.authResults).toBe(headers[0].value);
   });
 
   it("rejects a spoofed authserv-id that merely contains protection.outlook.com", () => {
@@ -90,19 +83,35 @@ describe("outlookFacets", () => {
     const headers = [
       {
         name: "Authentication-Results",
-        value:
-          "evil-protection.outlook.com.attacker.com; dmarc=pass header.from=victim.com",
+        value: "evil-protection.outlook.com.attacker.com; dmarc=pass header.from=victim.com",
       },
     ];
     const message = m({
       from: { emailAddress: { address: "no-reply@victim.com", name: "Victim" } },
-      body: {
-        contentType: "html",
-        content: `<a href="https://victim.com/confirm">Confirm</a>`,
-      },
     });
-    const { cta } = outlookFacets(headers, message, "Confirm");
-    // Without trusted auth-results the link host can't be validated → no confirm cta
-    expect(cta?.kind).not.toBe("confirm");
+    const s = outlookSignals(headers, message);
+    expect(s.authResults).toBeNull();
+  });
+
+  it("emits To and Cc counts separately", () => {
+    const s = outlookSignals(
+      null,
+      m({
+        toRecipients: [{ emailAddress: { address: "a@x.com" } }, { emailAddress: { address: "b@x.com" } }],
+        ccRecipients: [{ emailAddress: { address: "c@x.com" } }],
+      })
+    );
+    expect(s.toCount).toBe(2);
+    expect(s.ccCount).toBe(1);
+  });
+
+  it("reports a flagged message as a FLAGGED provider flag", () => {
+    const s = outlookSignals(null, m({ flag: { flagStatus: "flagged" } }));
+    expect(s.providerFlags).toEqual(["FLAGGED"]);
+  });
+
+  it("reports no provider flags for an unflagged message", () => {
+    const s = outlookSignals(null, m({}));
+    expect(s.providerFlags).toEqual([]);
   });
 });
