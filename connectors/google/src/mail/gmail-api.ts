@@ -10,6 +10,7 @@ import type {
 import { markdownToPlainText } from "@plotday/twister/utils/markdown";
 import { markdownToHtml } from "@plotday/twister/utils/markdown-html";
 import { isNoReplySender } from "@plotday/twister/signals";
+import { parseIcsReply } from "@plotday/rsvp-fold";
 
 
 export type GmailLabel = {
@@ -770,9 +771,11 @@ function normalizeMessageId(raw: string | null): string | null {
 /**
  * Unfold RFC 5545 lines (CRLF + leading space/tab is a continuation) and
  * match one property line: group 1 is its parameter section (leading `;`
- * included, or `""` when there are none), group 2 is its value. Shared by
- * `icsProp` (value only) and `icsPropLine` (params + value), so the
- * unfolding rule and line regex exist exactly once.
+ * included, or `""` when there are none), group 2 is its value. Used by
+ * `icsProp` for the property lookups `classifyCalendarThread` still needs
+ * locally (`METHOD`, `UID`, `SEQUENCE`) — the params+value variant of this
+ * helper (`icsPropLine`) moved to `@plotday/rsvp-fold` along with the rest of
+ * the reply parse.
  */
 function matchIcsLine(ics: string, name: string): RegExpMatchArray | null {
   const unfolded = ics.replace(/\r?\n[ \t]/g, "");
@@ -928,60 +931,6 @@ export type CalendarReply = {
 };
 
 /**
- * RFC 5545 text un-escaping: `\n`/`\N` → newline, `\,` `\;` `\\` → the
- * literal character. Single-pass so an escaped backslash immediately
- * followed by a literal `n` (`\\n`) isn't misread as a newline escape — a
- * two-pass `\n`-then-`\\` replacement would consume the second backslash of
- * `\\` as if it started its own `\n` escape.
- */
-function unescapeIcsText(value: string): string {
-  return value.replace(/\\([nN,;\\])/g, (_, ch: string) =>
-    ch === "n" || ch === "N" ? "\n" : ch
-  );
-}
-
-/**
- * Read a property's raw line (parameters included) from an ICS body. Shares
- * `icsProp`'s unfolding and line regex via `matchIcsLine`, but returns
- * everything after the property name so parameters can be parsed.
- */
-function icsPropLine(ics: string, name: string): string | null {
-  const m = matchIcsLine(ics, name);
-  return m ? `${m[1]}:${m[2]}` : null;
-}
-
-/**
- * Split an ICS property's parameter section into a map. Values may be quoted
- * (`X-RESPONSE-COMMENT="a, b"`), and a quoted value may contain the `;` and
- * `:` that otherwise delimit parameters — so scan rather than split.
- */
-function parseIcsParams(paramSection: string): Record<string, string> {
-  const params: Record<string, string> = {};
-  const re = /;([A-Za-z0-9-]+)=("([^"]*)"|[^;:]*)/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(paramSection)) !== null) {
-    params[m[1].toUpperCase()] = m[3] !== undefined ? m[3] : m[2];
-  }
-  return params;
-}
-
-/**
- * Parse an ICS date-time into a UTC instant. Handles `20260804T140000Z`
- * (UTC), `20260804T100000` (floating or TZID-qualified — read as UTC, since
- * resolving a TZID needs a tz database the worker doesn't carry), and
- * `20260804` (VALUE=DATE).
- */
-function parseIcsDate(value: string): Date | null {
-  const m = value
-    .trim()
-    .match(/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z)?)?$/);
-  if (!m) return null;
-  const [, y, mo, d, h = "00", mi = "00", s = "00"] = m;
-  const ms = Date.UTC(+y, +mo - 1, +d, +h, +mi, +s);
-  return Number.isNaN(ms) ? null : new Date(ms);
-}
-
-/**
  * Google's response-notification body opens with "<name> has declined this
  * invitation with a note:" followed by the quoted comment, before the Meet /
  * When / Guests boilerplate. Used only when the ICS carried no comment.
@@ -1008,9 +957,16 @@ function commentFromBody(message: GmailMessage): string | null {
  * Extract every attendee response carried by a Gmail conversation.
  *
  * A descriptor is produced for each message whose calendar body — read ahead
- * of time by {@link resolveIcsByMessage} — carries `METHOD:REPLY`, a `UID`, an
- * `ATTENDEE` with a decided `PARTSTAT`, and a resolvable attendee address.
- * `NEEDS-ACTION` yields nothing — there is no response to report.
+ * of time by {@link resolveIcsByMessage} — carries a `UID` and parses as a
+ * decided response via the shared {@link parseIcsReply}. `NEEDS-ACTION`
+ * yields nothing — there is no response to report.
+ *
+ * The per-ICS parse (`METHOD`, `PARTSTAT`, `RECURRENCE-ID`, `COMMENT` /
+ * `X-RESPONSE-COMMENT`, `ATTENDEE` CN/mailto) is shared with other calendar
+ * connectors via `@plotday/rsvp-fold`; only the Gmail-shaped bits stay here:
+ * looping over the conversation's messages, the `UID` used to address the
+ * event thread, and falling back to the notification body's quoted note when
+ * the ICS itself carried none.
  *
  * Every reply message is returned rather than only the first, so a
  * conversation carrying a revised response stays correct.
@@ -1024,60 +980,27 @@ export function extractCalendarReplies(
   for (const message of messages) {
     const ics = icsByMessage.get(message.id);
     if (!ics) continue;
-    if ((icsProp(ics, "METHOD") ?? "").toUpperCase() !== "REPLY") continue;
 
     const uid = icsProp(ics, "UID");
     if (!uid) continue;
 
-    const attendeeLine = icsPropLine(ics, "ATTENDEE");
-    if (!attendeeLine) continue;
-    const sep = attendeeLine.lastIndexOf(":");
-    const params = parseIcsParams(attendeeLine.slice(0, sep));
-    const attendeeEmail = attendeeLine
-      .slice(sep + 1)
-      .trim()
-      .replace(/^mailto:/i, "");
-    if (!attendeeEmail) continue;
+    const from = parseEmailAddress(getHeader(message, "From") ?? "");
+    const reply = parseIcsReply(ics, {
+      name: from?.name ?? null,
+      email: from?.email ?? "",
+    });
+    if (!reply) continue;
 
-    const partstat = (params.PARTSTAT ?? "").toUpperCase();
-    if (
-      partstat !== "DECLINED" &&
-      partstat !== "ACCEPTED" &&
-      partstat !== "TENTATIVE"
-    ) {
-      continue;
-    }
-
-    const recurrenceLine = icsPropLine(ics, "RECURRENCE-ID");
-    let occurrence: Date | null = null;
-    let allDay = false;
-    if (recurrenceLine) {
-      const rSep = recurrenceLine.lastIndexOf(":");
-      const rParams = parseIcsParams(recurrenceLine.slice(0, rSep));
-      allDay = (rParams.VALUE ?? "").toUpperCase() === "DATE";
-      occurrence = parseIcsDate(recurrenceLine.slice(rSep + 1));
-    }
-
-    const icsComment = icsProp(ics, "COMMENT");
-    const comment =
-      (icsComment ? unescapeIcsText(icsComment).trim() : "") ||
-      (params["X-RESPONSE-COMMENT"]
-        ? unescapeIcsText(params["X-RESPONSE-COMMENT"]).trim()
-        : "") ||
-      commentFromBody(message) ||
-      null;
-
-    const fromName =
-      parseEmailAddress(getHeader(message, "From") ?? "")?.name ?? null;
+    const comment = reply.comment ?? commentFromBody(message);
 
     replies.push({
       messageId: message.id,
       uid,
-      partstat,
-      attendeeName: params.CN?.trim() || fromName || null,
-      attendeeEmail,
-      occurrence,
-      allDay,
+      partstat: reply.partstat,
+      attendeeName: reply.attendeeName,
+      attendeeEmail: reply.attendeeEmail,
+      occurrence: reply.occurrence,
+      allDay: reply.allDay,
       comment,
       sourceCreatedAt: new Date(Number(message.internalDate)),
     });
