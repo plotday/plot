@@ -1,5 +1,11 @@
 # @plotday/twister
 
+## 0.91.0
+
+### Added
+
+- `NewLink.signals` and the `@plotday/twister/signals` entry point.
+
 ## 0.90.0
 
 ### Added
