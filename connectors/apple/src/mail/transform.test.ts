@@ -1069,6 +1069,77 @@ describe("transformMessages — folded attendee responses", () => {
     ).toContain("guest@example.test");
   });
 
+  it("does not raise unread for a newly-arrived folded response, with nothing new left to read", () => {
+    // Before the fold existed, this thread's unread arrived together with the
+    // response's own note. The note is now on the event's thread instead, so
+    // raising unread here would surface a thread with nothing new in it.
+    const real = msg({
+      uid: 1,
+      messageId: "<real@example.test>",
+      references: [ROOT],
+      flags: ["\\Seen"],
+      date: new Date("2026-07-15T09:00:00Z"),
+    });
+    const rsvp = msg({
+      uid: 2,
+      messageId: "<rsvp@example.test>",
+      references: [ROOT],
+      flags: [], // unseen, and new this pass
+      date: new Date("2026-07-15T10:00:00Z"),
+    });
+
+    const links = transformMessages(
+      [real, rsvp],
+      incrementalCtxFor([real, rsvp], {
+        foldedNoteKeys: new Set(["rsvp@example.test"]),
+        newMessages: new Set([messageKey(rsvp)]),
+      })
+    );
+
+    expect(links).toHaveLength(1);
+    expect(links[0].notes!.map((n) => (n as { key: string }).key)).toEqual(["real@example.test"]);
+    // Not `unread: false` either — an unseen response is still unseen mail, so
+    // this pass makes no claim about read state in either direction.
+    expect("unread" in links[0]).toBe(false);
+  });
+
+  it("does not raise unread on a BUNDLED root, where the link IS the event's thread", () => {
+    // The route the fold does not cover. A root classified as an update or a
+    // cancellation carries `sources: ["icaluid:…"]`, so this link and the
+    // calendar event are one thread. A bare acceptance folded away here would
+    // still drag that event thread back to unread — through `saveLinks`
+    // rather than `saveNote`, but with the same result for the organiser.
+    const update = msg({
+      uid: 1,
+      messageId: "<update@example.test>",
+      subject: "Updated invitation: Weekly sync",
+      flags: ["\\Seen"],
+      date: new Date("2026-07-15T09:00:00Z"),
+    });
+    const acceptance = msg({
+      uid: 2,
+      messageId: "<rsvp@example.test>",
+      references: ["<update@example.test>"],
+      flags: [], // unseen, and new this pass
+      date: new Date("2026-07-15T10:00:00Z"),
+    });
+
+    const links = transformMessages(
+      [update, acceptance],
+      incrementalCtxFor([update, acceptance], {
+        foldedNoteKeys: new Set(["rsvp@example.test"]),
+        newMessages: new Set([messageKey(acceptance)]),
+        calendarBundles: new Map([
+          ["update@example.test", { uid: "evt-1", kind: "update" as const, eventKnown: true }],
+        ]),
+      })
+    );
+
+    expect(links).toHaveLength(1);
+    expect(links[0].sources).toEqual(["icaluid:evt-1"]);
+    expect("unread" in links[0]).toBe(false);
+  });
+
   it("is unaffected when nothing was folded", () => {
     const real = msg({ uid: 1, messageId: "<real@example.test>", references: [ROOT] });
     const links = transform([real]);

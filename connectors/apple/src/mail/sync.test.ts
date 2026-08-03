@@ -1999,12 +1999,14 @@ function replyIcs(opts: {
   partstat: "ACCEPTED" | "DECLINED" | "TENTATIVE";
   comment?: string;
   recurrenceId?: string;
+  /** The event being answered; defaults to the fold fixtures' own event. */
+  uid?: string;
 }): string {
   return [
     "BEGIN:VCALENDAR",
     "METHOD:REPLY",
     "BEGIN:VEVENT",
-    `UID:${REPLY_UID}`,
+    `UID:${opts.uid ?? REPLY_UID}`,
     ...(opts.recurrenceId ? [`RECURRENCE-ID:${opts.recurrenceId}`] : []),
     `ATTENDEE;CN=Sam Guest;PARTSTAT=${opts.partstat}:mailto:guest@example.test`,
     ...(opts.comment ? [`COMMENT:${opts.comment}`] : []),
@@ -2326,15 +2328,7 @@ const E2E_UID = "evt-e2e@example.test";
 const E2E_MARKER = `rsvp:${E2E_UID}:series:guest@example.test`;
 
 /** A `METHOD:REPLY` declining `E2E_UID`. */
-const E2E_DECLINE = [
-  "BEGIN:VCALENDAR",
-  "METHOD:REPLY",
-  "BEGIN:VEVENT",
-  `UID:${E2E_UID}`,
-  "ATTENDEE;CN=Sam Guest;PARTSTAT=DECLINED:mailto:guest@example.test",
-  "END:VEVENT",
-  "END:VCALENDAR",
-].join("\r\n");
+const E2E_DECLINE = replyIcs({ partstat: "DECLINED", uid: E2E_UID });
 
 /**
  * Where in `callLog` the `setMany` invocation whose keys satisfy `match`
@@ -2374,14 +2368,7 @@ async function declinePass(opts: { failSaveLinks?: boolean } = {}) {
   const built = buildFakeHost({
     appleId: "owner@example.test",
     mailboxes: [
-      box("INBOX", [
-        calendarMessage({
-          uid: 51,
-          messageId: "<reply-1@example.test>",
-          root: "<invite@example.test>",
-        }),
-        plainMessage({ uid: 52, root: "<invite@example.test>" }),
-      ]),
+      box("INBOX", [replyMessage(), plainMessage({ uid: 52, root: "<invite@example.test>" })]),
     ],
     attachments: { [buildAttachmentRef("INBOX", 51, "2")]: icsBytes(E2E_DECLINE) },
     ...(opts.failSaveLinks ? { failSaveLinks: true } : {}),
@@ -2408,13 +2395,6 @@ describe("mailSync — attendee responses end-to-end", () => {
       }),
       subject: "Invitation: Weekly sync",
     } as ImapMessage;
-    const reply = calendarMessage({
-      uid: 51,
-      messageId: "<reply-1@example.test>",
-      root: "<invite@example.test>",
-      date: daysAgo(1),
-    });
-
     const built = buildFakeHost({
       appleId: "owner@example.test",
       mailboxes: [box("INBOX", [invite])],
@@ -2432,8 +2412,10 @@ describe("mailSync — attendee responses end-to-end", () => {
     );
 
     // Pass 2: the response arrives, threading onto the invitation's Message-ID.
-    addMessage(built.mailboxes.get("INBOX")!, reply);
+    addMessage(built.mailboxes.get("INBOX")!, replyMessage());
     built.attachments[buildAttachmentRef("INBOX", 51, "2")] = icsBytes(E2E_DECLINE);
+    // `savedLinks` accumulates across passes and `linkFor` asserts exactly one
+    // match, so pass 1's link has to be cleared before pass 2's is inspected.
     built.savedLinks.length = 0;
 
     await mailSync(built.host, [INBOX_CHANNEL], RECENT_ISO);

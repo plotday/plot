@@ -13,9 +13,12 @@
  * the response is attached to the event's thread as a note of its own — or, if
  * it is a bare acceptance saying nothing the guest list does not already show,
  * dropped entirely — and its message is kept out of the mail thread either
- * way. A response never reaches `classifyICS` in a sync pass, so the
- * non-bundling verdict this file gives one says nothing about what becomes of
- * the message.
+ * way. A response the fold RECOGNISES never reaches `classifyICS` in a sync
+ * pass, so the non-bundling verdict this file gives one says nothing about what
+ * becomes of the message. A `METHOD:REPLY` the fold does not recognise — no
+ * `ATTENDEE` line, or a `PARTSTAT` outside accepted/declined/tentative such as
+ * `NEEDS-ACTION` or `DELEGATED` — does fall through to here, and is classified
+ * as non-bundling like any other part.
  *
  * Ports the Google connector's `classifyCalendarThread` decision
  * (`google/src/mail/gmail-api.ts`) — the product-approved rule for which ICS
@@ -55,18 +58,19 @@ export function isCalendarAttachment(mimeType: string): boolean {
  * Classify one ICS (VCALENDAR) text's relationship to its event, per the
  * product-approved rule (see module doc):
  *
- * | ICS content                          | Action                                     |
- * |--------------------------------------|--------------------------------------------|
- * | `METHOD:CANCEL`                      | bundle                                     |
- * | `METHOD:REQUEST` with `SEQUENCE > 0` | bundle                                     |
- * | `METHOD:REQUEST` with `SEQUENCE == 0`| skip                                       |
- * | `METHOD:REPLY` (an RSVP)             | folded onto the event thread (see sync.ts) |
+ * | ICS content                           | Action                                     |
+ * |---------------------------------------|--------------------------------------------|
+ * | `METHOD:CANCEL`                       | bundle                                     |
+ * | `METHOD:REQUEST` with `SEQUENCE > 0`  | bundle                                     |
+ * | `METHOD:REQUEST` with `SEQUENCE == 0` | skip                                       |
+ * | `METHOD:REPLY` (an RSVP)              | folded onto the event thread (see sync.ts) |
  *
  * Returns `null` for everything that does not bundle (including no parseable
  * UID at all) so callers can uniformly treat every non-bundling case — RSVP,
  * bare invite, or unparseable text — the same way. A `METHOD:REPLY` still
- * returns `null` here, but in a sync pass it is folded before this function is
- * ever offered the part, so that `null` is only reachable from another caller.
+ * returns `null` here; in a sync pass it is normally folded before this
+ * function is offered the part, so that `null` is reached only by another
+ * caller or by a response the fold does not recognise (see the module doc).
  */
 export function classifyICS(ics: string): ClassifiedICS | null {
   const uid = icsProp(ics, "UID");

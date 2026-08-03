@@ -452,8 +452,18 @@ export function transformMessages(
     // would let an old unseen message in one folder inherit the "new" status
     // of an unrelated message that happens to share its uid in another —
     // re-marking the thread unread on every single poll.
+    //
+    // `hasNewUnseen` reads `surviving`, not `msgs`: raising unread is a claim
+    // that there is something new to read HERE, and a folded response left no
+    // note on this link. On a bundled root the link IS the event's thread
+    // (`sources: ["icaluid:…"]`), so counting a folded response here would
+    // drag the event thread back to unread through `saveLinks` — exactly what
+    // the fold avoids on the `saveNote` side, arriving by the one route the
+    // fold does not cover. `allSeen` still reads `msgs`: clearing unread is a
+    // claim that nothing in the mailbox is unread, and an unseen response is
+    // still unseen mail, so it correctly holds that claim back.
     const allSeen = msgs.every((m) => isSeen(m));
-    const hasNewUnseen = msgs.some(
+    const hasNewUnseen = surviving.some(
       (m) => !isSeen(m) && ctx.newMessages.has(messageKey(m))
     );
     const incrementalRead: { unread?: boolean } = allSeen
