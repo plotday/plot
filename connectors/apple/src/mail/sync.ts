@@ -1,3 +1,12 @@
+import {
+  alreadyFolded,
+  composeRsvpNote,
+  icsProp,
+  isNonAcceptance,
+  parseIcsReply,
+  priorRsvpKey,
+  shouldEmitRsvpNote,
+} from "@plotday/rsvp-fold";
 import type { ActorId } from "@plotday/twister";
 import type { ImapMailboxStatus, ImapSession } from "@plotday/twister/tools/imap";
 
@@ -12,6 +21,7 @@ import type { MailboxCursor, MailHost, MailSyncState } from "./mail-host";
 import {
   mailSource,
   messageKey,
+  noteKeyOf,
   rootMessageId,
   transformMessages,
   type MailMessage,
@@ -74,7 +84,52 @@ export type ThreadMeta = {
    * distinguishable (see `detectCalendarBundles`'s CACHING doc).
    */
   bundle?: { classified: ClassifiedICS | null };
+  /**
+   * Note keys (see `noteKeyOf`) whose calendar part has already been fetched
+   * and examined. Distinct from `bundle`, which is a per-ROOT decision that
+   * must never flip: this is per-MESSAGE, and exists so a root whose bundling
+   * question is already settled still looks at messages that arrived since.
+   *
+   * Required, not an optimisation. `alreadyFolded` stops a duplicate note but
+   * not the IMAP fetch, and inside the 30-day rescan window an RSVP would
+   * otherwise be re-fetched on every pass — roughly 2,900 times, at up to two
+   * round-trips each, against a ~1,000-request execution budget.
+   *
+   * Capped at SEEN_ICS_MAX, oldest dropped. Growth is bounded in practice by
+   * how many responses one meeting draws, but this document is rewritten every
+   * pass and an unbounded array is not worth the tail risk.
+   */
+  seenIcs?: string[];
+  /**
+   * Note keys (see `noteKeyOf`) of messages already folded onto a calendar
+   * event's thread — attendee responses that belong on the event rather than
+   * in a mail thread of their own (see `detectCalendarBundles`).
+   *
+   * Durable, and deliberately NOT re-derived from what this pass fetched.
+   * `seenIcs` keeps an already-examined response off IMAP, so a later pass
+   * never re-parses it and has no way to rediscover that it was folded: it
+   * would put the response's note back into the mail thread, and on a BUNDLED
+   * root that mail thread is the event's own thread, so the raw response email
+   * would land there and mark it unread for everyone but its author — the
+   * exact outcome the fold exists to prevent. (The other mail connectors
+   * re-derive their folded set on every pass because they re-read the message
+   * on every pass; this field is the price of skipping that fetch.)
+   *
+   * Retained in lockstep with `seenIcs` instead of under a cap of its own.
+   * Every folded key is also a seen key, so filtering against what `seenIcs`
+   * kept bounds this array by SEEN_ICS_MAX while making eviction harmless: a
+   * key can only be dropped together with its `seenIcs` entry, which puts the
+   * message back among the unexamined and has the next pass re-fetch and
+   * re-fold it. (The response's own `rsvp:` marker is a separate, uncapped
+   * key, so `alreadyFolded` still suppresses a second note.) An independent
+   * cap would have no such backstop — it would drop a folded key while the
+   * message stayed un-fetched, and the note would resurface permanently.
+   */
+  foldedIcs?: string[];
 };
+
+/** Cap on `ThreadMeta.seenIcs`; see its doc. */
+const SEEN_ICS_MAX = 200;
 
 function threadMetaKey(rootId: string): string {
   return `thread:${rootId}`;
@@ -250,6 +305,33 @@ export async function reconcileTodoFlags(
  *    on file. Persisting the decision once means the classification can never
  *    flip after the fact.
  *
+ * That cache short-circuits the per-ROOT decision ONLY. Per-MESSAGE
+ * examination continues on every pass: a root whose bundling question is
+ * already settled still fetches calendar parts it has not read before
+ * (tracked in `ThreadMeta.seenIcs`). This matters because a root is the first
+ * `References` entry and calendar systems thread response notifications onto
+ * the invitation's Message-ID — so those later messages arrive on a root that
+ * was settled by the pass which ingested the invitation, and gating the whole
+ * root on the cache would mean never looking at them.
+ *
+ * ATTENDEE RESPONSES: a `METHOD:REPLY` part is an answer to an invitation, so
+ * it belongs on the event's own thread rather than in a mail thread of its
+ * own. Each one is routed through `@plotday/rsvp-fold` — which decides whether
+ * the response says anything the event's guest list does not already show —
+ * and its message is reported in `foldedNoteKeys` either way, so the caller
+ * can leave it out of the mail thread's notes. A bare acceptance gets NO note
+ * at all: attaching a note is what surfaces a thread as unread for every
+ * recipient but its author, and no field passed to `saveNote` suppresses that,
+ * so writing nothing is the only way an acceptance stops pulling the
+ * organiser's event thread back to unread.
+ *
+ * Returns the per-root `bundles` map plus `foldedNoteKeys`: note keys of
+ * messages this function consumed itself. That set is NOT limited to what this
+ * pass fetched — it is seeded for every root from the durable
+ * `ThreadMeta.foldedIcs`, because a response examined on an earlier pass is
+ * deliberately never re-fetched and so could never be recognised again. See
+ * `ThreadMeta.foldedIcs`.
+ *
  * The caller owns the store I/O: `meta` arrives pre-loaded (one read per root
  * for the pass, shared with home-channel resolution) and is MUTATED in place
  * with any new decision, with the root added to `changed` so the caller
@@ -260,75 +342,248 @@ export async function reconcileTodoFlags(
  * `eventKnown` (see `CalendarBundle`'s doc) is resolved via
  * `host.knownEventUids()` at most once per call — lazily, only once a
  * bundle is actually found — never per message/thread.
+ *
+ * `initialRoots` carries `mailSync`'s per-root initial-ness (see there) into
+ * the fold, so a response ingested from history on first connect is attached
+ * without marking the event thread unread — the same discipline
+ * `transformMessages` applies to the mail it ingests. It defaults to empty so
+ * a caller that has no such notion still gets the safe, live-mail behaviour.
  */
 export async function detectCalendarBundles(
   host: MailHost,
   session: ImapSession,
   messages: MailMessage[],
   meta: Map<string, ThreadMeta>,
-  changed: Set<string>
-): Promise<Map<string, CalendarBundle>> {
+  changed: Set<string>,
+  initialRoots: Set<string> = new Set()
+): Promise<{ bundles: Map<string, CalendarBundle>; foldedNoteKeys: Set<string> }> {
   const bundles = new Map<string, CalendarBundle>();
+  const foldedNoteKeys = new Set<string>();
+  /** Fold markers to persist, flushed in ONE `setMany` in the `finally`
+   *  below — so a `saveNote` that throws mid-pass cannot take the markers of
+   *  responses already written with it. */
+  const rsvpMarkers: [string, string][] = [];
   let knownUids: Set<string> | null = null;
   const resolveEventKnown = async (uid: string): Promise<boolean> => {
     if (knownUids === null) knownUids = await host.knownEventUids();
     return knownUids.has(uid);
   };
 
-  for (const [root, msgs] of groupByRoot(messages).entries()) {
-    // Reuse an earlier pass's decision before doing anything else — see the
-    // CACHING doc above for why this must not be gated behind "does THIS
-    // pass have a calendar part" (the ICS-bearing message may have aged out
-    // of the window while the thread itself is still active).
-    const persisted = meta.get(root)?.bundle;
-    if (persisted) {
-      if (persisted.classified) {
-        bundles.set(root, {
-          ...persisted.classified,
-          eventKnown: await resolveEventKnown(persisted.classified.uid),
-        });
+  try {
+    for (const [root, msgs] of groupByRoot(messages).entries()) {
+      const entry = meta.get(root);
+
+      // Foldedness is DURABLE, and is seeded here BEFORE any short-circuit
+      // below — including for a root whose bundle decision is already cached and
+      // whose messages have all been examined, which does no other work at all.
+      // Reporting nothing folded for such a root would put every response this
+      // connector has already moved onto the event's thread straight back into
+      // the mail thread. See `ThreadMeta.foldedIcs`.
+      const folded = new Set(entry?.foldedIcs ?? []);
+      for (const key of folded) foldedNoteKeys.add(key);
+
+      // The cached BUNDLE decision is served unchanged — see the CACHING doc:
+      // a classification that flips changes `sources`' sorted-minimum primary
+      // source and makes `upsert_link` create a second link row. It is consulted
+      // before anything else, so a root whose ICS-bearing message has aged out
+      // of the window keeps its decision even when this pass's messages carry
+      // no calendar part at all.
+      //
+      // What is deliberately NOT skipped is the per-message scan below. A root
+      // is the first `References` entry, and calendar systems thread response
+      // notifications onto the invite's Message-ID — so the root carrying an
+      // RSVP is usually the invite's root, already cached as "no bundle" from
+      // the pass that ingested the invite. Returning early here (as this code
+      // used to) means an RSVP is never looked at.
+      const persisted = entry?.bundle;
+      if (persisted) {
+        if (persisted.classified) {
+          bundles.set(root, {
+            ...persisted.classified,
+            eventKnown: await resolveEventKnown(persisted.classified.uid),
+          });
+        }
       }
-      continue;
-    }
 
-    // Not yet classified. Cheap in-memory check (no I/O) — only
-    // calendar-bearing threads ever touch IMAP below, and only those get a
-    // decision recorded (a thread with no calendar part yet is simply
-    // re-checked next pass in case one arrives later).
-    const calendarMsgs = msgs.filter((m) =>
-      (m.attachments ?? []).some((a) => isCalendarAttachment(a.mimeType))
-    );
-    if (calendarMsgs.length === 0) continue;
+      // Fetch every calendar part not yet examined. The cheap in-memory filter
+      // keeps threads with no calendar part off IMAP entirely, and `seenIcs`
+      // keeps a part that has already been read off it on every later pass
+      // within the rescan window.
+      const seen = new Set(entry?.seenIcs ?? []);
+      const icsByKey = new Map<string, string>();
+      const unexamined = msgs.filter(
+        (m) =>
+          (m.attachments ?? []).some((a) => isCalendarAttachment(a.mimeType)) &&
+          !seen.has(noteKeyOf(m))
+      );
 
-    let classified: ClassifiedICS | null = null;
-    for (const m of calendarMsgs) {
-      const part = (m.attachments ?? []).find((a) => isCalendarAttachment(a.mimeType))!;
+      for (const m of unexamined) {
+        // A merged pass can hold two mailbox copies of ONE message (a copy kept
+        // in a project folder as well as INBOX). They share a note key, and
+        // `dedupeCopies` only collapses them later, inside `transformMessages` —
+        // `unexamined` was filtered against a snapshot of `seen`, so both copies
+        // are in it. The second copy has nothing new to read, and routing it
+        // again would emit its response note twice: the marker written below is
+        // flushed once at the end of the pass, so the second copy would still
+        // read the pre-pass value and look un-folded.
+        if (seen.has(noteKeyOf(m))) continue;
 
-      await host.imap.selectMailbox(session, m.mailbox);
-      const bytes = await host.imap.fetchAttachment(session, m.uid, part.partNumber);
-      const ics = new TextDecoder("utf-8").decode(bytes);
-      classified = classifyICS(ics);
-      if (!classified) continue; // bare invite or RSVP — check the thread's other messages
+        const part = (m.attachments ?? []).find((a) => isCalendarAttachment(a.mimeType))!;
+        await host.imap.selectMailbox(session, m.mailbox);
+        const bytes = await host.imap.fetchAttachment(session, m.uid, part.partNumber);
+        const ics = new TextDecoder("utf-8").decode(bytes);
 
-      if (classified.kind === "cancel") {
-        await host.set(`cancel-email:${classified.uid}`, { at: new Date().toISOString() });
+        // An attendee response is routed here, BEFORE the part is offered to the
+        // bundling classifier below: `classifyICS` returns null for a REPLY, so
+        // a reply that fell through would have the root recorded as "evaluated,
+        // does not bundle" on the strength of a message that answers a question
+        // it was never asked — and that decision is permanent, so a real invite
+        // arriving on the same root later would never be classified.
+        const reply = parseIcsReply(ics, { name: m.from?.[0]?.name ?? null });
+        if (reply) {
+          // The event being answered. `parseIcsReply` reads the ATTENDEE line,
+          // not the event id, so the UID is read from the same body here.
+          // Without one there is no thread to address and no way to scope the
+          // marker, so such a response is left as ordinary mail rather than
+          // folded into nowhere — but it is still never classified, since a
+          // reply is not an answer to the bundling question.
+          const replyUid = icsProp(ics, "UID");
+          if (replyUid) {
+            const priorKey = priorRsvpKey(replyUid, reply.attendeeEmail, reply.occurrence);
+            const stored = await host.get<string>(priorKey);
+
+            // Order is the library's documented contract: `alreadyFolded`
+            // FIRST, and only when it is false decide whether to emit.
+            // Re-emitting a note the thread already carries re-applies its
+            // unread intent and drags the thread back to unread for everyone
+            // who had read it — and a response inside the 30-day rescan window
+            // is re-read on every pass.
+            if (
+              !alreadyFolded(stored, reply) &&
+              shouldEmitRsvpNote(reply, isNonAcceptance(stored))
+            ) {
+              // `saveNote` returns null when no thread carries `icaluid:<uid>`
+              // yet (the calendar event has not synced); `deferUntilThread` has
+              // the platform hold the note and attach it once that thread
+              // appears.
+              await host.integrations.saveNote({
+                thread: { source: `icaluid:${replyUid}` },
+                key: noteKeyOf(m),
+                content: composeRsvpNote(reply),
+                contentType: "markdown",
+                ...(m.date ? { created: m.date } : {}),
+                author: {
+                  email: reply.attendeeEmail,
+                  ...(reply.attendeeName ? { name: reply.attendeeName } : {}),
+                },
+                // Explicit on both paths. An omitted flag does NOT mean "leave
+                // read state alone" — attaching a note already marks the thread
+                // unread for every recipient except its author, so only an
+                // explicit false overrides it.
+                unread: !initialRoots.has(root),
+                deferUntilThread: true,
+              });
+              // Recorded ONLY on the path that emits, and regardless of the
+              // return value: a deferred note returns no id, and gating on it
+              // would leave a deferred non-acceptance unrecorded forever,
+              // wrongly treating a later bare acceptance as reversing nothing.
+              // The marker holds the last response actually folded onto the
+              // thread — for every emitted response, acceptances included,
+              // which is what lets `alreadyFolded` recognise a repeat of ANY
+              // partstat.
+              rsvpMarkers.push([priorKey, reply.partstat]);
+            }
+
+            // Folded whether or not a note was written — a bare acceptance is
+            // dropped from the mail thread rather than left to become an email
+            // thread of its own. Recorded on the root's metadata as well as
+            // reported to this caller, so every LATER pass keeps dropping it
+            // without re-reading the part (see `ThreadMeta.foldedIcs`).
+            foldedNoteKeys.add(noteKeyOf(m));
+            folded.add(noteKeyOf(m));
+          }
+
+          // Deliberately NOT added to `icsByKey`: see the comment above.
+          seen.add(noteKeyOf(m));
+          continue;
+        }
+
+        icsByKey.set(noteKeyOf(m), ics);
+        seen.add(noteKeyOf(m));
       }
-      break; // this thread is classified; stop scanning its remaining messages
-    }
 
-    // Record the decision — including explicit "no bundle" — so this root is
-    // never re-evaluated on a later pass (see the caching doc above).
-    const entry = meta.get(root);
-    if (entry) {
-      entry.bundle = { classified };
-      changed.add(root);
-    }
+      if (entry && unexamined.length > 0) {
+        const retained = [...seen].slice(-SEEN_ICS_MAX);
+        entry.seenIcs = retained;
+        // Folded keys ride `seenIcs`'s retention exactly rather than carrying
+        // a cap of their own — see `ThreadMeta.foldedIcs`. Every folded key is
+        // also a seen key, so this bounds the array by SEEN_ICS_MAX while
+        // guaranteeing a key is only ever dropped alongside the `seenIcs`
+        // entry that keeps its message off IMAP; the next pass re-fetches and
+        // re-folds it instead of surfacing its note again.
+        const kept = new Set(retained);
+        const keptFolded = [...folded].filter((k) => kept.has(k));
+        if (keptFolded.length > 0) entry.foldedIcs = keptFolded;
+        else delete entry.foldedIcs;
+        changed.add(root);
+      }
 
-    if (classified) {
-      bundles.set(root, { ...classified, eventKnown: await resolveEventKnown(classified.uid) });
+      // Everything past here is the ONE-TIME bundling classification; a root
+      // that already has a decision keeps it.
+      if (persisted) continue;
+
+      // Nothing to classify from: either no calendar part at all, or every part
+      // was read on an earlier pass (in which case a decision was recorded then
+      // and `persisted` already sent us round). Leave the root undecided so a
+      // part arriving on a later pass is still evaluated.
+      if (icsByKey.size === 0) continue;
+
+      let classified: ClassifiedICS | null = null;
+      for (const m of msgs) {
+        const ics = icsByKey.get(noteKeyOf(m));
+        if (!ics) continue;
+        classified = classifyICS(ics);
+        if (!classified) continue; // bare invite or RSVP — check the thread's other messages
+
+        if (classified.kind === "cancel") {
+          await host.set(`cancel-email:${classified.uid}`, { at: new Date().toISOString() });
+        }
+        break; // this thread is classified; stop scanning its remaining messages
+      }
+
+      // Record the decision — including explicit "no bundle" — so this root is
+      // never re-evaluated on a later pass (see the caching doc above).
+      if (entry) {
+        entry.bundle = { classified };
+        changed.add(root);
+      }
+
+      if (classified) {
+        bundles.set(root, { ...classified, eventKnown: await resolveEventKnown(classified.uid) });
+      }
     }
+  } finally {
+    // ONE `setMany`, per `MailHost.setMany`'s contract: a pass can fold many
+    // responses and a `set` each would burn a request apiece.
+    //
+    // Written HERE — before `mailSync`'s `saveLinks` — deliberately, and
+    // opposite to `ThreadMeta`, which is persisted AFTER `saveLinks` so a
+    // throw re-runs the initial-sync discipline. The two fail in opposite
+    // directions: a marker written after a throwing `saveLinks` would leave
+    // the note on file with nothing recording it, so the next pass would
+    // re-emit it and re-raise unread on a thread people had already read. Do
+    // not "tidy" these into one place.
+    //
+    // In a `finally` so batching costs nothing in durability: a `saveNote`
+    // that throws part-way through the pass would otherwise take every marker
+    // with it, including those for responses already written to their event
+    // threads, and the next pass would re-emit exactly those notes and
+    // re-raise unread. The flush still happens once, so the request budget is
+    // unaffected. The original error propagates from here as normal.
+    if (rsvpMarkers.length > 0) await host.setMany(rsvpMarkers);
   }
-  return bundles;
+
+  return { bundles, foldedNoteKeys };
 }
 
 /** How one mailbox is being read this pass. */
@@ -619,6 +874,16 @@ export async function mailSync(
       nextMeta.set(root, {
         channelId,
         ...(prev?.bundle ? { bundle: prev.bundle } : {}),
+        // Carried forward, like `bundle`: this map is rebuilt from scratch
+        // every pass, so anything not copied here is lost, and a dropped
+        // `seenIcs` means every calendar part in the rescan window is
+        // re-fetched on every poll.
+        ...(prev?.seenIcs ? { seenIcs: prev.seenIcs } : {}),
+        // Likewise — and this one is not merely a cost: a dropped `foldedIcs`
+        // puts every attendee response already moved onto its event's thread
+        // back into the mail thread, which on a bundled root IS that event's
+        // thread. See `ThreadMeta.foldedIcs`.
+        ...(prev?.foldedIcs ? { foldedIcs: prev.foldedIcs } : {}),
       });
       if (!prev || prev.channelId !== channelId) changedMeta.add(root);
     }
@@ -634,12 +899,16 @@ export async function mailSync(
       initialRoots.add(root);
     }
 
-    const calendarBundles = await detectCalendarBundles(
+    // `initialRoots` is what keeps a first-connect backfill quiet: a response
+    // folded onto an event thread from history must not mark it unread, the
+    // same discipline `transformMessages` applies to the mail it ingests.
+    const { bundles: calendarBundles, foldedNoteKeys } = await detectCalendarBundles(
       host,
       session,
       merged,
       nextMeta,
-      changedMeta
+      changedMeta,
+      initialRoots
     );
 
     // THE single transformMessages call. See this function's docstring.
@@ -650,6 +919,7 @@ export async function mailSync(
       newMessages,
       sentMailbox: sentBox,
       calendarBundles,
+      foldedNoteKeys,
     });
     if (links.length > 0) await host.integrations.saveLinks(links);
 

@@ -84,8 +84,13 @@ function compareMessages(a: MailMessage, b: MailMessage): number {
   return a.uid - b.uid;
 }
 
-/** The note key for one message: its stripped Message-ID, else a uid fallback. */
-function noteKeyOf(m: MailMessage): string {
+/**
+ * Stable per-message identity: the note `key` a message's note is written
+ * under. Exported because `sync.ts` records examined calendar parts and folded
+ * RSVPs under the SAME identity — a set keyed differently would never match
+ * the notes it is meant to filter.
+ */
+export function noteKeyOf(m: MailMessage): string {
   return m.messageId ? stripAngle(m.messageId) : `uid-${m.uid}`;
 }
 
@@ -248,6 +253,20 @@ export type TransformCtx = {
    * `@plotday/twister/plot`.
    */
   calendarBundles?: Map<string, CalendarBundle>;
+  /**
+   * Note keys whose messages were folded onto a calendar event's thread by
+   * `sync.ts`'s `detectCalendarBundles`. Their notes are dropped here so an
+   * attendee response does not ALSO appear as ordinary mail, and they are
+   * skipped when choosing the message the thread is described by — see the
+   * `surviving` set below, which drives `title`, `author` and
+   * `signals.noteKey`.
+   *
+   * Filtered at the NOTES level rather than by removing the messages from the
+   * input: `allCopies` drives the Sent-only rule and dedupe, and removing an
+   * inbound response from it could make a mixed thread look Sent-only and
+   * change its read-state handling.
+   */
+  foldedNoteKeys?: Set<string>;
 };
 
 function toContact(a: ImapAddress): NewContact {
@@ -301,8 +320,9 @@ export function bodyOf(msg: ImapMessage): { content: string; contentType: "html"
 /**
  * Group a batch of messages by thread root and build one NewLinkWithNotes per
  * thread. Notes are keyed by (stripped) Message-ID for idempotent upsert; the
- * link author is the earliest message's sender; accessContacts is the union of
- * every participant seen; the owner's own messages are credited via
+ * link author is the earliest message's sender (earliest that still carries a
+ * note here — see `TransformCtx.foldedNoteKeys`); accessContacts is the union
+ * of every participant seen; the owner's own messages are credited via
  * authoredBySelf.
  *
  * `messages` must be the COMPLETE visible message set for every thread it
@@ -356,8 +376,29 @@ export function transformMessages(
     // depends on which mailbox the merged pass happened to fetch first.
     const msgs = dedupeCopies(allCopies, homeMailbox).sort(compareMessages);
 
-    // Earliest message drives the thread's title + author.
-    const originator = msgs[0];
+    // The messages that will actually carry a note on this thread. A folded
+    // attendee response (see `TransformCtx.foldedNoteKeys`) has been attached
+    // to the event's own thread and has no note here, so it must not be the
+    // message the thread is described by: a conversation whose earliest
+    // in-window message is a response notification would otherwise be titled
+    // "Accepted: <event>", credited to the responder rather than to whoever
+    // started the conversation, and have `signals.noteKey` point at a note
+    // that is not on the link at all — leaving body-derived classification to
+    // fall back to some other message.
+    //
+    // Only the description is affected: the participant union, the read state
+    // and the Sent-only rule all still consider every copy of every message,
+    // because a responder is a real participant in the conversation whether or
+    // not their message is shown here.
+    const surviving = msgs.filter((m) => !ctx.foldedNoteKeys?.has(noteKeyOf(m)));
+
+    // Every message in this thread was folded onto a calendar event. Emitting
+    // the link anyway would create a titled row with no content. Checked
+    // before anything reads `surviving[0]`.
+    if (surviving.length === 0) continue;
+
+    // Earliest surviving message drives the thread's title + author.
+    const originator = surviving[0];
     const originatorFrom = originator.from && originator.from[0] ? originator.from[0] : null;
 
     // Mail signals are computed from the ORIGINATING message only (same
@@ -381,7 +422,7 @@ export function transformMessages(
       }
     }
 
-    const notes = msgs.map((m) => {
+    const notes = surviving.map((m) => {
       const key = noteKeyOf(m);
       const body = bodyOf(m);
       const from = m.from && m.from[0] ? m.from[0] : null;
@@ -411,8 +452,18 @@ export function transformMessages(
     // would let an old unseen message in one folder inherit the "new" status
     // of an unrelated message that happens to share its uid in another —
     // re-marking the thread unread on every single poll.
+    //
+    // `hasNewUnseen` reads `surviving`, not `msgs`: raising unread is a claim
+    // that there is something new to read HERE, and a folded response left no
+    // note on this link. On a bundled root the link IS the event's thread
+    // (`sources: ["icaluid:…"]`), so counting a folded response here would
+    // drag the event thread back to unread through `saveLinks` — exactly what
+    // the fold avoids on the `saveNote` side, arriving by the one route the
+    // fold does not cover. `allSeen` still reads `msgs`: clearing unread is a
+    // claim that nothing in the mailbox is unread, and an unseen response is
+    // still unseen mail, so it correctly holds that claim back.
     const allSeen = msgs.every((m) => isSeen(m));
-    const hasNewUnseen = msgs.some(
+    const hasNewUnseen = surviving.some(
       (m) => !isSeen(m) && ctx.newMessages.has(messageKey(m))
     );
     const incrementalRead: { unread?: boolean } = allSeen

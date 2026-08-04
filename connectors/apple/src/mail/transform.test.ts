@@ -983,3 +983,167 @@ describe("transformMessages — signals", () => {
   // test suites, which dropped their equivalent CTA cases outright rather
   // than replacing them with a signal assertion.
 });
+
+describe("transformMessages — folded attendee responses", () => {
+  const ROOT = "<root@example.test>";
+
+  it("drops a folded message's note but keeps the rest of the conversation", () => {
+    const real = msg({
+      uid: 1,
+      messageId: "<real@example.test>",
+      references: [ROOT],
+      bodyText: "Can we move this?",
+    });
+    const rsvp = msg({
+      uid: 2,
+      messageId: "<rsvp@example.test>",
+      references: [ROOT],
+      bodyText: "Sam declined.",
+    });
+
+    const links = transform([real, rsvp], {
+      foldedNoteKeys: new Set(["rsvp@example.test"]),
+    });
+
+    expect(links).toHaveLength(1);
+    expect(links[0].notes!.map((n) => (n as { key: string }).key)).toEqual(["real@example.test"]);
+  });
+
+  it("emits NO link at all for a thread that was nothing but responses", () => {
+    // Without this guard the thread becomes a titled email link with zero
+    // notes — an empty row in the user's list for a response that has
+    // already been folded onto the event.
+    const rsvp = msg({
+      uid: 2,
+      messageId: "<rsvp@example.test>",
+      references: [ROOT],
+      bodyText: "Sam declined.",
+    });
+
+    const links = transform([rsvp], { foldedNoteKeys: new Set(["rsvp@example.test"]) });
+
+    expect(links).toEqual([]);
+  });
+
+  it("describes the thread from its earliest SURVIVING message, not from a folded response", () => {
+    // A response can arrive before any of the conversation's real
+    // correspondence is in the window — a guest declines an invitation, and
+    // only later does someone reply about rescheduling. The response has no
+    // note on this thread, so describing the thread with it would title the
+    // thread "Accepted: Weekly sync", credit it to the responder, and point
+    // `signals.noteKey` at a note the link does not carry.
+    const rsvp = msg({
+      uid: 1,
+      messageId: "<rsvp@example.test>",
+      references: [ROOT],
+      subject: "Accepted: Weekly sync",
+      from: [{ address: "guest@example.test", name: "Sam Guest" }],
+      date: new Date("2026-07-15T09:00:00Z"),
+      bodyText: "Sam Guest has accepted this invitation.",
+    });
+    const real = msg({
+      uid: 2,
+      messageId: "<real@example.test>",
+      references: [ROOT],
+      subject: "Re: Weekly sync",
+      from: [{ address: "jane@example.test", name: "Jane" }],
+      date: new Date("2026-07-15T10:00:00Z"),
+      bodyText: "Can we move this?",
+    });
+
+    const links = transform([rsvp, real], {
+      foldedNoteKeys: new Set(["rsvp@example.test"]),
+    });
+
+    expect(links).toHaveLength(1);
+    expect(links[0].title).toBe("Re: Weekly sync");
+    expect((links[0].author as { email?: string } | null)?.email).toBe("jane@example.test");
+    expect(links[0].signals?.noteKey).toBe("real@example.test");
+    // The classification pointer must name a note that is on the link.
+    expect((links[0].notes ?? []).map((n) => (n as { key?: string }).key)).toContain(
+      links[0].signals?.noteKey
+    );
+    // The responder is still a participant of the conversation.
+    expect(
+      (links[0].accessContacts ?? []).map((c) => (c as { email?: string }).email)
+    ).toContain("guest@example.test");
+  });
+
+  it("does not raise unread for a newly-arrived folded response, with nothing new left to read", () => {
+    // Before the fold existed, this thread's unread arrived together with the
+    // response's own note. The note is now on the event's thread instead, so
+    // raising unread here would surface a thread with nothing new in it.
+    const real = msg({
+      uid: 1,
+      messageId: "<real@example.test>",
+      references: [ROOT],
+      flags: ["\\Seen"],
+      date: new Date("2026-07-15T09:00:00Z"),
+    });
+    const rsvp = msg({
+      uid: 2,
+      messageId: "<rsvp@example.test>",
+      references: [ROOT],
+      flags: [], // unseen, and new this pass
+      date: new Date("2026-07-15T10:00:00Z"),
+    });
+
+    const links = transformMessages(
+      [real, rsvp],
+      incrementalCtxFor([real, rsvp], {
+        foldedNoteKeys: new Set(["rsvp@example.test"]),
+        newMessages: new Set([messageKey(rsvp)]),
+      })
+    );
+
+    expect(links).toHaveLength(1);
+    expect(links[0].notes!.map((n) => (n as { key: string }).key)).toEqual(["real@example.test"]);
+    // Not `unread: false` either — an unseen response is still unseen mail, so
+    // this pass makes no claim about read state in either direction.
+    expect("unread" in links[0]).toBe(false);
+  });
+
+  it("does not raise unread on a BUNDLED root, where the link IS the event's thread", () => {
+    // The route the fold does not cover. A root classified as an update or a
+    // cancellation carries `sources: ["icaluid:…"]`, so this link and the
+    // calendar event are one thread. A bare acceptance folded away here would
+    // still drag that event thread back to unread — through `saveLinks`
+    // rather than `saveNote`, but with the same result for the organiser.
+    const update = msg({
+      uid: 1,
+      messageId: "<update@example.test>",
+      subject: "Updated invitation: Weekly sync",
+      flags: ["\\Seen"],
+      date: new Date("2026-07-15T09:00:00Z"),
+    });
+    const acceptance = msg({
+      uid: 2,
+      messageId: "<rsvp@example.test>",
+      references: ["<update@example.test>"],
+      flags: [], // unseen, and new this pass
+      date: new Date("2026-07-15T10:00:00Z"),
+    });
+
+    const links = transformMessages(
+      [update, acceptance],
+      incrementalCtxFor([update, acceptance], {
+        foldedNoteKeys: new Set(["rsvp@example.test"]),
+        newMessages: new Set([messageKey(acceptance)]),
+        calendarBundles: new Map([
+          ["update@example.test", { uid: "evt-1", kind: "update" as const, eventKnown: true }],
+        ]),
+      })
+    );
+
+    expect(links).toHaveLength(1);
+    expect(links[0].sources).toEqual(["icaluid:evt-1"]);
+    expect("unread" in links[0]).toBe(false);
+  });
+
+  it("is unaffected when nothing was folded", () => {
+    const real = msg({ uid: 1, messageId: "<real@example.test>", references: [ROOT] });
+    const links = transform([real]);
+    expect(links).toHaveLength(1);
+    expect(links[0].notes).toHaveLength(1);
+  });
+});

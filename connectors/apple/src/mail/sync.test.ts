@@ -67,12 +67,36 @@ function buildFakeHost(opts: {
    * synced yet), which is the common case for these mail-only fixtures.
    */
   knownEventUids?: string[];
+  /**
+   * Make `saveLinks` record its call and then throw, as a platform write
+   * that fails would. `mailSync` has no catch around it, so the throw leaves
+   * the pass — everything written BEFORE the save is exactly what survives,
+   * which is what the fold-marker ordering exists to control.
+   */
+  failSaveLinks?: boolean;
+  /**
+   * Make the Nth `saveNote` call (1-based) record itself and then throw, as a
+   * platform write that fails part-way through a pass would. Everything the
+   * pass wrote before it — including the fold markers of responses already
+   * saved — has to survive that throw, or the next pass re-emits those notes.
+   */
+  failSaveNoteOnCall?: number;
 }) {
   const stored = new Map<string, unknown>();
   const savedLinks: NewLinkWithNotes[] = [];
   /** One entry per `saveLinks()` INVOCATION — the merged pass must make
    *  exactly one per sync, never one per mailbox. */
   const saveLinksCalls: NewLinkWithNotes[][] = [];
+  /** Every note passed to `integrations.saveNote()`, in order. */
+  const savedNotes: Record<string, unknown>[] = [];
+  /**
+   * The ORDER in which the pass wrote: `"saveNote"`, `"setMany"`,
+   * `"saveLinks"`. Fold markers must be flushed before the links are saved,
+   * so a `saveLinks` that throws can never leave a note on file with no
+   * marker recording it — the next pass would re-emit that note and drag a
+   * thread people had already read back to unread.
+   */
+  const callLog: string[] = [];
   const searchCalls: SearchCall[] = [];
   const fetchCalls: FetchCall[] = [];
   const fetchAttachmentCalls: FetchAttachmentCall[] = [];
@@ -85,6 +109,11 @@ function buildFakeHost(opts: {
 
   const mailboxes = new Map<string, MailboxFixture>();
   for (const box of opts.mailboxes) mailboxes.set(box.name, box);
+
+  /** Mutable so a test can add an attachment between two passes (see
+   *  `addMessage`), which `opts.attachments` alone could not express when the
+   *  caller passed none to begin with. */
+  const attachments: Record<string, Uint8Array> = { ...(opts.attachments ?? {}) };
 
   const imap = {
     connect: async (): Promise<ImapSession> => "session-1",
@@ -145,7 +174,7 @@ function buildFakeHost(opts: {
     ): Promise<Uint8Array> => {
       fetchAttachmentCalls.push({ mailbox: selected, uid, partNumber });
       const key = buildAttachmentRef(selected, uid, partNumber);
-      const bytes = opts.attachments?.[key];
+      const bytes = attachments[key];
       if (!bytes) throw new Error(`no such attachment part: ${key}`);
       return bytes;
     },
@@ -154,9 +183,17 @@ function buildFakeHost(opts: {
   const setThreadToDo = vi.fn(async () => {});
   const integrations = {
     saveLinks: async (links: NewLinkWithNotes[]): Promise<(string | null)[]> => {
+      callLog.push("saveLinks");
       saveLinksCalls.push(links);
+      if (opts.failSaveLinks) throw new Error("saveLinks failed");
       savedLinks.push(...links);
       return links.map(() => null);
+    },
+    saveNote: async (note: Record<string, unknown>): Promise<string | null> => {
+      callLog.push("saveNote");
+      savedNotes.push(note);
+      if (opts.failSaveNoteOnCall === savedNotes.length) throw new Error("saveNote failed");
+      return "note-id";
     },
     setThreadToDo,
   } as unknown as Integrations;
@@ -175,6 +212,7 @@ function buildFakeHost(opts: {
       stored.set(key, value);
     },
     setMany: async <T>(entries: [key: string, value: T][]): Promise<void> => {
+      callLog.push("setMany");
       setManyCalls.push(entries.map(([key]) => key));
       for (const [key, value] of entries) stored.set(key, value);
     },
@@ -192,8 +230,16 @@ function buildFakeHost(opts: {
   return {
     host,
     stored,
+    // The live mailbox fixtures and attachment bytes, so a test can deliver a
+    // message BETWEEN two passes over the same host (see `addMessage`) —
+    // which is the only way to exercise a response arriving after the
+    // invitation it threads onto.
+    mailboxes,
+    attachments,
     savedLinks,
     saveLinksCalls,
+    savedNotes,
+    callLog,
     searchCalls,
     fetchCalls,
     fetchAttachmentCalls,
@@ -214,6 +260,44 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  */
 function daysAgo(days: number): Date {
   return new Date(Date.now() - days * DAY_MS);
+}
+
+/** A message carrying an inline text/calendar part at partNumber "2". */
+function calendarMessage(opts: {
+  uid: number;
+  messageId: string;
+  root: string;
+  date?: Date;
+}): ImapMessage {
+  return {
+    uid: opts.uid,
+    messageId: opts.messageId,
+    references: [opts.root],
+    subject: "Accepted: Weekly sync",
+    from: [{ address: "guest@example.test", name: "Sam Guest" }],
+    to: [{ address: "owner@example.test", name: "Owner" }],
+    date: opts.date ?? daysAgo(1),
+    flags: ["\\Seen"],
+    bodyText: "Sam Guest has accepted this invitation.",
+    attachments: [
+      { partNumber: "2", fileName: "attachment", mimeType: "text/calendar", size: 400, encoding: "7bit" },
+    ],
+  } as unknown as ImapMessage;
+}
+
+/** A message with no calendar part at all. */
+function plainMessage(opts: { uid: number; root: string }): ImapMessage {
+  return {
+    uid: opts.uid,
+    messageId: `<plain-${opts.uid}@example.test>`,
+    references: [opts.root],
+    subject: "Re: Weekly sync",
+    from: [{ address: "guest@example.test", name: "Sam Guest" }],
+    to: [{ address: "owner@example.test", name: "Owner" }],
+    date: daysAgo(1),
+    flags: ["\\Seen"],
+    bodyText: "See you there.",
+  } as unknown as ImapMessage;
 }
 
 /** The plan history floor most fixtures run under — inside the 30-day window,
@@ -259,6 +343,23 @@ function box(
     },
     searchUids: uids,
     messagesByUid: new Map(messages.map((m) => [m.uid, m])),
+  };
+}
+
+/**
+ * Deliver a message into a live mailbox fixture between two passes, as a
+ * server would: it becomes searchable, fetchable, and moves UIDNEXT. Mutating
+ * the fixture in place (rather than rebuilding the host) is what keeps the
+ * second pass reading the FIRST pass's stored cursors and thread metadata.
+ */
+function addMessage(fixture: MailboxFixture, message: ImapMessage): void {
+  fixture.messagesByUid.set(message.uid, message);
+  fixture.searchUids = [...fixture.searchUids, message.uid];
+  fixture.status = {
+    ...fixture.status,
+    exists: fixture.messagesByUid.size,
+    uidNext: Math.max(fixture.status.uidNext, message.uid + 1),
+    unseen: [...fixture.messagesByUid.values()].filter((m) => !m.flags.includes("\\Seen")).length,
   };
 }
 
@@ -1467,7 +1568,7 @@ describe("detectCalendarBundles", () => {
     const meta = metaFor(["invite@example.com"]);
     const changed = new Set<string>();
 
-    const bundles = await detectCalendarBundles(
+    const { bundles } = await detectCalendarBundles(
       host,
       "session-1",
       [{ ...m, mailbox: "INBOX" }],
@@ -1500,7 +1601,7 @@ describe("detectCalendarBundles", () => {
       knownEventUids: ["evt-known"],
     });
 
-    const bundles = await detectCalendarBundles(
+    const { bundles } = await detectCalendarBundles(
       host,
       "session-1",
       [{ ...m, mailbox: "INBOX" }],
@@ -1525,7 +1626,7 @@ describe("detectCalendarBundles", () => {
       },
     });
 
-    const bundles = await detectCalendarBundles(
+    const { bundles } = await detectCalendarBundles(
       host,
       "session-1",
       [{ ...m, mailbox: "INBOX" }],
@@ -1551,7 +1652,7 @@ describe("detectCalendarBundles", () => {
       },
     });
 
-    const bundles = await detectCalendarBundles(
+    const { bundles } = await detectCalendarBundles(
       host,
       "session-1",
       [{ ...m, mailbox: "INBOX" }],
@@ -1572,7 +1673,7 @@ describe("detectCalendarBundles", () => {
       },
     });
 
-    const bundles = await detectCalendarBundles(
+    const { bundles } = await detectCalendarBundles(
       host,
       "session-1",
       [{ ...m, mailbox: "INBOX" }],
@@ -1606,7 +1707,7 @@ describe("detectCalendarBundles", () => {
       },
     });
 
-    const bundles = await detectCalendarBundles(
+    const { bundles } = await detectCalendarBundles(
       host,
       "session-1",
       [
@@ -1628,7 +1729,7 @@ describe("detectCalendarBundles", () => {
     const m = msg({ uid: 56, messageId: "<plain@example.com>" });
     const { host, fetchAttachmentCalls } = bundleHost({});
 
-    const bundles = await detectCalendarBundles(
+    const { bundles } = await detectCalendarBundles(
       host,
       "session-1",
       [{ ...m, mailbox: "INBOX" }],
@@ -1650,7 +1751,7 @@ describe("detectCalendarBundles", () => {
     });
     const { host, fetchAttachmentCalls } = bundleHost({});
 
-    const bundles = await detectCalendarBundles(
+    const { bundles } = await detectCalendarBundles(
       host,
       "session-1",
       [{ ...m, mailbox: "INBOX" }],
@@ -1665,7 +1766,7 @@ describe("detectCalendarBundles", () => {
   it("returns an empty map for an empty message list (no I/O)", async () => {
     const { host, fetchAttachmentCalls } = bundleHost({});
 
-    const bundles = await detectCalendarBundles(host, "session-1", [], new Map(), new Set());
+    const { bundles } = await detectCalendarBundles(host, "session-1", [], new Map(), new Set());
 
     expect(fetchAttachmentCalls).toHaveLength(0);
     expect(bundles.size).toBe(0);
@@ -1685,7 +1786,7 @@ describe("detectCalendarBundles", () => {
       },
     });
 
-    const bundles = await detectCalendarBundles(
+    const { bundles } = await detectCalendarBundles(
       host,
       "session-1",
       [{ ...m, mailbox: SENT_BOX }],
@@ -1714,7 +1815,7 @@ describe("detectCalendarBundles", () => {
     const meta = metaFor(["cached@example.com"]);
     const merged: MailMessage[] = [{ ...m, mailbox: "INBOX" }];
 
-    const first = await detectCalendarBundles(host, "session-1", merged, meta, new Set());
+    const { bundles: first } = await detectCalendarBundles(host, "session-1", merged, meta, new Set());
     expect(first.get("cached@example.com")).toEqual({
       uid: "evt-cached",
       kind: "cancel",
@@ -1722,7 +1823,7 @@ describe("detectCalendarBundles", () => {
     });
     expect(fetchAttachmentCalls).toHaveLength(1);
 
-    const second = await detectCalendarBundles(host, "session-1", merged, meta, new Set());
+    const { bundles: second } = await detectCalendarBundles(host, "session-1", merged, meta, new Set());
     expect(second.get("cached@example.com")).toEqual({
       uid: "evt-cached",
       kind: "cancel",
@@ -1753,7 +1854,7 @@ describe("detectCalendarBundles", () => {
     });
     const meta = metaFor(["root-aged@example.com"]);
 
-    const first = await detectCalendarBundles(
+    const { bundles: first } = await detectCalendarBundles(
       host,
       "session-1",
       [
@@ -1773,7 +1874,7 @@ describe("detectCalendarBundles", () => {
     // Pass 2: only the in-window reply. Without the recorded decision the root
     // would silently un-bundle, flipping its primary `source` and creating a
     // duplicate link row.
-    const second = await detectCalendarBundles(
+    const { bundles: second } = await detectCalendarBundles(
       host,
       "session-1",
       [{ ...followUp, mailbox: "INBOX" }],
@@ -1800,16 +1901,582 @@ describe("detectCalendarBundles", () => {
     const meta = metaFor(["bare-cached@example.com"]);
     const merged: MailMessage[] = [{ ...m, mailbox: "INBOX" }];
 
-    const first = await detectCalendarBundles(host, "session-1", merged, meta, new Set());
+    const { bundles: first } = await detectCalendarBundles(host, "session-1", merged, meta, new Set());
     expect(first.has("bare-cached@example.com")).toBe(false);
     expect(fetchAttachmentCalls).toHaveLength(1);
     // "Evaluated, doesn't bundle" must stay distinguishable from "never
     // evaluated", hence the wrapping object.
     expect(meta.get("bare-cached@example.com")!.bundle).toEqual({ classified: null });
 
-    const second = await detectCalendarBundles(host, "session-1", merged, meta, new Set());
+    const { bundles: second } = await detectCalendarBundles(host, "session-1", merged, meta, new Set());
     expect(second.has("bare-cached@example.com")).toBe(false);
     expect(fetchAttachmentCalls).toHaveLength(1); // reused the recorded decision
+  });
+
+  it("still examines a NEW calendar message in a root whose bundle decision is already cached", async () => {
+    // The invite was ingested on an earlier pass and cached as "no bundle"
+    // (REQUEST/SEQUENCE 0). A reply then threads onto that same root. Before
+    // this gate split, the cache hit short-circuited the whole root and the
+    // reply's ICS was never fetched at all.
+    const replyIcs = ics({ method: "REPLY", uid: "evt-cached" });
+    const reply = calendarMessage({
+      uid: 51,
+      messageId: "<reply-1@example.test>",
+      root: "<invite@example.test>",
+    });
+    const { host, fetchAttachmentCalls } = buildFakeHost({
+      appleId: "owner@example.test",
+      mailboxes: [box("INBOX", [reply])],
+      attachments: { [buildAttachmentRef("INBOX", 51, "2")]: icsBytes(replyIcs) },
+    });
+    const fixtureMessages: MailMessage[] = [{ ...reply, mailbox: "INBOX" }];
+
+    const meta = new Map<string, ThreadMeta>([
+      ["invite@example.test", { channelId: "INBOX", bundle: { classified: null } }],
+    ]);
+    const changed = new Set<string>();
+
+    await detectCalendarBundles(host, "session-1", fixtureMessages, meta, changed);
+
+    expect(fetchAttachmentCalls).toHaveLength(1);
+    expect(meta.get("invite@example.test")!.seenIcs).toEqual(["reply-1@example.test"]);
+    expect(changed.has("invite@example.test")).toBe(true);
+  });
+
+  it("does not re-fetch a calendar part it has already examined", async () => {
+    const reply = calendarMessage({
+      uid: 51,
+      messageId: "<reply-1@example.test>",
+      root: "<invite@example.test>",
+    });
+    const { host, fetchAttachmentCalls } = buildFakeHost({
+      appleId: "owner@example.test",
+      mailboxes: [box("INBOX", [reply])],
+      attachments: {}, // a fetch would throw on lookup miss — that IS the assertion
+    });
+    const fixtureMessages: MailMessage[] = [{ ...reply, mailbox: "INBOX" }];
+
+    const meta = new Map<string, ThreadMeta>([
+      [
+        "invite@example.test",
+        { channelId: "INBOX", bundle: { classified: null }, seenIcs: ["reply-1@example.test"] },
+      ],
+    ]);
+
+    await detectCalendarBundles(host, "session-1", fixtureMessages, meta, new Set());
+
+    expect(fetchAttachmentCalls).toHaveLength(0);
+  });
+
+  it("keeps serving the cached bundle decision — a classification must never flip", async () => {
+    const plain = plainMessage({ uid: 60, root: "<invite@example.test>" });
+    const { host } = buildFakeHost({
+      appleId: "owner@example.test",
+      mailboxes: [box("INBOX", [plain])],
+      knownEventUids: ["evt-cached"],
+    });
+    const fixtureMessages: MailMessage[] = [{ ...plain, mailbox: "INBOX" }];
+
+    const meta = new Map<string, ThreadMeta>([
+      [
+        "invite@example.test",
+        { channelId: "INBOX", bundle: { classified: { uid: "evt-cached", kind: "cancel" } } },
+      ],
+    ]);
+
+    const { bundles } = await detectCalendarBundles(
+      host,
+      "session-1",
+      fixtureMessages,
+      meta,
+      new Set()
+    );
+
+    expect(bundles.get("invite@example.test")).toEqual({
+      uid: "evt-cached",
+      kind: "cancel",
+      eventKnown: true,
+    });
+  });
+
+  it("never re-decides a root once recorded, even when a CANCEL arrives later", async () => {
+    // The other half of the gate split, and the one a message with no calendar
+    // part cannot reach: this root's decision is cached as "does not bundle",
+    // and a NEW calendar-bearing message on it is still fetched and examined.
+    // What must NOT happen is the classification running again — a root that
+    // flips from "no bundle" to "cancel" changes `sources`' sorted-minimum
+    // primary source, and `upsert_link` writes a SECOND link row because the
+    // old primary source is still on file.
+    const later = msg({
+      uid: 67,
+      messageId: "<cancel-late@example.test>",
+      references: ["<settled@example.test>"],
+      attachments: [CALENDAR_PART],
+    });
+    const { host, stored, fetchAttachmentCalls } = bundleHost({
+      attachments: {
+        [buildAttachmentRef("INBOX", 67, "2")]: icsBytes(
+          ics({ method: "CANCEL", uid: "evt-settled" })
+        ),
+      },
+    });
+    const meta = new Map<string, ThreadMeta>([
+      ["settled@example.test", { channelId: "mail:INBOX", bundle: { classified: null } }],
+    ]);
+
+    const { bundles } = await detectCalendarBundles(
+      host,
+      "session-1",
+      [{ ...later, mailbox: "INBOX" }],
+      meta,
+      new Set()
+    );
+
+    // Examined (that is the other gate), but the recorded decision stands.
+    expect(fetchAttachmentCalls).toHaveLength(1);
+    expect(bundles.has("settled@example.test")).toBe(false);
+    expect(meta.get("settled@example.test")!.bundle).toEqual({ classified: null });
+    expect(stored.get("cancel-email:evt-settled")).toBeUndefined();
+  });
+
+  it("does not let an attendee response settle the bundling question for its root", async () => {
+    // A response answers a question it was never asked. Classifying it would
+    // record the root as "evaluated, does not bundle" — permanently — so the
+    // rescheduling notice that arrives on the same root afterwards could never
+    // bundle the mail thread onto the event.
+    const reply = calendarMessage({
+      uid: 51,
+      messageId: "<reply-1@example.test>",
+      root: "<invite@example.test>",
+    });
+    const update = msg({
+      uid: 52,
+      messageId: "<update-late@example.test>",
+      references: ["<invite@example.test>"],
+      attachments: [CALENDAR_PART],
+    });
+    const { host } = bundleHost({
+      attachments: {
+        [buildAttachmentRef("INBOX", 51, "2")]: icsBytes(
+          replyIcs({ partstat: "DECLINED", uid: "evt-reply-only" })
+        ),
+        [buildAttachmentRef("INBOX", 52, "2")]: icsBytes(
+          ics({ method: "REQUEST", uid: "evt-reply-only", sequence: 2 })
+        ),
+      },
+    });
+    const meta = metaFor(["invite@example.test"]);
+
+    // Pass 1: the response alone. The root must be left UNDECIDED.
+    await detectCalendarBundles(
+      host,
+      "session-1",
+      [{ ...reply, mailbox: "INBOX" }],
+      meta,
+      new Set()
+    );
+    expect(meta.get("invite@example.test")!.bundle).toBeUndefined();
+
+    // Pass 2: the rescheduling notice threads onto the same root and still
+    // gets its say.
+    const { bundles } = await detectCalendarBundles(
+      host,
+      "session-1",
+      [
+        { ...reply, mailbox: "INBOX" },
+        { ...update, mailbox: "INBOX" },
+      ],
+      meta,
+      new Set()
+    );
+    expect(bundles.get("invite@example.test")).toEqual({
+      uid: "evt-reply-only",
+      kind: "update",
+      eventKnown: false,
+    });
+  });
+
+  it("caps the examined-part list so one thread cannot grow the document forever", async () => {
+    // A full SEEN_ICS_MAX (200) of already-examined parts, then one more. The
+    // oldest is dropped rather than the array growing without bound — this
+    // document is rewritten on every pass.
+    const priorKeys = Array.from({ length: 200 }, (_, i) => `seen-${i}@example.test`);
+    const newest = msg({
+      uid: 68,
+      messageId: "<seen-newest@example.test>",
+      references: ["<capped@example.test>"],
+      attachments: [CALENDAR_PART],
+    });
+    const { host } = bundleHost({
+      attachments: {
+        [buildAttachmentRef("INBOX", 68, "2")]: icsBytes(
+          ics({ method: "REQUEST", uid: "evt-capped", sequence: 0 })
+        ),
+      },
+    });
+    const meta = new Map<string, ThreadMeta>([
+      ["capped@example.test", { channelId: "mail:INBOX", seenIcs: priorKeys }],
+    ]);
+
+    await detectCalendarBundles(
+      host,
+      "session-1",
+      [{ ...newest, mailbox: "INBOX" }],
+      meta,
+      new Set()
+    );
+
+    const seen = meta.get("capped@example.test")!.seenIcs!;
+    expect(seen).toHaveLength(200);
+    expect(seen).not.toContain("seen-0@example.test");
+    expect(seen[seen.length - 1]).toBe("seen-newest@example.test");
+  });
+});
+
+const REPLY_UID = "evt-fold@example.test";
+
+/** A `METHOD:REPLY` body in the shape both Google and Exchange emit. */
+function replyIcs(opts: {
+  partstat: "ACCEPTED" | "DECLINED" | "TENTATIVE";
+  comment?: string;
+  recurrenceId?: string;
+  /** The event being answered; defaults to the fold fixtures' own event.
+   *  `null` omits the UID line entirely (a malformed response). */
+  uid?: string | null;
+  /** The responder. Defaults to the fold fixtures' own guest. */
+  attendee?: { name: string; email: string };
+}): string {
+  const attendee = opts.attendee ?? { name: "Sam Guest", email: "guest@example.test" };
+  return [
+    "BEGIN:VCALENDAR",
+    "METHOD:REPLY",
+    "BEGIN:VEVENT",
+    ...(opts.uid === null ? [] : [`UID:${opts.uid ?? REPLY_UID}`]),
+    ...(opts.recurrenceId ? [`RECURRENCE-ID:${opts.recurrenceId}`] : []),
+    `ATTENDEE;CN=${attendee.name};PARTSTAT=${opts.partstat}:mailto:${attendee.email}`,
+    ...(opts.comment ? [`COMMENT:${opts.comment}`] : []),
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].join("\r\n");
+}
+
+/** The one reply message every fold fixture is built from. */
+function replyMessage(uid = 51): ImapMessage {
+  return calendarMessage({
+    uid,
+    messageId: "<reply-1@example.test>",
+    root: "<invite@example.test>",
+  });
+}
+
+/**
+ * Run one `detectCalendarBundles` pass over a single reply message.
+ *
+ * `initial` puts the reply's thread root into `initialRoots`, i.e. this pass is
+ * ingesting it from history rather than receiving it as live mail.
+ */
+async function runFold(
+  ics: string,
+  opts: { stored?: Record<string, unknown>; initial?: boolean } = {}
+): Promise<{
+  host: MailHost;
+  savedNotes: Record<string, unknown>[];
+  foldedOf: string[];
+}> {
+  const built = buildFakeHost({
+    appleId: "owner@example.test",
+    mailboxes: [box("INBOX", [replyMessage()])],
+    attachments: { [buildAttachmentRef("INBOX", 51, "2")]: icsBytes(ics) },
+  });
+  for (const [k, v] of Object.entries(opts.stored ?? {})) built.stored.set(k, v);
+
+  const messages: MailMessage[] = [{ ...replyMessage(), mailbox: "INBOX" }];
+  const meta = new Map<string, ThreadMeta>([["invite@example.test", { channelId: "INBOX" }]]);
+  const result = await detectCalendarBundles(
+    built.host,
+    "session-1",
+    messages,
+    meta,
+    new Set(),
+    new Set(opts.initial ? ["invite@example.test"] : [])
+  );
+  return {
+    host: built.host,
+    savedNotes: built.savedNotes,
+    foldedOf: [...result.foldedNoteKeys],
+  };
+}
+
+describe("detectCalendarBundles — attendee responses", () => {
+  it("writes no note for a bare acceptance, and folds the message away", async () => {
+    const { host, savedNotes, foldedOf } = await runFold(replyIcs({ partstat: "ACCEPTED" }));
+    expect(savedNotes).toHaveLength(0);
+    expect(foldedOf).toContain("reply-1@example.test");
+    // Nothing recorded: the marker tracks what was FOLDED onto the thread.
+    expect(await host.get(`rsvp:${REPLY_UID}:series:guest@example.test`)).toBeUndefined();
+  });
+
+  it("writes a note for a decline, onto the event thread, and records it", async () => {
+    const { host, savedNotes } = await runFold(replyIcs({ partstat: "DECLINED" }));
+    expect(savedNotes).toHaveLength(1);
+    expect(savedNotes[0]).toMatchObject({
+      thread: { source: `icaluid:${REPLY_UID}` },
+      key: "reply-1@example.test",
+      content: "Sam Guest declined.",
+      contentType: "markdown",
+      deferUntilThread: true,
+      unread: true,
+      author: { email: "guest@example.test", name: "Sam Guest" },
+    });
+    expect(await host.get(`rsvp:${REPLY_UID}:series:guest@example.test`)).toBe("DECLINED");
+  });
+
+  it("does not mark the event thread unread for a response ingested from history", async () => {
+    // First connect backfills whatever history the plan grants, and every
+    // response in it would otherwise light up the event thread. Same
+    // discipline `transformMessages` applies to the mail it ingests — and the
+    // sole reason `initialRoots` is threaded through this function at all.
+    const { savedNotes } = await runFold(replyIcs({ partstat: "DECLINED" }), {
+      initial: true,
+    });
+    expect(savedNotes).toHaveLength(1);
+    expect(savedNotes[0].unread).toBe(false);
+  });
+
+  it("writes a note for an acceptance that carries a personal comment", async () => {
+    const { savedNotes } = await runFold(
+      replyIcs({ partstat: "ACCEPTED", comment: "Running 10 minutes late" })
+    );
+    expect(savedNotes).toHaveLength(1);
+    expect(savedNotes[0].content).toBe("Sam Guest accepted.\n\n> Running 10 minutes late");
+  });
+
+  it("writes a note for an acceptance that reverses a decline, and updates the marker", async () => {
+    const { host, savedNotes } = await runFold(replyIcs({ partstat: "ACCEPTED" }), {
+      stored: { [`rsvp:${REPLY_UID}:series:guest@example.test`]: "DECLINED" },
+    });
+    expect(savedNotes).toHaveLength(1);
+    expect(savedNotes[0].content).toBe("Sam Guest accepted.");
+    // Now ACCEPTED, so a later repeat of this same acceptance is recognised
+    // by alreadyFolded rather than emitted again.
+    expect(await host.get(`rsvp:${REPLY_UID}:series:guest@example.test`)).toBe("ACCEPTED");
+  });
+
+  it("writes no second note when the same response is redelivered", async () => {
+    const { savedNotes } = await runFold(replyIcs({ partstat: "DECLINED" }), {
+      stored: { [`rsvp:${REPLY_UID}:series:guest@example.test`]: "DECLINED" },
+    });
+    expect(savedNotes).toHaveLength(0);
+  });
+
+  it("keys the marker per occurrence, so a decline on one instance never masks another", async () => {
+    // Both passes are needed. A single pass with a PRE-SEEDED marker proves
+    // nothing here: the same key expression both reads and writes, so dropping
+    // the occurrence from it moves both sides together and the seeded
+    // occurrence-scoped marker simply stops matching — no note either way, and
+    // the test passes just as happily against the broken code. Recording the
+    // 4 Aug decline through the real write path and only then answering the
+    // 11 Aug occurrence is what makes the scoping load-bearing: unscoped, the
+    // second pass reads the first pass's marker and takes a bare acceptance
+    // for a reversal, which is the original defect re-opened for every
+    // recurring meeting.
+    const decline = calendarMessage({
+      uid: 51,
+      messageId: "<reply-aug4@example.test>",
+      root: "<invite@example.test>",
+    });
+    const accept = calendarMessage({
+      uid: 52,
+      messageId: "<reply-aug11@example.test>",
+      root: "<invite@example.test>",
+    });
+    const built = buildFakeHost({
+      appleId: "owner@example.test",
+      mailboxes: [box("INBOX", [decline, accept])],
+      attachments: {
+        [buildAttachmentRef("INBOX", 51, "2")]: icsBytes(
+          replyIcs({ partstat: "DECLINED", recurrenceId: "20260804T140000Z" })
+        ),
+        [buildAttachmentRef("INBOX", 52, "2")]: icsBytes(
+          replyIcs({ partstat: "ACCEPTED", recurrenceId: "20260811T140000Z" })
+        ),
+      },
+    });
+
+    // Two passes, one message each — the marker written by the first is what
+    // the second reads.
+    for (const m of [decline, accept]) {
+      await detectCalendarBundles(
+        built.host,
+        "session-1",
+        [{ ...m, mailbox: "INBOX" }],
+        new Map<string, ThreadMeta>([["invite@example.test", { channelId: "INBOX" }]]),
+        new Set()
+      );
+    }
+
+    expect(built.savedNotes).toHaveLength(1);
+    expect(built.savedNotes[0].content).toBe("Sam Guest declined the August 4, 2026 occurrence.");
+  });
+
+  it("names the occurrence in the note when the response was to one instance", async () => {
+    const { savedNotes } = await runFold(
+      replyIcs({ partstat: "DECLINED", recurrenceId: "20260811T140000Z" })
+    );
+    expect(savedNotes[0].content).toBe("Sam Guest declined the August 11, 2026 occurrence.");
+  });
+
+  it("emits ONE note when a merged pass holds two mailbox copies of the same response", async () => {
+    // A user who keeps a copy in a project folder as well as INBOX gives the
+    // pass two copies of one message. `dedupeCopies` collapses them, but only
+    // later, inside `transformMessages` — so this loop must collapse them
+    // itself. Both copies read the same (absent) marker, because the marker
+    // flush happens once at the end of the pass, so neither would be
+    // recognised as already folded and the note's unread intent would be
+    // applied twice: the exact thing the fold exists to prevent.
+    const built = buildFakeHost({
+      appleId: "owner@example.test",
+      mailboxes: [box("INBOX", [replyMessage()]), box("Archive", [replyMessage()])],
+      // BOTH copies are fetchable, so a missing guard shows up as a second
+      // note rather than as a lookup miss throwing for an unrelated reason.
+      attachments: {
+        [buildAttachmentRef("INBOX", 51, "2")]: icsBytes(replyIcs({ partstat: "DECLINED" })),
+        [buildAttachmentRef("Archive", 51, "2")]: icsBytes(replyIcs({ partstat: "DECLINED" })),
+      },
+    });
+    const messages: MailMessage[] = [
+      { ...replyMessage(), mailbox: "INBOX" },
+      { ...replyMessage(), mailbox: "Archive" },
+    ];
+    const meta = new Map<string, ThreadMeta>([["invite@example.test", { channelId: "INBOX" }]]);
+
+    const { foldedNoteKeys } = await detectCalendarBundles(
+      built.host,
+      "session-1",
+      messages,
+      meta,
+      new Set()
+    );
+
+    expect(built.savedNotes).toHaveLength(1);
+    expect(built.fetchAttachmentCalls).toHaveLength(1);
+    expect([...foldedNoteKeys]).toEqual(["reply-1@example.test"]);
+  });
+
+  it("records what it folded on the root's metadata", async () => {
+    const built = buildFakeHost({
+      appleId: "owner@example.test",
+      mailboxes: [box("INBOX", [replyMessage()])],
+      attachments: {
+        [buildAttachmentRef("INBOX", 51, "2")]: icsBytes(replyIcs({ partstat: "DECLINED" })),
+      },
+    });
+    const meta = new Map<string, ThreadMeta>([["invite@example.test", { channelId: "INBOX" }]]);
+    const changed = new Set<string>();
+
+    await detectCalendarBundles(
+      built.host,
+      "session-1",
+      [{ ...replyMessage(), mailbox: "INBOX" }],
+      meta,
+      changed
+    );
+
+    expect(meta.get("invite@example.test")!.foldedIcs).toEqual(["reply-1@example.test"]);
+    expect(changed.has("invite@example.test")).toBe(true);
+  });
+
+  it("keeps reporting a response folded on an earlier pass, without re-reading it", async () => {
+    // The fold has to outlive the fetch that discovered it. `seenIcs` keeps an
+    // already-examined response off IMAP, so nothing in a later pass re-parses
+    // it — if foldedness were derived from this pass's fetches, the response
+    // would silently return to the mail thread on the very next poll.
+    const built = buildFakeHost({
+      appleId: "owner@example.test",
+      mailboxes: [box("INBOX", [replyMessage()])],
+      attachments: {}, // a fetch would throw on lookup miss — that IS the assertion
+    });
+    const meta = new Map<string, ThreadMeta>([
+      [
+        "invite@example.test",
+        {
+          channelId: "INBOX",
+          bundle: { classified: null },
+          seenIcs: ["reply-1@example.test"],
+          foldedIcs: ["reply-1@example.test"],
+        },
+      ],
+    ]);
+
+    const { foldedNoteKeys } = await detectCalendarBundles(
+      built.host,
+      "session-1",
+      [{ ...replyMessage(), mailbox: "INBOX" }],
+      meta,
+      new Set()
+    );
+
+    expect([...foldedNoteKeys]).toEqual(["reply-1@example.test"]);
+    expect(built.fetchAttachmentCalls).toHaveLength(0);
+    expect(built.savedNotes).toHaveLength(0);
+  });
+
+  it("leaves a response carrying no event id as ordinary mail", async () => {
+    // No UID means no `icaluid:` thread to address and no way to scope the
+    // dedup marker, so there is nowhere to fold it TO. Better an ordinary mail
+    // note than a note attached to nothing.
+    const { host, savedNotes, foldedOf } = await runFold(
+      replyIcs({ partstat: "DECLINED", uid: null })
+    );
+
+    expect(savedNotes).toHaveLength(0);
+    expect(foldedOf).toHaveLength(0);
+  });
+
+  it("keeps the markers of responses already written when a later saveNote throws", async () => {
+    // Batching the markers into one write must not make them all-or-nothing:
+    // the first response is on its event thread for good, so losing its marker
+    // would have the next pass write that note again and re-raise unread on a
+    // thread people had read.
+    const first = calendarMessage({
+      uid: 51,
+      messageId: "<reply-first@example.test>",
+      root: "<invite@example.test>",
+    });
+    const second = calendarMessage({
+      uid: 52,
+      messageId: "<reply-second@example.test>",
+      root: "<invite@example.test>",
+    });
+    const built = buildFakeHost({
+      appleId: "owner@example.test",
+      mailboxes: [box("INBOX", [first, second])],
+      attachments: {
+        [buildAttachmentRef("INBOX", 51, "2")]: icsBytes(replyIcs({ partstat: "DECLINED" })),
+        [buildAttachmentRef("INBOX", 52, "2")]: icsBytes(
+          replyIcs({
+            partstat: "DECLINED",
+            attendee: { name: "Robin Guest", email: "robin@example.test" },
+          })
+        ),
+      },
+      failSaveNoteOnCall: 2,
+    });
+
+    await expect(
+      detectCalendarBundles(
+        built.host,
+        "session-1",
+        [
+          { ...first, mailbox: "INBOX" },
+          { ...second, mailbox: "INBOX" },
+        ],
+        new Map<string, ThreadMeta>([["invite@example.test", { channelId: "INBOX" }]]),
+        new Set()
+      )
+    ).rejects.toThrow("saveNote failed");
+
+    expect(await built.host.get(`rsvp:${REPLY_UID}:series:guest@example.test`)).toBe("DECLINED");
   });
 });
 
@@ -1839,10 +2506,12 @@ describe("mailSync — calendar thread bundling end-to-end", () => {
     expect("title" in link).toBe(false);
     expect(stored.get("cancel-email:evt-e2e")).toBeTruthy();
     // The decision is persisted on the root's single metadata document,
-    // alongside its home channel.
+    // alongside its home channel and the note keys whose calendar part has
+    // been read (what keeps a later pass from re-fetching the same ICS).
     expect(stored.get("thread:cancel-e2e@example.com")).toEqual({
       channelId: "mail:INBOX",
       bundle: { classified: { uid: "evt-e2e", kind: "cancel" } },
+      seenIcs: ["cancel-e2e@example.com"],
     });
   });
 
@@ -1912,5 +2581,208 @@ describe("mailSync — calendar thread bundling end-to-end", () => {
 
     await mailSync(host, [INBOX_CHANNEL], RECENT_ISO);
     expect(fetchAttachmentCalls).toHaveLength(1); // read back from the store
+  });
+});
+
+/** The event both end-to-end fixtures answer. */
+const E2E_UID = "evt-e2e@example.test";
+const E2E_MARKER = `rsvp:${E2E_UID}:series:guest@example.test`;
+
+/** A `METHOD:REPLY` declining `E2E_UID`. */
+const E2E_DECLINE = replyIcs({ partstat: "DECLINED", uid: E2E_UID });
+
+/**
+ * Where in `callLog` the `setMany` invocation whose keys satisfy `match`
+ * happened, or -1.
+ *
+ * A pass makes TWO `setMany` calls — the fold markers, flushed before
+ * `saveLinks`, and the per-root `ThreadMeta`, written deliberately after it —
+ * and `callLog` records only the method name. So an ordering assertion has to
+ * identify WHICH write it means by the keys that write carried; a bare
+ * `indexOf`/`lastIndexOf("setMany")` silently asserts about the other one.
+ * The nth `"setMany"` entry in `callLog` is `setManyCalls[n]`.
+ */
+function setManyPosition(
+  built: { callLog: string[]; setManyCalls: string[][] },
+  match: (keys: string[]) => boolean
+): number {
+  const nth = built.setManyCalls.findIndex(match);
+  if (nth < 0) return -1;
+  let seen = -1;
+  for (let i = 0; i < built.callLog.length; i++) {
+    if (built.callLog[i] !== "setMany") continue;
+    seen++;
+    if (seen === nth) return i;
+  }
+  return -1;
+}
+
+/**
+ * One `mailSync` pass over a thread carrying a DECLINED response AND ordinary
+ * correspondence.
+ *
+ * The ordinary message is load-bearing, not scenery: a thread of nothing but
+ * folded responses emits no link at all, so `saveLinks` is never called and
+ * there is no write for the marker flush to be ordered against.
+ */
+async function declinePass(opts: { failSaveLinks?: boolean } = {}) {
+  const built = buildFakeHost({
+    appleId: "owner@example.test",
+    mailboxes: [
+      box("INBOX", [replyMessage(), plainMessage({ uid: 52, root: "<invite@example.test>" })]),
+    ],
+    attachments: { [buildAttachmentRef("INBOX", 51, "2")]: icsBytes(E2E_DECLINE) },
+    ...(opts.failSaveLinks ? { failSaveLinks: true } : {}),
+  });
+
+  // A throwing `saveLinks` must not abort the test — the assertion is about
+  // what survived, not that the pass succeeded.
+  await mailSync(built.host, [INBOX_CHANNEL], RECENT_ISO).catch(() => {});
+  return built;
+}
+
+describe("mailSync — attendee responses end-to-end", () => {
+  it("folds a decline that arrives on a LATER pass than the invite it threads onto", async () => {
+    // The case a single-pass fixture cannot reach. Pass 1 ingests the
+    // invitation, classifies its root as "no bundle" and records that
+    // decision; pass 2's response threads onto that same root, so it is only
+    // seen at all if the cached root keeps being examined for new messages.
+    const invite = {
+      ...calendarMessage({
+        uid: 50,
+        messageId: "<invite@example.test>",
+        root: "<invite@example.test>",
+        date: daysAgo(3),
+      }),
+      subject: "Invitation: Weekly sync",
+    } as ImapMessage;
+    const built = buildFakeHost({
+      appleId: "owner@example.test",
+      mailboxes: [box("INBOX", [invite])],
+      attachments: {
+        [buildAttachmentRef("INBOX", 50, "2")]: icsBytes(
+          ics({ method: "REQUEST", uid: E2E_UID, sequence: 0 })
+        ),
+      },
+    });
+
+    await mailSync(built.host, [INBOX_CHANNEL], RECENT_ISO);
+    expect(built.savedNotes).toHaveLength(0);
+    expect(linkFor(built.savedLinks, "icloud-mail:thread:invite@example.test").title).toBe(
+      "Invitation: Weekly sync"
+    );
+
+    // Pass 2: the response arrives, threading onto the invitation's Message-ID.
+    addMessage(built.mailboxes.get("INBOX")!, replyMessage());
+    built.attachments[buildAttachmentRef("INBOX", 51, "2")] = icsBytes(E2E_DECLINE);
+    // `savedLinks` accumulates across passes and `linkFor` asserts exactly one
+    // match, so pass 1's link has to be cleared before pass 2's is inspected.
+    built.savedLinks.length = 0;
+
+    await mailSync(built.host, [INBOX_CHANNEL], RECENT_ISO);
+
+    expect(built.savedNotes).toHaveLength(1);
+    expect(built.savedNotes[0]).toMatchObject({
+      thread: { source: `icaluid:${E2E_UID}` },
+      key: "reply-1@example.test",
+      content: "Sam Guest declined.",
+    });
+    // …and the response is not ALSO left in the mail thread, which still
+    // carries only the invitation's own note.
+    expect(noteKeys(linkFor(built.savedLinks, "icloud-mail:thread:invite@example.test"))).toEqual([
+      "invite@example.test",
+    ]);
+  });
+
+  it("writes every fold marker BEFORE saveLinks", async () => {
+    const built = await declinePass();
+
+    const firstSaveLinks = built.callLog.indexOf("saveLinks");
+    expect(firstSaveLinks).toBeGreaterThan(-1);
+
+    const markerWrite = setManyPosition(built, (keys) => keys.some((k) => k.startsWith("rsvp:")));
+    expect(markerWrite).toBeGreaterThan(-1);
+    expect(markerWrite).toBeLessThan(firstSaveLinks);
+
+    // The other write goes the other way ON PURPOSE (see `mailSync`): thread
+    // metadata is persisted AFTER the save so a throw re-runs the initial-sync
+    // discipline. Asserted here so "make both writes early" is not mistaken
+    // for a fix if the marker ordering ever regresses.
+    const metaWrite = setManyPosition(built, (keys) => keys.some((k) => k.startsWith("thread:")));
+    expect(metaWrite).toBeGreaterThan(firstSaveLinks);
+  });
+
+  it("keeps the marker written when saveLinks throws, so the note is not re-emitted", async () => {
+    const built = await declinePass({ failSaveLinks: true });
+
+    expect(built.callLog).toContain("saveLinks"); // the pass really got that far
+    expect(await built.host.get(E2E_MARKER)).toBe("DECLINED");
+
+    // The point of writing the marker first: this pass left a note on the
+    // event thread and saved nothing else, so a re-run must not write that
+    // note a second time and drag a thread people had read back to unread.
+    await mailSync(built.host, [INBOX_CHANNEL], RECENT_ISO).catch(() => {});
+    expect(built.savedNotes).toHaveLength(1);
+  });
+
+  it("keeps a folded response out of a mixed mail thread on EVERY later pass", async () => {
+    // A response stays inside the 30-day rescan window for a month, so the
+    // thread carrying it is rebuilt on every poll. The fold has to survive all
+    // of them — and it cannot be re-derived from the fetch, because an
+    // already-examined part is deliberately never fetched again.
+    const built = await declinePass();
+    expect(
+      noteKeys(linkFor(built.savedLinks, "icloud-mail:thread:invite@example.test"))
+    ).toEqual(["plain-52@example.test"]);
+    expect(built.savedNotes).toHaveLength(1);
+
+    built.savedLinks.length = 0;
+    await mailSync(built.host, [INBOX_CHANNEL], RECENT_ISO);
+
+    const link = linkFor(built.savedLinks, "icloud-mail:thread:invite@example.test");
+    expect(noteKeys(link)).toEqual(["plain-52@example.test"]);
+    // …and the thread is still described by the ordinary message, not
+    // re-titled and re-attributed to the responder.
+    expect(link.title).toBe("Re: Weekly sync");
+    // No second copy of the response on the event thread either.
+    expect(built.savedNotes).toHaveLength(1);
+  });
+
+  it("keeps a folded response off a BUNDLED root's thread on every later pass", async () => {
+    // The worst case. A bundled root's Plot thread IS the calendar event's
+    // thread, so a response that leaked back into the mail thread would be
+    // written straight onto the organiser's event thread as a raw email — and
+    // a note is exactly what marks that thread unread for everyone but its
+    // author, which is the outcome the fold exists to prevent.
+    const cancellation = {
+      ...calendarMessage({
+        uid: 50,
+        messageId: "<invite@example.test>",
+        root: "<invite@example.test>",
+        date: daysAgo(3),
+      }),
+      subject: "Cancelled: Weekly sync",
+    } as ImapMessage;
+    const built = buildFakeHost({
+      appleId: "owner@example.test",
+      mailboxes: [box("INBOX", [cancellation, replyMessage()])],
+      attachments: {
+        [buildAttachmentRef("INBOX", 50, "2")]: icsBytes(ics({ method: "CANCEL", uid: E2E_UID })),
+        [buildAttachmentRef("INBOX", 51, "2")]: icsBytes(E2E_DECLINE),
+      },
+    });
+
+    await mailSync(built.host, [INBOX_CHANNEL], RECENT_ISO);
+    const first = linkFor(built.savedLinks, "icloud-mail:thread:invite@example.test");
+    expect(first.sources).toEqual([`icaluid:${E2E_UID}`]);
+    expect(noteKeys(first)).toEqual(["invite@example.test"]);
+
+    built.savedLinks.length = 0;
+    await mailSync(built.host, [INBOX_CHANNEL], RECENT_ISO);
+
+    const second = linkFor(built.savedLinks, "icloud-mail:thread:invite@example.test");
+    expect(second.sources).toEqual([`icaluid:${E2E_UID}`]);
+    expect(noteKeys(second)).toEqual(["invite@example.test"]);
+    expect(built.savedNotes).toHaveLength(1);
   });
 });

@@ -1,11 +1,24 @@
 /**
- * Mail-side half of mail↔calendar thread bundling (see `apple.ts`'s
- * `buildEventSources()` for the calendar side, which already emits
- * `["apple-calendar:<uid>", "icaluid:<uid>"]`). When an inbound email
- * carries a `text/calendar`/`application/ics` MIME part, this classifies its
+ * Mail-side classification of a calendar MIME part, and the bundling half of
+ * how an email meets its event (see `apple.ts`'s `buildEventSources()` for the
+ * calendar side, which already emits
+ * `["apple-calendar:<uid>", "icaluid:<uid>"]`). When an inbound email carries
+ * a `text/calendar`/`application/ics` MIME part, this classifies its
  * relationship to the referenced event so `sync.ts` can decide whether to
  * bundle the mail thread onto the same Plot thread as the calendar event via
  * the shared `icaluid:<uid>` alias.
+ *
+ * Bundling is not the only way a calendar part reaches the event's thread.
+ * `sync.ts` routes an attendee response (`METHOD:REPLY`) to a separate FOLD:
+ * the response is attached to the event's thread as a note of its own — or, if
+ * it is a bare acceptance saying nothing the guest list does not already show,
+ * dropped entirely — and its message is kept out of the mail thread either
+ * way. A response the fold RECOGNISES never reaches `classifyICS` in a sync
+ * pass, so the non-bundling verdict this file gives one says nothing about what
+ * becomes of the message. A `METHOD:REPLY` the fold does not recognise — no
+ * `ATTENDEE` line, or a `PARTSTAT` outside accepted/declined/tentative such as
+ * `NEEDS-ACTION` or `DELEGATED` — does fall through to here, and is classified
+ * as non-bundling like any other part.
  *
  * Ports the Google connector's `classifyCalendarThread` decision
  * (`google/src/mail/gmail-api.ts`) — the product-approved rule for which ICS
@@ -14,6 +27,8 @@
  * pre-fetched `payload` structure, so `sync.ts` fetches the ICS bytes itself
  * and hands the decoded text to `classifyICS`).
  */
+
+import { icsProp } from "@plotday/rsvp-fold";
 
 /** Raw classification of one ICS blob, before the mail sync pass resolves
  *  whether the calendar product has already synced an event for that UID. */
@@ -40,36 +55,22 @@ export function isCalendarAttachment(mimeType: string): boolean {
 }
 
 /**
- * Unfold RFC 5545 continuation lines (CRLF/LF + leading space/tab is a
- * continuation of the previous line's value) and read a property's value.
- * Unscoped — matches the property anywhere in the ICS text, which is
- * correct for `METHOD` (a VCALENDAR-level property that sits outside
- * `BEGIN:VEVENT`/`END:VEVENT`; the existing `parseICSEvents`/`parseVEvent`
- * in `../calendar/ics-parser` parses only VEVENT-scoped properties and has
- * no `method` field at all) as well as for `UID`/`SEQUENCE` (VEVENT-scoped,
- * but a calendar invite email carries exactly one VEVENT).
- */
-function icsProp(ics: string, name: string): string | null {
-  const unfolded = ics.replace(/\r?\n[ \t]/g, "");
-  const re = new RegExp(`^${name}(?:;[^:\\r\\n]*)?:(.*)$`, "im");
-  const m = unfolded.match(re);
-  return m ? m[1].trim() : null;
-}
-
-/**
  * Classify one ICS (VCALENDAR) text's relationship to its event, per the
  * product-approved rule (see module doc):
  *
- * | ICS content                              | Action  |
- * |-------------------------------------------|---------|
- * | `METHOD:CANCEL`                            | bundle  |
- * | `METHOD:REQUEST` with `SEQUENCE > 0`       | bundle  |
- * | `METHOD:REQUEST` with `SEQUENCE == 0`      | skip    |
- * | `METHOD:REPLY` (an RSVP)                   | skip    |
+ * | ICS content                           | Action                                     |
+ * |---------------------------------------|--------------------------------------------|
+ * | `METHOD:CANCEL`                       | bundle                                     |
+ * | `METHOD:REQUEST` with `SEQUENCE > 0`  | bundle                                     |
+ * | `METHOD:REQUEST` with `SEQUENCE == 0` | skip                                       |
+ * | `METHOD:REPLY` (an RSVP)              | folded onto the event thread (see sync.ts) |
  *
- * Returns `null` for "skip" (including no parseable UID at all) so callers
- * can uniformly treat every non-bundling case — RSVP, bare invite, or
- * unparseable text — the same way.
+ * Returns `null` for everything that does not bundle (including no parseable
+ * UID at all) so callers can uniformly treat every non-bundling case — RSVP,
+ * bare invite, or unparseable text — the same way. A `METHOD:REPLY` still
+ * returns `null` here; in a sync pass it is normally folded before this
+ * function is offered the part, so that `null` is reached only by another
+ * caller or by a response the fold does not recognise (see the module doc).
  */
 export function classifyICS(ics: string): ClassifiedICS | null {
   const uid = icsProp(ics, "UID");
