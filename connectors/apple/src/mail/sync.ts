@@ -1,12 +1,4 @@
-import {
-  alreadyFolded,
-  composeRsvpNote,
-  icsProp,
-  isNonAcceptance,
-  parseIcsReply,
-  priorRsvpKey,
-  shouldEmitRsvpNote,
-} from "@plotday/rsvp-fold";
+import { foldRsvp, icsProp, parseIcsReply } from "@plotday/rsvp-fold";
 import type { ActorId } from "@plotday/twister";
 import type { ImapMailboxStatus, ImapSession } from "@plotday/twister/tools/imap";
 
@@ -90,10 +82,11 @@ export type ThreadMeta = {
    * must never flip: this is per-MESSAGE, and exists so a root whose bundling
    * question is already settled still looks at messages that arrived since.
    *
-   * Required, not an optimisation. `alreadyFolded` stops a duplicate note but
-   * not the IMAP fetch, and inside the 30-day rescan window an RSVP would
-   * otherwise be re-fetched on every pass — roughly 2,900 times, at up to two
-   * round-trips each, against a ~1,000-request execution budget.
+   * Required, not an optimisation. `foldRsvp`'s repeat check stops a
+   * duplicate note but not the IMAP fetch, and inside the 30-day rescan
+   * window an RSVP would otherwise be re-fetched on every pass — roughly
+   * 2,900 times, at up to two round-trips each, against a ~1,000-request
+   * execution budget.
    *
    * Capped at SEEN_ICS_MAX, oldest dropped. Growth is bounded in practice by
    * how many responses one meeting draws, but this document is rewritten every
@@ -121,9 +114,10 @@ export type ThreadMeta = {
    * key can only be dropped together with its `seenIcs` entry, which puts the
    * message back among the unexamined and has the next pass re-fetch and
    * re-fold it. (The response's own `rsvp:` marker is a separate, uncapped
-   * key, so `alreadyFolded` still suppresses a second note.) An independent
-   * cap would have no such backstop — it would drop a folded key while the
-   * message stayed un-fetched, and the note would resurface permanently.
+   * key, so `foldRsvp` still recognises the repeat and writes no second
+   * note.) An independent cap would have no such backstop — it would drop a
+   * folded key while the message stayed un-fetched, and the note would
+   * resurface permanently.
    */
   foldedIcs?: string[];
 };
@@ -423,9 +417,11 @@ export async function detectCalendarBundles(
         // `dedupeCopies` only collapses them later, inside `transformMessages` —
         // `unexamined` was filtered against a snapshot of `seen`, so both copies
         // are in it. The second copy has nothing new to read, and routing it
-        // again would emit its response note twice: the marker written below is
-        // flushed once at the end of the pass, so the second copy would still
-        // read the pre-pass value and look un-folded.
+        // again would emit its response note twice: the marker is collected
+        // rather than written through (see `writeMarker` below) and flushed
+        // once at the end of the pass, so the second copy would still read the
+        // pre-pass value and look un-folded. This guard is the in-pass dedup
+        // `foldRsvp` requires of any connector that batches its markers.
         if (seen.has(noteKeyOf(m))) continue;
 
         const part = (m.attachments ?? []).find((a) => isCalendarAttachment(a.mimeType))!;
@@ -449,50 +445,31 @@ export async function detectCalendarBundles(
           // reply is not an answer to the bundling question.
           const replyUid = icsProp(ics, "UID");
           if (replyUid) {
-            const priorKey = priorRsvpKey(replyUid, reply.attendeeEmail, reply.occurrence);
-            const stored = await host.get<string>(priorKey);
-
-            // Order is the library's documented contract: `alreadyFolded`
-            // FIRST, and only when it is false decide whether to emit.
-            // Re-emitting a note the thread already carries re-applies its
-            // unread intent and drags the thread back to unread for everyone
-            // who had read it — and a response inside the 30-day rescan window
-            // is re-read on every pass.
-            if (
-              !alreadyFolded(stored, reply) &&
-              shouldEmitRsvpNote(reply, isNonAcceptance(stored))
-            ) {
-              // `saveNote` returns null when no thread carries `icaluid:<uid>`
-              // yet (the calendar event has not synced); `deferUntilThread` has
-              // the platform hold the note and attach it once that thread
-              // appears.
-              await host.integrations.saveNote({
-                thread: { source: `icaluid:${replyUid}` },
+            // The decision order (repeat check first, marker written only on
+            // the emitting path) and the reasoning behind it live once, on
+            // `foldRsvp`. Only what is iCloud-specific stays here — including
+            // the batched marker write below, which this connector needs
+            // because a response inside the 30-day rescan window would
+            // otherwise cost a store request per response per pass.
+            await foldRsvp({
+              uid: replyUid,
+              reply,
+              // `created` may be absent here — `foldRsvp` leaves the field
+              // off the note rather than sending an explicit undefined.
+              note: {
                 key: noteKeyOf(m),
-                content: composeRsvpNote(reply),
-                contentType: "markdown",
-                ...(m.date ? { created: m.date } : {}),
-                author: {
-                  email: reply.attendeeEmail,
-                  ...(reply.attendeeName ? { name: reply.attendeeName } : {}),
-                },
-                // Explicit on both paths. An omitted flag does NOT mean "leave
-                // read state alone" — attaching a note already marks the thread
-                // unread for every recipient except its author, so only an
-                // explicit false overrides it.
+                created: m.date,
                 unread: !initialRoots.has(root),
-                deferUntilThread: true,
-              });
-              // Recorded ONLY on the path that emits, and regardless of the
-              // return value: a deferred note returns no id, and gating on it
-              // would leave a deferred non-acceptance unrecorded forever,
-              // wrongly treating a later bare acceptance as reversing nothing.
-              // The marker holds the last response actually folded onto the
-              // thread — for every emitted response, acceptances included,
-              // which is what lets `alreadyFolded` recognise a repeat of ANY
-              // partstat.
-              rsvpMarkers.push([priorKey, reply.partstat]);
-            }
+              },
+              readMarker: (key) => host.get<string>(key),
+              // Collected, not written: flushed in ONE `setMany` in the
+              // `finally` below, so a `saveNote` that throws later in the pass
+              // cannot take the markers of responses already written with it.
+              writeMarker: (key, partstat) => {
+                rsvpMarkers.push([key, partstat]);
+              },
+              saveNote: (note) => host.integrations.saveNote(note),
+            });
 
             // Folded whether or not a note was written — a bare acceptance is
             // dropped from the mail thread rather than left to become an email

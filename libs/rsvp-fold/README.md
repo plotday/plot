@@ -5,6 +5,14 @@ tentative) onto the event's thread as a note.
 
 ## What it does
 
+- `foldRsvp({ uid, reply, note, readMarker, writeMarker, saveNote })` — folds
+  one response onto its event's thread, owning the order the rules below have
+  to be applied in: check for a repeat first, only then decide whether the
+  response earns a note, and record it only when one was actually written.
+  Getting that order wrong re-raises unread on threads people have already
+  read, so connectors call this rather than sequencing the predicates
+  themselves. Reading and writing the marker, and saving the note, are
+  injected — connectors differ in how they batch those.
 - `composeRsvpNote(reply)` — formats the one-line note (plus the responder's
   personal comment, when they left one) that a connector attaches to the
   event thread.
