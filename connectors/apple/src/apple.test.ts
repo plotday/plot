@@ -2322,7 +2322,7 @@ describe("Apple.updateRSVP — If-Match etag + 412 retry", () => {
     "BEGIN:VCALENDAR",
     "BEGIN:VEVENT",
     "UID:evt-1",
-    "ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:kris@plot.day",
+    "ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:owner@example.test",
     "END:VEVENT",
     "END:VCALENDAR",
   ].join("\r\n");
@@ -2361,7 +2361,7 @@ describe("Apple.updateRSVP — If-Match etag + 412 retry", () => {
       self,
       "cal-href",
       "/cal/evt-1.ics",
-      "kris@plot.day",
+      "owner@example.test",
       "ACCEPTED"
     );
 
@@ -2398,7 +2398,7 @@ describe("Apple.updateRSVP — If-Match etag + 412 retry", () => {
         self,
         "cal-href",
         "/cal/evt-1.ics",
-        "kris@plot.day",
+        "owner@example.test",
         "ACCEPTED"
       )
     ).resolves.toBeUndefined();
@@ -2425,7 +2425,7 @@ describe("Apple.updateRSVP — If-Match etag + 412 retry", () => {
         self,
         "cal-href",
         "/cal/evt-1.ics",
-        "kris@plot.day",
+        "owner@example.test",
         "ACCEPTED"
       )
     ).rejects.toThrow();
@@ -2448,7 +2448,7 @@ describe("Apple.updateRSVP — If-Match etag + 412 retry", () => {
         self,
         "cal-href",
         "/cal/evt-1.ics",
-        "kris@plot.day",
+        "owner@example.test",
         "ACCEPTED"
       )
     ).rejects.toThrow(/Failed to update event/);

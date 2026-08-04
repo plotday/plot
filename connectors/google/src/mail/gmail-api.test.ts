@@ -125,7 +125,7 @@ describe("GmailApi.call empty-body responses", () => {
       "fetch",
       vi.fn(
         async () =>
-          new Response(JSON.stringify({ emailAddress: "kris@plot.day" }), {
+          new Response(JSON.stringify({ emailAddress: "owner@example.test" }), {
             status: 200,
             headers: { "Content-Type": "application/json" },
           })
@@ -133,7 +133,7 @@ describe("GmailApi.call empty-body responses", () => {
     );
     const api = new GmailApi("test-token");
     await expect(api.getProfile()).resolves.toEqual({
-      emailAddress: "kris@plot.day",
+      emailAddress: "owner@example.test",
     });
   });
 
@@ -141,7 +141,7 @@ describe("GmailApi.call empty-body responses", () => {
     const fetchMock = vi.fn(
       async () =>
         new Response(
-          JSON.stringify({ email: "kris@plot.day", name: "Kris Braun" }),
+          JSON.stringify({ email: "owner@example.test", name: "Test Owner" }),
           { status: 200, headers: { "Content-Type": "application/json" } }
         )
     );
@@ -149,8 +149,8 @@ describe("GmailApi.call empty-body responses", () => {
     const api = new GmailApi("test-token");
 
     await expect(api.getUserInfo()).resolves.toEqual({
-      email: "kris@plot.day",
-      name: "Kris Braun",
+      email: "owner@example.test",
+      name: "Test Owner",
     });
     expect(fetchMock).toHaveBeenCalledWith(
       "https://www.googleapis.com/oauth2/v3/userinfo",
@@ -173,30 +173,30 @@ describe("GmailApi.call empty-body responses", () => {
 
 describe("formatFromHeader", () => {
   it("quotes the display name around the email when a name is available", () => {
-    expect(formatFromHeader("kris@plot.day", "Kris Braun")).toBe(
-      '"Kris Braun" <kris@plot.day>'
+    expect(formatFromHeader("owner@example.test", "Test Owner")).toBe(
+      '"Test Owner" <owner@example.test>'
     );
   });
 
   it("falls back to a bare email when no name is available", () => {
-    expect(formatFromHeader("kris@plot.day")).toBe("kris@plot.day");
-    expect(formatFromHeader("kris@plot.day", null)).toBe("kris@plot.day");
-    expect(formatFromHeader("kris@plot.day", "")).toBe("kris@plot.day");
+    expect(formatFromHeader("owner@example.test")).toBe("owner@example.test");
+    expect(formatFromHeader("owner@example.test", null)).toBe("owner@example.test");
+    expect(formatFromHeader("owner@example.test", "")).toBe("owner@example.test");
   });
 
   it("escapes quotes and backslashes in the name", () => {
-    expect(formatFromHeader("kris@plot.day", 'Kris "K" Braun')).toBe(
-      '"Kris \\"K\\" Braun" <kris@plot.day>'
+    expect(formatFromHeader("owner@example.test", 'Test "T" Owner')).toBe(
+      '"Test \\"T\\" Owner" <owner@example.test>'
     );
-    expect(formatFromHeader("kris@plot.day", "Kris\\Braun")).toBe(
-      '"Kris\\\\Braun" <kris@plot.day>'
+    expect(formatFromHeader("owner@example.test", "Test\\Owner")).toBe(
+      '"Test\\\\Owner" <owner@example.test>'
     );
   });
 
   it("strips CRLF injection attempts from both name and email", () => {
     expect(
-      formatFromHeader("kris@plot.day", "Kris\r\nBcc: evil@example.com")
-    ).toBe('"Kris Bcc: evil@example.com" <kris@plot.day>');
+      formatFromHeader("owner@example.test", "Test\r\nBcc: evil@example.com")
+    ).toBe('"Test Bcc: evil@example.com" <owner@example.test>');
   });
 });
 
@@ -210,12 +210,12 @@ describe("forwarded email body extraction", () => {
       '<div class="gmail_quote gmail_quote_container">' +
       '<div dir="ltr" class="gmail_attr">---------- Forwarded message ---------<br>' +
       "From: <strong>Porter Airlines</strong> &lt;flyporter@notifications.flyporter.com&gt;<br>" +
-      "Date: Wed, Aug 19, 2026<br>Subject: Booking details<br>To: Kris<br></div><br>" +
+      "Date: Wed, Aug 19, 2026<br>Subject: Booking details<br>To: Sam<br></div><br>" +
       "<div>Your booking is confirmed. Confirmation code: BOOKINGCONFIRM123. Gate at YYZ.</div>" +
       "</div></div>";
     const t = thread({
       from: "Forwarder <fwd@example.com>",
-      to: "kris@plot.day",
+      to: "owner@example.test",
       subject: "Fwd: Booking details",
       payload: part("multipart/alternative", {
         parts: [
@@ -234,7 +234,7 @@ describe("forwarded email body extraction", () => {
   it("keeps the body of a plain-text forward", () => {
     const t = thread({
       from: "Forwarder <fwd@example.com>",
-      to: "kris@plot.day",
+      to: "owner@example.test",
       subject: "Fwd: Booking details",
       // Exact 10/10-dash separator that the strip path matches literally.
       payload: part("text/plain", {
@@ -250,7 +250,7 @@ describe("forwarded email body extraction", () => {
   it("keeps the body of a forward attached as message/rfc822", () => {
     const t = thread({
       from: "Forwarder <fwd@example.com>",
-      to: "kris@plot.day",
+      to: "owner@example.test",
       subject: "Fwd: Booking details",
       payload: part("multipart/mixed", {
         parts: [
@@ -286,7 +286,7 @@ describe("forwarded email body extraction", () => {
       "</div></div>";
     const t = thread({
       from: "Bob <bob@example.com>",
-      to: "kris@plot.day",
+      to: "owner@example.test",
       subject: "Re: lunch",
       payload: part("text/html", { data: html }),
     });
@@ -421,7 +421,7 @@ describe("outbound MIME bodies (multipart/alternative HTML + plain)", () => {
     const raw = decodeRawMessage(
       buildReplyMessage({
         to: ["phil467@gmail.com"],
-        cc: ["kris@plot.day"],
+        cc: ["owner@example.test"],
         from: "beth@plot.day",
         subject: "Workshop ideas",
         body: markdownBody,
@@ -889,7 +889,7 @@ const REAL_RSVP_ICS = [
   "ATTENDEE;PARTSTAT=ACCEPTED;CN=liohn@example.ca:mailto:liohn@example.ca",
   "COMMENT;LANGUAGE=en-US:\\n",
   "UID:k1nET3CLaxZxrDppbbSNg5@Cal.com",
-  "SUMMARY;LANGUAGE=en-US:Accepted: Your Liohn <> Kris has been re",
+  "SUMMARY;LANGUAGE=en-US:Accepted: Your Liohn <> Sam has been re",
   " scheduled to 11:30am - 12:00pm\\, Tuesday\\, August 4\\, 2026.",
   "DTSTART;TZID=Eastern Standard Time:20260804T113000",
   "DTSTAMP:20260729T194724Z",

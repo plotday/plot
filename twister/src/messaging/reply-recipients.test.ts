@@ -305,12 +305,12 @@ describe("resolveOutboundReplyRecipients", () => {
   });
 
   describe("self-exclusion across Gmail alias variants", () => {
-    const mailbox = "kris.braun@gmail.com";
+    const mailbox = "first.last@gmail.com";
 
     it("drops a dot-variant of self from curated recipients (Case 1)", () => {
       const result = resolveOutboundReplyRecipients({
         recipients: [
-          { externalAccountId: "krisbraun@gmail.com", name: "Kris", role: "to" },
+          { externalAccountId: "firstlast@gmail.com", name: "Owner", role: "to" },
           { externalAccountId: "annie@example.com", name: "Annie", role: "to" },
         ] as never,
         accessContactEmails: null,
@@ -325,7 +325,7 @@ describe("resolveOutboundReplyRecipients", () => {
     it("drops a +tag variant of self from curated recipients (Case 1)", () => {
       const result = resolveOutboundReplyRecipients({
         recipients: [
-          { externalAccountId: "kris.braun+plot@gmail.com", name: "Kris", role: "cc" },
+          { externalAccountId: "first.last+plot@gmail.com", name: "Owner", role: "cc" },
           { externalAccountId: "annie@example.com", name: "Annie", role: "to" },
         ] as never,
         accessContactEmails: null,
@@ -354,7 +354,7 @@ describe("resolveOutboundReplyRecipients", () => {
       const result = resolveOutboundReplyRecipients({
         recipients: null,
         accessContactEmails: null,
-        headerTo: ["krisbraun@gmail.com", "annie@example.com"],
+        headerTo: ["firstlast@gmail.com", "annie@example.com"],
         headerCc: [],
         selfEmails: new Set([mailbox]),
       });

@@ -9,7 +9,7 @@ import { priorRsvpKey } from "@plotday/rsvp-fold";
  * sends-as a Gmail address, and Gmail ignores dots (and anything after a
  * "+") in the local part — so a header may address the user through a
  * variant that never string-matches the connected mailbox
- * ("krisbraun@gmail.com" vs "kris.braun@gmail.com"). Before this fix, a
+ * ("firstlast@gmail.com" vs "first.last@gmail.com"). Before this fix, a
  * plain `toLowerCase()` comparison treated that variant as a third-party
  * recipient and replied to the user's own address.
  */
@@ -93,13 +93,13 @@ describe("onNoteCreatedFn — Gmail alias addressed to the connected mailbox", (
     // The connected Outlook mailbox forwards from a Gmail address; the
     // original message addressed a dot-variant of it. That variant is the
     // user, so it must not appear as an outbound recipient.
-    const accountEmail = "kris.braun@gmail.com";
+    const accountEmail = "first.last@gmail.com";
     graphApi.getConversationMessages.mockResolvedValue([
       {
         id: "msg-1",
         isDraft: false,
         from: { emailAddress: { address: "annie@example.com" } },
-        toRecipients: [{ emailAddress: { address: "krisbraun@gmail.com" } }],
+        toRecipients: [{ emailAddress: { address: "firstlast@gmail.com" } }],
         ccRecipients: [],
       },
     ]);
@@ -134,8 +134,8 @@ function calThread(over: Record<string, unknown> = {}) {
     title: "Weekly sync",
     meta: { calendarId: "cal-1", iCalUId: "uid-123", syncableId: "cal-1" },
     accessContacts: [
-      { id: "c-me", email: "kris.braun@gmail.com" },
-      { id: "c-alias", email: "krisbraun@gmail.com" },
+      { id: "c-me", email: "first.last@gmail.com" },
+      { id: "c-alias", email: "firstlast@gmail.com" },
     ],
     ...over,
   } as never;
@@ -222,11 +222,11 @@ describe("onNoteCreatedFn — calendar reply whose curated recipients are all se
     // recipient set is entirely dot/+tag variants of the organizer's own
     // connected mailbox, the reply must resolve to no recipients rather
     // than being sent back to the organizer.
-    const { host } = makeHost({ user_email: "kris.braun@gmail.com" });
+    const { host } = makeHost({ user_email: "first.last@gmail.com" });
 
     const res = await onNoteCreatedFn(
       host,
-      curatedCalReplyNote([{ externalAccountId: "krisbraun@gmail.com", role: null }]),
+      curatedCalReplyNote([{ externalAccountId: "firstlast@gmail.com", role: null }]),
       calThread()
     );
 

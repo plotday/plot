@@ -570,8 +570,8 @@ describe("onNoteCreatedFn — calendar event thread", () => {
 
   it("sends nothing when the curated recipient is entirely the organizer's own Gmail alias variant", async () => {
     // The picker resolved the reply's sole curated recipient to a contact
-    // record for "krisbraun@gmail.com" — a dot-variant of the organizer's own
-    // connected mailbox "kris.braun@gmail.com" that hadn't been merged into
+    // record for "firstlast@gmail.com" — a dot-variant of the organizer's own
+    // connected mailbox "first.last@gmail.com" that hadn't been merged into
     // their primary contact. resolveOutboundReplyRecipients' curated-path
     // self-filter (Case 1) still recognizes it as self via baseEmail and
     // drops it, so the reply resolves to zero recipients rather than being
@@ -581,23 +581,23 @@ describe("onNoteCreatedFn — calendar event thread", () => {
     const send = vi.spyOn(GmailApi.prototype, "sendNewMessage");
     const sendReply = vi.spyOn(GmailApi.prototype, "sendMessage");
     vi.spyOn(GmailApi.prototype, "getProfile").mockResolvedValue({
-      emailAddress: "kris.braun@gmail.com",
+      emailAddress: "first.last@gmail.com",
     });
     vi.spyOn(GmailApi.prototype, "getUserInfo").mockResolvedValue({
-      email: "kris.braun@gmail.com",
+      email: "first.last@gmail.com",
     });
     const { host } = makeHost();
 
     const res = await onNoteCreatedFn(
       host,
       replyNote(
-        [{ externalAccountId: "krisbraun@gmail.com", role: null }],
+        [{ externalAccountId: "firstlast@gmail.com", role: null }],
         { accessContacts: ["c-alias"] }
       ),
       calThread({
         accessContacts: [
-          { id: "c-me", email: "kris.braun@gmail.com" },
-          { id: "c-alias", email: "krisbraun@gmail.com" },
+          { id: "c-me", email: "first.last@gmail.com" },
+          { id: "c-alias", email: "firstlast@gmail.com" },
         ],
       })
     );
@@ -620,7 +620,7 @@ function gmailAliasReplyThread(): GmailThread {
     id: "msg-orig-1",
     threadId: "gmail-thread-1",
     labelIds: ["INBOX"],
-    snippet: "Hi Kris",
+    snippet: "Hi Sam",
     historyId: "1",
     internalDate: "1700000000000",
     sizeEstimate: 100,
@@ -629,11 +629,11 @@ function gmailAliasReplyThread(): GmailThread {
       headers: [
         { name: "Message-ID", value: "<orig@mail.gmail.com>" },
         { name: "From", value: "Hilary Collier <hilary.collier@example.com>" },
-        { name: "To", value: "krisbraun@gmail.com" },
+        { name: "To", value: "firstlast@gmail.com" },
         { name: "Cc", value: "annie@example.com" },
         { name: "Subject", value: "Surprise Tribute Video" },
       ],
-      body: { size: 10, data: b64url("Hi Kris") },
+      body: { size: 10, data: b64url("Hi Sam") },
     },
   };
   return { id: "gmail-thread-1", historyId: "1", messages: [message] };
@@ -645,7 +645,7 @@ function plainThread(over: Record<string, unknown> = {}) {
     title: "Surprise Tribute Video",
     meta: { channelId: "INBOX", threadId: "gmail-thread-1" },
     accessContacts: [
-      { id: "c-me", email: "kris.braun@gmail.com" },
+      { id: "c-me", email: "first.last@gmail.com" },
       { id: "c-hilary", email: "hilary.collier@example.com" },
       { id: "c-annie", email: "annie@example.com" },
     ],
@@ -672,12 +672,12 @@ describe("onNoteCreatedFn — plain Gmail thread reply-all", () => {
     );
     // The account's canonical/connected address (with dot) never literally
     // matches the alias form the original message was addressed to
-    // (krisbraun@gmail.com) — Gmail treats both as the same mailbox.
+    // (firstlast@gmail.com) — Gmail treats both as the same mailbox.
     vi.spyOn(GmailApi.prototype, "getProfile").mockResolvedValue({
-      emailAddress: "kris.braun@gmail.com",
+      emailAddress: "first.last@gmail.com",
     });
     vi.spyOn(GmailApi.prototype, "getUserInfo").mockResolvedValue({
-      email: "kris.braun@gmail.com",
+      email: "first.last@gmail.com",
     });
     const send = vi
       .spyOn(GmailApi.prototype, "sendMessage")
@@ -688,7 +688,7 @@ describe("onNoteCreatedFn — plain Gmail thread reply-all", () => {
 
     expect(send).toHaveBeenCalledTimes(1);
     const raw = decodeRawMessage(send.mock.calls[0][0]);
-    expect(raw).not.toContain("krisbraun@gmail.com");
+    expect(raw).not.toContain("firstlast@gmail.com");
     expect(raw).toContain("hilary.collier@example.com");
   });
 
@@ -700,10 +700,10 @@ describe("onNoteCreatedFn — plain Gmail thread reply-all", () => {
       gmailAliasReplyThread()
     );
     vi.spyOn(GmailApi.prototype, "getProfile").mockResolvedValue({
-      emailAddress: "kris.braun@gmail.com",
+      emailAddress: "first.last@gmail.com",
     });
     vi.spyOn(GmailApi.prototype, "getUserInfo").mockResolvedValue({
-      email: "kris.braun@gmail.com",
+      email: "first.last@gmail.com",
     });
     const send = vi
       .spyOn(GmailApi.prototype, "sendMessage")
@@ -747,8 +747,8 @@ function selfEmailReplyThread(): GmailThread {
       mimeType: "text/plain",
       headers: [
         { name: "Message-ID", value: "<self-orig@mail.gmail.com>" },
-        { name: "From", value: "kris.work@example.com" },
-        { name: "To", value: "kris.braun@gmail.com" },
+        { name: "From", value: "owner.work@example.com" },
+        { name: "To", value: "first.last@gmail.com" },
         { name: "Subject", value: "Note to self" },
       ],
       body: { size: 12, data: b64url("note to self") },
@@ -763,8 +763,8 @@ function selfThread(over: Record<string, unknown> = {}) {
     title: "Note to self",
     meta: { channelId: "INBOX", threadId: "gmail-self-thread-1" },
     accessContacts: [
-      { id: "c-me", email: "kris.braun@gmail.com" },
-      { id: "c-work", email: "kris.work@example.com" },
+      { id: "c-me", email: "first.last@gmail.com" },
+      { id: "c-work", email: "owner.work@example.com" },
     ],
     ...over,
   } as unknown as import("@plotday/twister").Thread;
@@ -778,10 +778,10 @@ describe("onNoteCreatedFn — self-email thread reply", () => {
     // Connected mailbox = one linked identity; the note is authored as the
     // OTHER linked identity, so both original participants are self.
     vi.spyOn(GmailApi.prototype, "getProfile").mockResolvedValue({
-      emailAddress: "kris.braun@gmail.com",
+      emailAddress: "first.last@gmail.com",
     });
     vi.spyOn(GmailApi.prototype, "getUserInfo").mockResolvedValue({
-      email: "kris.braun@gmail.com",
+      email: "first.last@gmail.com",
     });
     const send = vi
       .spyOn(GmailApi.prototype, "sendMessage")
@@ -797,7 +797,7 @@ describe("onNoteCreatedFn — self-email thread reply", () => {
 
     expect(send).toHaveBeenCalledTimes(1);
     const raw = decodeRawMessage(send.mock.calls[0][0]);
-    expect(raw).toContain("kris.work@example.com");
+    expect(raw).toContain("owner.work@example.com");
   });
 });
 
@@ -1571,11 +1571,11 @@ describe("sendReactionEmailFn", () => {
   it("sends a reaction email reply-all to the other participants, threaded on the reacted message", async () => {
     vi.spyOn(GmailApi.prototype, "getThread").mockResolvedValue(reactionThread());
     vi.spyOn(GmailApi.prototype, "getProfile").mockResolvedValue({
-      emailAddress: "kris.braun@gmail.com",
+      emailAddress: "first.last@gmail.com",
     });
     vi.spyOn(GmailApi.prototype, "getUserInfo").mockResolvedValue({
-      email: "kris.braun@gmail.com",
-      name: "Kris",
+      email: "first.last@gmail.com",
+      name: "Owner",
     });
     const send = vi
       .spyOn(GmailApi.prototype, "sendMessage")
@@ -1594,7 +1594,7 @@ describe("sendReactionEmailFn", () => {
     // Reply-all: original sender + Cc, excluding the connected mailbox (self).
     expect(raw).toContain("hilary.collier@example.com");
     expect(raw).toContain("annie@example.com");
-    expect(raw).not.toContain("krisbraun@gmail.com");
+    expect(raw).not.toContain("firstlast@gmail.com");
     // Sent id is recorded for later retraction + echo suppression.
     expect(store.get("reaction-msg:msg-orig-1:💖")).toBe("reaction-sent-1");
     expect(store.get("sent:reaction-sent-1")).toBe(true);
