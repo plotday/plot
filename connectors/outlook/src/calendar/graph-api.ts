@@ -314,6 +314,171 @@ export class GraphApi {
 }
 
 /**
+ * Maps Microsoft's Windows time zone identifiers (as returned in the
+ * `timeZone` field of a Graph event) to an IANA zone with the same rules,
+ * for the common zones Plot users are actually in. Sourced from Unicode
+ * CLDR's windowsZones.xml (territory "001" / primary alias per Windows id).
+ *
+ * We normally never need this: every request sends
+ * `Prefer: outlook.timezone="UTC"`, and in practice `timeZone` does come
+ * back "UTC" on both the plain `/events` listing and the `/events/delta`
+ * chain. This is defensive fallback handling for the (currently unobserved,
+ * but undocumented and not guaranteed) case where Graph returns some other
+ * zone anyway — previously that case was silently mishandled by treating
+ * the wall-clock value as if it were already UTC.
+ */
+const WINDOWS_TO_IANA_TIMEZONE: Record<string, string> = {
+  UTC: "UTC",
+  "GMT Standard Time": "Europe/London",
+  "Greenwich Standard Time": "Atlantic/Reykjavik",
+  "W. Europe Standard Time": "Europe/Berlin",
+  "Central Europe Standard Time": "Europe/Budapest",
+  "Romance Standard Time": "Europe/Paris",
+  "Central European Standard Time": "Europe/Warsaw",
+  "E. Europe Standard Time": "Europe/Chisinau",
+  "FLE Standard Time": "Europe/Kyiv",
+  "GTB Standard Time": "Europe/Bucharest",
+  "Russian Standard Time": "Europe/Moscow",
+  "Turkey Standard Time": "Europe/Istanbul",
+  "Israel Standard Time": "Asia/Jerusalem",
+  "Arabic Standard Time": "Asia/Baghdad",
+  "Arab Standard Time": "Asia/Riyadh",
+  "Arabian Standard Time": "Asia/Dubai",
+  "Iran Standard Time": "Asia/Tehran",
+  "Afghanistan Standard Time": "Asia/Kabul",
+  "Pakistan Standard Time": "Asia/Karachi",
+  "India Standard Time": "Asia/Calcutta",
+  "Sri Lanka Standard Time": "Asia/Colombo",
+  "Nepal Standard Time": "Asia/Katmandu",
+  "Bangladesh Standard Time": "Asia/Dhaka",
+  "Myanmar Standard Time": "Asia/Rangoon",
+  "SE Asia Standard Time": "Asia/Bangkok",
+  "China Standard Time": "Asia/Shanghai",
+  "Taipei Standard Time": "Asia/Taipei",
+  "Singapore Standard Time": "Asia/Singapore",
+  "W. Australia Standard Time": "Australia/Perth",
+  "Tokyo Standard Time": "Asia/Tokyo",
+  "Korea Standard Time": "Asia/Seoul",
+  "Cen. Australia Standard Time": "Australia/Adelaide",
+  "AUS Central Standard Time": "Australia/Darwin",
+  "E. Australia Standard Time": "Australia/Brisbane",
+  "AUS Eastern Standard Time": "Australia/Sydney",
+  "West Pacific Standard Time": "Pacific/Port_Moresby",
+  "Tasmania Standard Time": "Australia/Hobart",
+  "New Zealand Standard Time": "Pacific/Auckland",
+  "Fiji Standard Time": "Pacific/Fiji",
+  "Central Pacific Standard Time": "Pacific/Guadalcanal",
+  "Hawaiian Standard Time": "Pacific/Honolulu",
+  "Alaskan Standard Time": "America/Anchorage",
+  "Pacific Standard Time": "America/Los_Angeles",
+  "US Mountain Standard Time": "America/Phoenix",
+  "Mountain Standard Time": "America/Denver",
+  "Central America Standard Time": "America/Guatemala",
+  "Central Standard Time": "America/Chicago",
+  "Canada Central Standard Time": "America/Regina",
+  "SA Pacific Standard Time": "America/Bogota",
+  "Eastern Standard Time": "America/New_York",
+  "US Eastern Standard Time": "America/Indianapolis",
+  "Venezuela Standard Time": "America/Caracas",
+  "Paraguay Standard Time": "America/Asuncion",
+  "Atlantic Standard Time": "America/Halifax",
+  "SA Western Standard Time": "America/La_Paz",
+  "Central Brazilian Standard Time": "America/Cuiaba",
+  "Pacific SA Standard Time": "America/Santiago",
+  "Newfoundland Standard Time": "America/St_Johns",
+  "E. South America Standard Time": "America/Sao_Paulo",
+  "SA Eastern Standard Time": "America/Cayenne",
+  "Argentina Standard Time": "America/Buenos_Aires",
+  "Montevideo Standard Time": "America/Montevideo",
+  "Greenland Standard Time": "America/Godthab",
+  "Cape Verde Standard Time": "Atlantic/Cape_Verde",
+  "Azores Standard Time": "Atlantic/Azores",
+  "Morocco Standard Time": "Africa/Casablanca",
+  "South Africa Standard Time": "Africa/Johannesburg",
+  "E. Africa Standard Time": "Africa/Nairobi",
+  "Egypt Standard Time": "Africa/Cairo",
+  "West Asia Standard Time": "Asia/Tashkent",
+  "Central Asia Standard Time": "Asia/Almaty",
+  "N. Central Asia Standard Time": "Asia/Novosibirsk",
+  "North Asia Standard Time": "Asia/Krasnoyarsk",
+  "North Asia East Standard Time": "Asia/Irkutsk",
+  "Yakutsk Standard Time": "Asia/Yakutsk",
+  "Vladivostok Standard Time": "Asia/Vladivostok",
+  "Ulaanbaatar Standard Time": "Asia/Ulaanbaatar",
+  "Line Islands Standard Time": "Pacific/Kiritimati",
+  "Tonga Standard Time": "Pacific/Tongatapu",
+  "Samoa Standard Time": "Pacific/Apia",
+};
+
+/**
+ * UTC offset (ms, `local - UTC` sign convention) an IANA zone observes at
+ * the given instant.
+ */
+function getUtcOffsetMs(date: Date, ianaTimeZone: string): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: ianaTimeZone,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).formatToParts(date);
+  const get = (type: string) =>
+    Number(parts.find((p) => p.type === type)?.value ?? 0);
+  const asUtc = Date.UTC(
+    get("year"),
+    get("month") - 1,
+    get("day"),
+    get("hour"),
+    get("minute"),
+    get("second")
+  );
+  return asUtc - date.getTime();
+}
+
+/**
+ * Converts a wall-clock date/time (as returned by Graph for a given
+ * timezone) to the correct UTC instant, accounting for DST via a
+ * fixed-point iteration on the zone's offset (converges in 1-2 passes;
+ * safe even right at a DST transition).
+ */
+function wallClockToUtc(dateStr: string, ianaTimeZone: string): Date {
+  const match = dateStr.match(
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?/
+  );
+  if (!match) return new Date(dateStr + "Z");
+
+  const [, y, mo, d, h, mi, s, frac] = match;
+  const ms = frac ? Number(frac.slice(0, 3).padEnd(3, "0")) : 0;
+  let utcGuessMs = Date.UTC(
+    Number(y),
+    Number(mo) - 1,
+    Number(d),
+    Number(h),
+    Number(mi),
+    Number(s),
+    ms
+  );
+
+  for (let i = 0; i < 2; i++) {
+    const offset = getUtcOffsetMs(new Date(utcGuessMs), ianaTimeZone);
+    utcGuessMs = Date.UTC(
+      Number(y),
+      Number(mo) - 1,
+      Number(d),
+      Number(h),
+      Number(mi),
+      Number(s),
+      ms
+    ) - offset;
+  }
+
+  return new Date(utcGuessMs);
+}
+
+/**
  * Convert Microsoft Graph date object to Date
  */
 export function fromMsDate(dateValue?: {
@@ -323,24 +488,25 @@ export function fromMsDate(dateValue?: {
   if (!dateValue?.dateTime) return undefined;
 
   // Microsoft Graph returns dates in the format "2021-01-01T00:00:00.0000000"
-  // We need to convert to ISO format
-  let dateStr = dateValue.dateTime;
+  const dateStr = dateValue.dateTime;
 
-  // If timezone is specified and not UTC, we handle it
+  // Every request sends `Prefer: outlook.timezone="UTC"`, so this is
+  // normally always "UTC". Handle a non-UTC response defensively rather
+  // than misreading the wall-clock value as UTC, which would silently
+  // shift the event by the zone's offset.
   if (dateValue.timeZone && dateValue.timeZone !== "UTC") {
-    // For simplicity, we're assuming UTC in the API call (via Prefer header)
-    // If timezone handling is needed, implement proper conversion here
-    console.warn(
-      `Non-UTC timezone ${dateValue.timeZone} may need special handling`
+    const ianaTimeZone = WINDOWS_TO_IANA_TIMEZONE[dateValue.timeZone];
+    if (ianaTimeZone) {
+      return wallClockToUtc(dateStr, ianaTimeZone);
+    }
+    console.error(
+      `[OutlookCalendar] Unrecognized non-UTC timezone "${dateValue.timeZone}" ` +
+        `— falling back to (incorrect) UTC interpretation of "${dateStr}"`
     );
   }
 
   // Ensure the date string ends with Z for UTC
-  if (!dateStr.endsWith("Z")) {
-    dateStr = dateStr + "Z";
-  }
-
-  return new Date(dateStr);
+  return new Date(dateStr.endsWith("Z") ? dateStr : dateStr + "Z");
 }
 
 /**
@@ -625,6 +791,36 @@ export function transformOutlookEvent(
 }
 
 /**
+ * Fetch the full representation of a single event by id. Used to expand the
+ * property-starved entries returned by the unbounded `/events/delta` chain
+ * (see {@link syncOutlookCalendar}). Returns `null` on 404/410 (event was
+ * deleted between the delta page and this fetch, or the token expired) or
+ * on the underlying `GraphApi.call` error.
+ */
+async function fetchFullOutlookEvent(
+  api: GraphApi,
+  calendarId: string,
+  eventId: string
+): Promise<OutlookEvent | null> {
+  const resource =
+    calendarId === "primary"
+      ? `/me/events/${eventId}`
+      : `/me/calendars/${calendarId}/events/${eventId}`;
+  try {
+    return (await api.call(
+      "GET",
+      `https://graph.microsoft.com/v1.0${resource}`
+    )) as OutlookEvent | null;
+  } catch (error) {
+    console.error(
+      `[OutlookCalendar] Failed to expand event ${eventId} (calendar=${calendarId}):`,
+      error
+    );
+    return null;
+  }
+}
+
+/**
  * Sync calendar events using Microsoft Graph.
  *
  * Microsoft's `/events/delta` resource ("SyncEvents") rejects
@@ -634,6 +830,18 @@ export function transformOutlookEvent(
  * non-delta `/events` listing instead; only a fully unfiltered request may
  * use the real delta chain that yields a `deltaLink` for future incremental
  * syncs.
+ *
+ * The unbounded delta chain has a documented Microsoft Graph quirk: unlike
+ * the plain `/events` listing (or the calendarView-bound delta function),
+ * each entry it returns carries only `id`, `type`, `start`, and `end` — no
+ * `subject`, `body`, `organizer`, `attendees`, `seriesMasterId`, or
+ * `originalStart`. Microsoft's own guidance is to follow up with
+ * `GET /events/{id}` to expand each one. Without this, every event synced
+ * via the delta chain — i.e. the historical full pass AND every
+ * webhook-driven incremental sync going forward — comes back Untitled with
+ * no notes (and recurring exceptions/occurrences get silently dropped for
+ * lacking `originalStart`/`seriesMasterId`). The plain bounded listing
+ * (quick pass) is unaffected; it already returns full properties.
  */
 export async function syncOutlookCalendar(
   api: GraphApi,
@@ -708,8 +916,24 @@ export async function syncOutlookCalendar(
     sequence: state.sequence,
   };
 
+  let events = data.value || [];
+
+  // Expand the property-starved delta entries (see the doc comment above).
+  // `@removed` entries carry only an id and need no expansion. A failed
+  // expansion (deleted mid-sync, transient error) falls back to the minimal
+  // entry rather than dropping the event outright.
+  if (mode === "delta" && events.length > 0) {
+    events = await Promise.all(
+      events.map(async (event) => {
+        if (event["@removed"]) return event;
+        const full = await fetchFullOutlookEvent(api, calendarId, event.id);
+        return full ?? event;
+      })
+    );
+  }
+
   return {
-    events: data.value || [],
+    events,
     state: nextState,
   };
 }
