@@ -1,5 +1,25 @@
 # @plotday/twister
 
+## 0.92.0
+
+### Added
+
+- `NewNote.deferUntilThread` holds a note addressed by `{ source }` until a thread with that source exists, instead of returning `null` when it has not synced yet. ([#361](https://github.com/plotday/plot/pull/361) [`0bbce19`](https://github.com/plotday/plot/commit/0bbce19c240467376a7c5622425a0333ca5dc30d))
+- `AIModel.GEMINI_31_PRO`, `AIModel.GEMINI_35_FLASH`, and
+- `isNoReplySender` to the signals entry point.
+
+### Changed
+
+- `AIModel.GEMINI_25_FLASH` is documented as withdrawn rather than
+
+### Removed
+
+- `cta` from the note type.
+
+### Fixed
+
+- corrected the documented default for `NewNote.unread`.
+
 ## 0.91.0
 
 ### Added
