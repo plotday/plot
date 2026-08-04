@@ -37,13 +37,7 @@ import type {
 } from "@plotday/twister/plot";
 import type { WebhookRequest } from "@plotday/twister/tools/network";
 import { markdownToHtml } from "@plotday/twister/utils/markdown-html";
-import {
-  alreadyFolded,
-  composeRsvpNote,
-  isNonAcceptance,
-  priorRsvpKey,
-  shouldEmitRsvpNote,
-} from "@plotday/rsvp-fold";
+import { foldRsvp } from "@plotday/rsvp-fold";
 
 import { enrichLinkContactsFromOutlook } from "./enrich";
 import {
@@ -1550,70 +1544,23 @@ export async function processConversationsFn(
         if (!reply) continue;
 
         const noteKey = m.internetMessageId ?? m.id;
-        const priorKey = priorRsvpKey(uid, reply.attendeeEmail, reply.occurrence);
-        // Read on every response, not just a bare acceptance: `alreadyFolded`
-        // needs the stored value on every path, so there is no cheaper way to
-        // skip this round-trip anymore (there used to be one for the
-        // non-acceptance/commented-acceptance cases — traded away below).
-        const stored = await host.get<string>(priorKey);
-
-        // Re-processing a conversation re-runs this loop for a response
-        // already folded onto the event thread — Graph's subscription fires
-        // on `updated` as well as `created`, and the drain re-fetches the
-        // whole conversation for any notified message. The note itself
-        // upserts by key, so re-saving it wouldn't duplicate it, but its
-        // `unread` intent would still be re-applied and drag the thread back
-        // to unread for anyone who already read it. Comparing against the
-        // stored partstat (not just presence) means a genuine change of
-        // response is never caught by this: an attendee who edits only their
-        // comment on an unchanged response gets no updated note, which is
-        // the accepted trade for not re-raising unread on every re-deliver.
-        if (alreadyFolded(stored, reply)) {
-          foldedMessageIds.add(noteKey);
-          continue;
-        }
-
-        // A bare acceptance says nothing the event's guest list does not
-        // already show. Drop the message rather than writing a note: a note
-        // is the only thing that could mark the organiser's thread unread,
-        // and marking it folded here keeps a responses-only conversation
-        // from becoming an email thread of its own.
-        if (!shouldEmitRsvpNote(reply, isNonAcceptance(stored))) {
-          foldedMessageIds.add(noteKey);
-          continue;
-        }
-
-        // saveNote returns null when no thread carries `icaluid:<uid>` yet
-        // (the calendar event hasn't synced). deferUntilThread has the
-        // platform hold the note and attach it once that thread appears.
-        await host.tools.integrations.saveNote({
-          thread: { source: `icaluid:${uid}` },
-          key: noteKey,
-          content: composeRsvpNote(reply),
-          contentType: "markdown",
-          created: messageDate(m),
-          author: {
-            email: reply.attendeeEmail,
-            ...(reply.attendeeName ? { name: reply.attendeeName } : {}),
-          },
-          // Explicit on both paths. An omitted flag does NOT mean "leave read
-          // state alone": attaching a note already surfaces the thread as
-          // unread for every recipient except its author, so only an
-          // explicit false overrides it.
-          unread: !initialSync,
-          deferUntilThread: true,
+        // The decision order (repeat check first, marker written only on the
+        // emitting path) and the reasoning behind it live once, on
+        // `foldRsvp`. Only what is Graph-specific stays here.
+        await foldRsvp({
+          uid,
+          reply,
+          note: { key: noteKey, created: messageDate(m), unread: !initialSync },
+          readMarker: (key) => host.get<string>(key),
+          writeMarker: (key, partstat) => host.set(key, partstat),
+          saveNote: (note) => host.tools.integrations.saveNote(note),
         });
+        // Folded on every outcome — emitted, suppressed, or already folded.
+        // A response never stays in the mail thread: dropping it is what
+        // keeps a responses-only conversation from becoming an email thread
+        // of its own, and a suppressed bare acceptance is folded precisely
+        // because writing no note is the right answer for it.
         foldedMessageIds.add(noteKey);
-        // Recorded regardless of the saveNote return value: a deferred note
-        // returns no id, and gating on it would leave a deferred
-        // non-acceptance unrecorded forever, wrongly treating a later bare
-        // acceptance as reversing nothing.
-        //
-        // Always set, never cleared: the key now holds the last response
-        // actually folded, for every emitted response (including an
-        // acceptance) — that's what lets `alreadyFolded` recognise a repeat
-        // of ANY partstat, not just an outstanding non-acceptance.
-        await host.set(priorKey, reply.partstat);
       }
       // Messages whose note survived the fold — everything below that reads
       // `item.messages` to pick a "parent" (facets, calendar bundling) must

@@ -1,3 +1,5 @@
+export { foldRsvp } from "./fold-rsvp";
+
 export {
   alreadyFolded,
   composeRsvpNote,
