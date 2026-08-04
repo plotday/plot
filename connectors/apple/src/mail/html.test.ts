@@ -11,7 +11,7 @@ describe("looksLikeHtml", () => {
   });
 
   it("treats plain text (even with a stray angle bracket) as not html", () => {
-    expect(looksLikeHtml("Hi Kris,\n\nCan we meet at 3pm? Thanks.")).toBe(false);
+    expect(looksLikeHtml("Hi Sam,\n\nCan we meet at 3pm? Thanks.")).toBe(false);
     expect(looksLikeHtml("a < b and c > d")).toBe(false);
     expect(looksLikeHtml("")).toBe(false);
   });

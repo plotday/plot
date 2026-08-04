@@ -311,7 +311,7 @@ function msg(over: Partial<ImapMessage>): ImapMessage {
     uid: 1,
     flags: [],
     from: [{ address: "jane@example.com", name: "Jane" }],
-    to: [{ address: "kris@icloud.com", name: "Kris" }],
+    to: [{ address: "owner@example.test", name: "Owner" }],
     messageId: "<m1@example.com>",
     // Comfortably inside every window these fixtures use, including the
     // 7-day default floor a pass gets when no plan history is recorded.
@@ -392,7 +392,7 @@ function state(
 /** One owner-sent message in the Sent mailbox. */
 function sentMsg(over: Partial<ImapMessage>): ImapMessage {
   return msg({
-    from: [{ address: "kris@icloud.com", name: "Kris" }],
+    from: [{ address: "owner@example.test", name: "Owner" }],
     to: [{ address: "jane@example.com", name: "Jane" }],
     flags: ["\\Seen"],
     ...over,
@@ -423,7 +423,7 @@ describe("mailSync — one merged pass per connection", () => {
     messageId: "<root@example.com>",
     subject: "Project kickoff",
     from: [{ address: "jane@example.com", name: "Jane" }],
-    to: [{ address: "kris@icloud.com", name: "Kris" }],
+    to: [{ address: "owner@example.test", name: "Owner" }],
     flags: ["\\Seen"],
     date: daysAgo(9),
   });
@@ -448,7 +448,7 @@ describe("mailSync — one merged pass per connection", () => {
    *  pass genuinely re-reads both folders — the harshest churn test. */
   function fixture() {
     return buildFakeHost({
-      appleId: "kris@icloud.com",
+      appleId: "owner@example.test",
       mailboxes: [box("INBOX", [newReply]), box("Archive", [rootMsg, oldReply])],
     });
   }
@@ -572,7 +572,7 @@ describe("mailSync — generalized CONDSTORE gate", () => {
 
   it("gate hit: every mailbox unchanged — no SEARCH, no fetch, no saveLinks, cursors preserved", async () => {
     const { host, stored, searchCalls, fetchCalls, saveLinksCalls, selectCalls } = buildFakeHost({
-      appleId: "kris@icloud.com",
+      appleId: "owner@example.test",
       mailboxes: [inbox(), archive(), other(), sent(50)],
     });
     await host.set("state", state(cursors()));
@@ -590,7 +590,7 @@ describe("mailSync — generalized CONDSTORE gate", () => {
 
   it("gate miss: ONE of three mailboxes advanced — EVERY mailbox is searched and fetched", async () => {
     const { host, searchCalls, fetchCalls, saveLinksCalls } = buildFakeHost({
-      appleId: "kris@icloud.com",
+      appleId: "owner@example.test",
       mailboxes: [inbox(), archive(), other(), sent(50)],
     });
     // Only Archive moved (199 → 200).
@@ -608,7 +608,7 @@ describe("mailSync — generalized CONDSTORE gate", () => {
 
   it("gate miss: only Sent advanced — every enabled mailbox is fetched too", async () => {
     const { host, fetchCalls } = buildFakeHost({
-      appleId: "kris@icloud.com",
+      appleId: "owner@example.test",
       mailboxes: [inbox(), archive(), sent(61)],
     });
     await host.set("state", state(cursors()));
@@ -622,7 +622,7 @@ describe("mailSync — generalized CONDSTORE gate", () => {
 
   it("gate miss: an enabled mailbox advanced, Sent unchanged — Sent is fetched too", async () => {
     const { host, fetchCalls, stored } = buildFakeHost({
-      appleId: "kris@icloud.com",
+      appleId: "owner@example.test",
       mailboxes: [inbox(), sent(50)],
     });
     await host.set("state", state(cursors({ INBOX: { lastModSeq: 99 } })));
@@ -639,7 +639,7 @@ describe("mailSync — generalized CONDSTORE gate", () => {
   it("no CONDSTORE on one mailbox: highestModSeq undefined — full rescan", async () => {
     const noCondstore = box("Archive", [msg({ uid: 70, messageId: "<archive-70@x.com>" })]);
     const { host, fetchCalls, stored } = buildFakeHost({
-      appleId: "kris@icloud.com",
+      appleId: "owner@example.test",
       mailboxes: [inbox(), noCondstore],
     });
     await host.set("state", state(cursors()));
@@ -654,7 +654,7 @@ describe("mailSync — generalized CONDSTORE gate", () => {
 
   it("no baseline yet: a cursor without lastModSeq forces a rescan and seeds one", async () => {
     const { host, fetchCalls, stored } = buildFakeHost({
-      appleId: "kris@icloud.com",
+      appleId: "owner@example.test",
       mailboxes: [inbox()],
     });
     await host.set("state", state({ INBOX: { uidValidity: 1, lastUid: 0 } }));
@@ -675,7 +675,7 @@ describe("mailSync — generalized CONDSTORE gate", () => {
       messageId: "<orig@x>",
       subject: "Original",
       from: [{ address: "alice@example.com", name: "Alice" }],
-      to: [{ address: "kris@icloud.com", name: "Kris" }],
+      to: [{ address: "owner@example.test", name: "Owner" }],
       flags: ["\\Seen"],
       date: daysAgo(9),
     });
@@ -688,7 +688,7 @@ describe("mailSync — generalized CONDSTORE gate", () => {
       date: daysAgo(7),
     });
     const { host, savedLinks, fetchCalls } = buildFakeHost({
-      appleId: "kris@icloud.com",
+      appleId: "owner@example.test",
       mailboxes: [
         box("INBOX", [orig], { highestModSeq: 100 }),
         box(SENT_BOX, [reply], { highestModSeq: 61, specialUse: "\\Sent" }),
@@ -712,7 +712,7 @@ describe("mailSync — generalized CONDSTORE gate", () => {
 
   it("a first pass persists a cursor for every mailbox read, including Sent", async () => {
     const { host, stored } = buildFakeHost({
-      appleId: "kris@icloud.com",
+      appleId: "owner@example.test",
       mailboxes: [box("INBOX", [msg({ uid: 30 })], { highestModSeq: 77 }), sent(33)],
     });
 
@@ -728,7 +728,7 @@ describe("mailSync — generalized CONDSTORE gate", () => {
 
   it("an account with no Sent mailbox gates on the enabled folders alone", async () => {
     const { host, stored, fetchCalls } = buildFakeHost({
-      appleId: "kris@icloud.com",
+      appleId: "owner@example.test",
       mailboxes: [inbox()],
     });
     await host.set("state", state({ INBOX: { uidValidity: 1, lastUid: 30, lastModSeq: 100 } }));
@@ -762,7 +762,7 @@ describe("mailSync — per-mailbox phase and per-root initial-ness", () => {
       flags: ["\\Seen"],
     });
     const { host, savedLinks, saveLinksCalls, searchCalls, syncCompleted } = buildFakeHost({
-      appleId: "kris@icloud.com",
+      appleId: "owner@example.test",
       mailboxes: [box("INBOX", [inboxMsg]), box("Archive", [archiveRoot])],
     });
     // INBOX already has a cursor; Archive has none (just enabled).
@@ -823,7 +823,7 @@ describe("mailSync — per-mailbox phase and per-root initial-ness", () => {
       date: daysAgo(45), // also outside the recent window
     });
     const { host, savedLinks, fetchCalls } = buildFakeHost({
-      appleId: "kris@icloud.com",
+      appleId: "owner@example.test",
       mailboxes: [box("INBOX", [inboxRoot]), box("Archive", [archivedReply])],
     });
     // INBOX is synced up to uid 100; Archive was just enabled (no cursor).
@@ -869,7 +869,7 @@ describe("mailSync — per-mailbox phase and per-root initial-ness", () => {
       date: daysAgo(59),
     });
     const { host, savedLinks, searchCalls } = buildFakeHost({
-      appleId: "kris@icloud.com",
+      appleId: "owner@example.test",
       mailboxes: [
         box("INBOX", [inbound]),
         box(SENT_BOX, [ownerReply], { specialUse: "\\Sent" }),
@@ -905,7 +905,7 @@ describe("mailSync — per-mailbox phase and per-root initial-ness", () => {
       date: daysAgo(59),
     });
     const { host, savedLinks, searchCalls } = buildFakeHost({
-      appleId: "kris@icloud.com",
+      appleId: "owner@example.test",
       mailboxes: [
         box("Archive", [archived]),
         box(SENT_BOX, [ownerReply], { specialUse: "\\Sent" }),
@@ -943,7 +943,7 @@ describe("mailSync — per-mailbox phase and per-root initial-ness", () => {
     });
     const recent = msg({ uid: 30, messageId: "<recent@x.com>", flags: ["\\Seen"] });
     const { host, savedLinks, searchCalls, stored } = buildFakeHost({
-      appleId: "kris@icloud.com",
+      appleId: "owner@example.test",
       mailboxes: [box("INBOX", [older, recent], { highestModSeq: 100 })],
     });
     const NARROW_ISO = daysAgo(7).toISOString();
@@ -970,7 +970,7 @@ describe("mailSync — per-mailbox phase and per-root initial-ness", () => {
 
   it("writes every changed thread marker in one batched store call", async () => {
     const { host, setManyCalls } = buildFakeHost({
-      appleId: "kris@icloud.com",
+      appleId: "owner@example.test",
       mailboxes: [
         box("INBOX", [
           msg({ uid: 30, messageId: "<a@x.com>" }),
@@ -997,7 +997,7 @@ describe("mailSync — per-mailbox phase and per-root initial-ness", () => {
     const inboxMsg = msg({ uid: 30, messageId: "<known@x.com>", flags: [] });
     const archiveMsg = msg({ uid: 70, messageId: "<archive-70@x.com>", flags: ["\\Seen"] });
     const { host, savedLinks, stored, syncCompleted } = buildFakeHost({
-      appleId: "kris@icloud.com",
+      appleId: "owner@example.test",
       mailboxes: [box("INBOX", [inboxMsg]), box("Archive", [archiveMsg])],
     });
     await host.set(
@@ -1025,7 +1025,7 @@ describe("mailSync — per-mailbox phase and per-root initial-ness", () => {
 
   it("pendingFullRescan widens every mailbox to the history floor, then clears itself", async () => {
     const { host, searchCalls, stored, fetchCalls } = buildFakeHost({
-      appleId: "kris@icloud.com",
+      appleId: "owner@example.test",
       mailboxes: [
         box("INBOX", [msg({ uid: 30, messageId: "<i@x>" })], { highestModSeq: 100 }),
         box(SENT_BOX, [sentMsg({ uid: 40, messageId: "<s@x>" })], {
@@ -1070,7 +1070,7 @@ describe("mailSync — per-mailbox phase and per-root initial-ness", () => {
       flags: [], // unseen and above the cursor
     });
     const { host, savedLinks } = buildFakeHost({
-      appleId: "kris@icloud.com",
+      appleId: "owner@example.test",
       mailboxes: [box("INBOX", [brandNew]), box("Archive", [historical])],
     });
     await host.set("state", state({ INBOX: { uidValidity: 1, lastUid: 30 } }));
@@ -1087,7 +1087,7 @@ describe("mailSync — per-mailbox phase and per-root initial-ness", () => {
 
   it("bounds every search by the history floor instead of fetching the whole mailbox", async () => {
     const { host, searchCalls } = buildFakeHost({
-      appleId: "kris@icloud.com",
+      appleId: "owner@example.test",
       mailboxes: [
         {
           name: "INBOX",
@@ -1112,7 +1112,7 @@ describe("mailSync — per-mailbox phase and per-root initial-ness", () => {
       msg({ uid: i + 1, messageId: `<bulk-${i}@x.com>` })
     );
     const { host } = buildFakeHost({
-      appleId: "kris@icloud.com",
+      appleId: "owner@example.test",
       mailboxes: [box("INBOX", many)],
     });
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -1145,7 +1145,7 @@ describe("mailSync — Sent handling", () => {
       bodyText: "Sounds good",
     });
     const { host, savedLinks } = buildFakeHost({
-      appleId: "kris@icloud.com",
+      appleId: "owner@example.test",
       mailboxes: [
         box("INBOX", [reply]),
         box(SENT_BOX, [ownerSent], { specialUse: "\\Sent" }),
@@ -1166,7 +1166,7 @@ describe("mailSync — Sent handling", () => {
     // replies entirely.
     const ownerSent = sentMsg({ uid: 40, messageId: "<sent-only@icloud.com>", subject: "FYI" });
     const { host, savedLinks, fetchCalls, selectCalls } = buildFakeHost({
-      appleId: "kris@icloud.com",
+      appleId: "owner@example.test",
       mailboxes: [
         box("Archive", [msg({ uid: 70, messageId: "<archive-70@x.com>" })]),
         box(SENT_BOX, [ownerSent], { specialUse: "\\Sent" }),
@@ -1197,7 +1197,7 @@ describe("mailSync — Sent handling", () => {
       subject: "Re: The real subject",
     });
     const { host, savedLinks } = buildFakeHost({
-      appleId: "kris@icloud.com",
+      appleId: "owner@example.test",
       mailboxes: [
         box("INBOX", []),
         box(SENT_BOX, [ownerReply], { specialUse: "\\Sent" }),
@@ -1234,7 +1234,7 @@ describe("mailSync — persisted home channel", () => {
     });
     const archiveBox = box("Archive", [archiveRoot]);
     const { host, savedLinks, stored } = buildFakeHost({
-      appleId: "kris@icloud.com",
+      appleId: "owner@example.test",
       mailboxes: [box("INBOX", [inboxReply]), archiveBox],
     });
 
@@ -1279,7 +1279,7 @@ describe("mailSync — folder names with a delimiter", () => {
       ],
     });
     const { host, savedLinks, selectCalls, searchCalls, fetchCalls } = buildFakeHost({
-      appleId: "kris@icloud.com",
+      appleId: "owner@example.test",
       mailboxes: [box(NESTED, [withAttachment])],
     });
 
@@ -1314,7 +1314,7 @@ describe("mailSync — to-do ⟷ \\Flagged wiring", () => {
 
   it("propagates a message newly flagged in Apple Mail to Plot's to-do state", async () => {
     const { host, stored, setThreadToDo } = buildFakeHost({
-      appleId: "kris@icloud.com",
+      appleId: "owner@example.test",
       mailboxes: [flagged(true)],
     });
     await host.set("auth_actor_id", "actor-1");
@@ -1334,7 +1334,7 @@ describe("mailSync — to-do ⟷ \\Flagged wiring", () => {
 
   it("does not re-propagate once the marker already matches (echo suppression)", async () => {
     const { host, setThreadToDo } = buildFakeHost({
-      appleId: "kris@icloud.com",
+      appleId: "owner@example.test",
       mailboxes: [flagged(true)],
     });
     await host.set("auth_actor_id", "actor-1");
@@ -1349,7 +1349,7 @@ describe("mailSync — to-do ⟷ \\Flagged wiring", () => {
 
   it("seeds the marker for a root ingested from history without propagating a to-do", async () => {
     const { host, stored, setThreadToDo } = buildFakeHost({
-      appleId: "kris@icloud.com",
+      appleId: "owner@example.test",
       mailboxes: [flagged(true)],
     });
     await host.set("auth_actor_id", "actor-1");
@@ -1364,7 +1364,7 @@ describe("mailSync — to-do ⟷ \\Flagged wiring", () => {
 
   it("skips reconciliation entirely with no stored auth_actor_id", async () => {
     const { host, stored, setThreadToDo } = buildFakeHost({
-      appleId: "kris@icloud.com",
+      appleId: "owner@example.test",
       mailboxes: [flagged(true)],
     });
     await host.set("state", state({ INBOX: { uidValidity: 1, lastUid: 1 } }));
@@ -1550,7 +1550,7 @@ function bundleHost(opts: {
   mailboxes?: string[];
 }) {
   return buildFakeHost({
-    appleId: "kris@icloud.com",
+    appleId: "owner@example.test",
     mailboxes: (opts.mailboxes ?? ["INBOX"]).map((name) => box(name, [])),
     ...(opts.attachments ? { attachments: opts.attachments } : {}),
     ...(opts.knownEventUids ? { knownEventUids: opts.knownEventUids } : {}),
@@ -1776,7 +1776,7 @@ describe("detectCalendarBundles", () => {
     const m = msg({
       uid: 58,
       messageId: "<from-sent@example.com>",
-      from: [{ address: "kris@icloud.com", name: "Kris" }],
+      from: [{ address: "owner@example.test", name: "Owner" }],
       attachments: [{ ...CALENDAR_PART, fileName: "cancel.ics", mimeType: "application/ics" }],
     });
     const { host, fetchAttachmentCalls } = bundleHost({
@@ -2489,7 +2489,7 @@ describe("mailSync — calendar thread bundling end-to-end", () => {
       attachments: [{ ...CALENDAR_PART, fileName: "cancel.ics" }],
     });
     const { host, savedLinks, stored } = buildFakeHost({
-      appleId: "kris@icloud.com",
+      appleId: "owner@example.test",
       mailboxes: [box("INBOX", [cancelMsg])],
       attachments: {
         [buildAttachmentRef("INBOX", 60, "2")]: icsBytes(ics({ method: "CANCEL", uid: "evt-e2e" })),
@@ -2523,7 +2523,7 @@ describe("mailSync — calendar thread bundling end-to-end", () => {
       attachments: [{ ...CALENDAR_PART, fileName: "cancel.ics" }],
     });
     const { host, savedLinks } = buildFakeHost({
-      appleId: "kris@icloud.com",
+      appleId: "owner@example.test",
       mailboxes: [box("INBOX", [cancelMsg])],
       attachments: {
         [buildAttachmentRef("INBOX", 65, "2")]: icsBytes(
@@ -2546,7 +2546,7 @@ describe("mailSync — calendar thread bundling end-to-end", () => {
   it("a plain reply with no calendar attachment is unaffected", async () => {
     const plain = msg({ uid: 61, messageId: "<plain-e2e@example.com>", subject: "Just chatting" });
     const { host, savedLinks, fetchAttachmentCalls } = buildFakeHost({
-      appleId: "kris@icloud.com",
+      appleId: "owner@example.test",
       mailboxes: [box("INBOX", [plain])],
     });
     await host.set("state", state({ INBOX: { uidValidity: 1, lastUid: 0 } }));
@@ -2567,7 +2567,7 @@ describe("mailSync — calendar thread bundling end-to-end", () => {
       attachments: [{ ...CALENDAR_PART, fileName: "cancel.ics" }],
     });
     const { host, fetchAttachmentCalls } = buildFakeHost({
-      appleId: "kris@icloud.com",
+      appleId: "owner@example.test",
       mailboxes: [box("INBOX", [cancelMsg])],
       attachments: {
         [buildAttachmentRef("INBOX", 66, "2")]: icsBytes(

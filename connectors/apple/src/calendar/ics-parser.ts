@@ -325,8 +325,8 @@ export function parseRRuleCount(rrule: string | null): number | null {
  * True when an ICS ATTENDEE line refers to the connected account.
  *
  * Compares the extracted address as a whole rather than by substring — a
- * substring test matches `mailto:kris@example.com` inside
- * `mailto:kris@example.com.au` — and folds Gmail alias variants so an invite
+ * substring test matches `mailto:sam@example.com` inside
+ * `mailto:sam@example.com.au` — and folds Gmail alias variants so an invite
  * addressed to a dot or +tag form of the account is still recognized as the user.
  */
 export function attendeeIsSelf(line: string, accountEmail: string): boolean {

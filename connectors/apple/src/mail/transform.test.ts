@@ -15,7 +15,7 @@ function msg(over: Partial<MailMessage>): MailMessage {
     uid: 1,
     flags: [],
     from: [{ address: "jane@example.com", name: "Jane" }],
-    to: [{ address: "kris@icloud.com", name: "Kris" }],
+    to: [{ address: "owner@example.test", name: "Owner" }],
     messageId: "<m1@example.com>",
     date: new Date("2026-07-15T10:00:00Z"),
     subject: "Lunch?",
@@ -42,7 +42,7 @@ function ctxFor(
   const { channelId = "mail:INBOX", ...rest } = over;
   const roots = rootsOf(messages);
   return {
-    appleId: "kris@icloud.com",
+    appleId: "owner@example.test",
     channelByRoot: new Map(roots.map((r) => [r, channelId])),
     // Historically every transform test ran with `initialSync: true`; keep
     // that default so the suite's read-state expectations are unchanged.
@@ -108,7 +108,7 @@ describe("transformMessages", () => {
     const mine = msg({
       uid: 3,
       messageId: "<mine@example.com>",
-      from: [{ address: "kris@icloud.com", name: "Kris" }],
+      from: [{ address: "owner@example.test", name: "Owner" }],
     });
     const link = transform([mine])[0];
     const note = link.notes![0];
@@ -162,16 +162,16 @@ describe("transformMessages", () => {
   });
 
   it("credits the owner as thread author for an owner-originated thread", () => {
-    const mine = msg({ uid: 10, from: [{ address: "kris@icloud.com", name: "Kris" }] });
+    const mine = msg({ uid: 10, from: [{ address: "owner@example.test", name: "Owner" }] });
     const link = transform([mine])[0];
-    expect((link.author as { email?: string } | undefined)?.email).toBe("kris@icloud.com");
+    expect((link.author as { email?: string } | undefined)?.email).toBe("owner@example.test");
   });
 
   it("merges an owner Sent message and an inbound unseen reply into one unread thread on incremental sync", () => {
     const ownerSent = msg({
       uid: 10,
       messageId: "<root@icloud.com>",
-      from: [{ address: "kris@icloud.com", name: "Kris" }],
+      from: [{ address: "owner@example.test", name: "Owner" }],
       to: [{ address: "jane@example.com", name: "Jane" }],
       flags: ["\\Seen"],
       date: new Date("2026-07-15T09:00:00Z"),
@@ -183,7 +183,7 @@ describe("transformMessages", () => {
       messageId: "<reply@example.com>",
       references: ["<root@icloud.com>"],
       from: [{ address: "jane@example.com", name: "Jane" }],
-      to: [{ address: "kris@icloud.com", name: "Kris" }],
+      to: [{ address: "owner@example.test", name: "Owner" }],
       flags: [],
       date: new Date("2026-07-15T10:00:00Z"),
       bodyText: "Sounds good",
@@ -203,7 +203,7 @@ describe("transformMessages", () => {
     );
     expect(byKey["root@icloud.com"].authoredBySelf).toBe(true);
     expect(byKey["reply@example.com"].author?.email).toBe("jane@example.com");
-    expect((links[0].author as { email?: string } | undefined)?.email).toBe("kris@icloud.com");
+    expect((links[0].author as { email?: string } | undefined)?.email).toBe("owner@example.test");
   });
 });
 
@@ -227,7 +227,7 @@ describe("transformMessages — per-note access contacts (message sharing model)
       uid: 1,
       messageId: "<m1@example.com>",
       from: [{ address: "jane@example.com", name: "Jane" }],
-      to: [{ address: "kris@icloud.com", name: "Kris" }],
+      to: [{ address: "owner@example.test", name: "Owner" }],
     });
     // Bob is added to the conversation only on the second message.
     const second = msg({
@@ -235,7 +235,7 @@ describe("transformMessages — per-note access contacts (message sharing model)
       messageId: "<m2@example.com>",
       references: ["<m1@example.com>"],
       from: [{ address: "jane@example.com", name: "Jane" }],
-      to: [{ address: "kris@icloud.com", name: "Kris" }],
+      to: [{ address: "owner@example.test", name: "Owner" }],
       cc: [{ address: "bob@example.com", name: "Bob" }],
       date: new Date("2026-07-15T11:00:00Z"),
     });
@@ -245,12 +245,12 @@ describe("transformMessages — per-note access contacts (message sharing model)
     // Bob was not on the first message, so he must not see it.
     expect(emailsOf(byKey["m1@example.com"])).toEqual([
       "jane@example.com",
-      "kris@icloud.com",
+      "owner@example.test",
     ]);
     expect(emailsOf(byKey["m2@example.com"])).toEqual([
       "bob@example.com",
       "jane@example.com",
-      "kris@icloud.com",
+      "owner@example.test",
     ]);
   });
 
@@ -269,8 +269,8 @@ describe("transformMessages — per-note access contacts (message sharing model)
 
     expect(emailsOf(byKey["list@example.com"])).toEqual([
       "everyone@list.example.com",
-      "kris@icloud.com",
       "news@list.example.com",
+      "owner@example.test",
     ]);
   });
 
@@ -279,13 +279,13 @@ describe("transformMessages — per-note access contacts (message sharing model)
       uid: 4,
       messageId: "<m4@example.com>",
       from: [{ address: "jane@example.com", name: "Jane" }],
-      to: [{ address: "Kris@iCloud.com", name: "Kris" }],
+      to: [{ address: "Owner@Example.test", name: "Owner" }],
     });
 
     const byKey = notesByKey(transform([mixedCase])[0]);
 
     expect(emailsOf(byKey["m4@example.com"])).toEqual([
-      "Kris@iCloud.com",
+      "Owner@Example.test",
       "jane@example.com",
     ]);
   });
@@ -305,7 +305,7 @@ describe("transformMessages — per-note access contacts (message sharing model)
     expect((link.accessContacts ?? []).map((c) => c.email).sort()).toEqual([
       "bob@example.com",
       "jane@example.com",
-      "kris@icloud.com",
+      "owner@example.test",
     ]);
   });
 });
@@ -613,7 +613,7 @@ describe("transformMessages — merged multi-mailbox batch", () => {
     const archived = msg({ uid: 2, mailbox: "Archive", messageId: "<b@example.com>" });
 
     const links = transformMessages([inbox, archived], {
-      appleId: "kris@icloud.com",
+      appleId: "owner@example.test",
       channelByRoot: new Map([
         ["a@example.com", "mail:INBOX"],
         ["b@example.com", "mail:Archive"],
@@ -634,7 +634,7 @@ describe("transformMessages — merged multi-mailbox batch", () => {
     const archived = msg({ uid: 2, mailbox: "Archive/2024", messageId: "<b@example.com>" });
 
     const links = transformMessages([inbox, archived], {
-      appleId: "kris@icloud.com",
+      appleId: "owner@example.test",
       channelByRoot: new Map([
         ["a@example.com", "mail:INBOX"],
         ["b@example.com", "mail:Archive/2024"],
@@ -655,7 +655,7 @@ describe("transformMessages — merged multi-mailbox batch", () => {
     const orphan = msg({ uid: 2, messageId: "<b@example.com>" });
 
     const links = transformMessages([known, orphan], {
-      appleId: "kris@icloud.com",
+      appleId: "owner@example.test",
       channelByRoot: new Map([["a@example.com", "mail:INBOX"]]),
       initialRoots: new Set<string>(),
       newMessages: new Set<string>(),
@@ -706,7 +706,7 @@ describe("transformMessages — per-root initial-ness", () => {
     const live = msg({ uid: 2, mailbox: "INBOX", messageId: "<live@example.com>", flags: [] });
 
     const links = transformMessages([backfilled, live], {
-      appleId: "kris@icloud.com",
+      appleId: "owner@example.test",
       channelByRoot: new Map([
         ["old@example.com", "mail:Archive"],
         ["live@example.com", "mail:INBOX"],
@@ -849,7 +849,7 @@ describe("transformMessages — Sent-only roots", () => {
     uid: 4,
     mailbox: "Sent Messages",
     messageId: "<mine@icloud.com>",
-    from: [{ address: "kris@icloud.com", name: "Kris" }],
+    from: [{ address: "owner@example.test", name: "Owner" }],
     subject: "Re: something older than the window",
     flags: ["\\Seen"],
   });
@@ -958,7 +958,7 @@ describe("transformMessages — signals", () => {
       uid: 2,
       messageId: "<reply@example.com>",
       references: ["<root@example.com>"],
-      from: [{ address: "kris@icloud.com", name: "Kris" }],
+      from: [{ address: "owner@example.test", name: "Owner" }],
       inReplyTo: "<root@example.com>",
       bodyText: "sounds good",
       date: new Date("2026-07-15T10:00:00Z"),
