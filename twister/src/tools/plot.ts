@@ -165,6 +165,46 @@ export type SearchOptions = {
 };
 
 /**
+ * One entry of a focus's agent memory: something the user told Plot about
+ * what they are trying to achieve in that focus, or standing context worth
+ * remembering.
+ */
+export type FocusMemoryEntry = {
+  /** The remembered fact, as a single short statement. */
+  text: string;
+  /**
+   * The absolute date (`YYYY-MM-DD`) this entry is tied to, or `null` when it
+   * is not tied to a date. Relative wording ("next Friday") is resolved to an
+   * absolute date when the entry is written.
+   */
+  date: string | null;
+  /** ISO timestamp of when the entry was added. */
+  addedAt: string;
+};
+
+/**
+ * A focus's current status brief: a short generated summary of where that
+ * focus stands right now.
+ */
+export type FocusBrief = {
+  /** The focus this brief describes. */
+  focusId: Uuid;
+  /** One-line summary of the focus, or `null` when there is nothing to say. */
+  headline: string | null;
+  /**
+   * Supporting lines, each labelled by what it represents:
+   * - `needs_you` — waiting on the user
+   * - `new` — arrived since the previous brief
+   * - `next` — coming up
+   */
+  bullets: { label: "needs_you" | "new" | "next"; text: string }[];
+  /** True when the focus has nothing worth surfacing right now. */
+  quiet: boolean;
+  /** ISO timestamp of when this brief was generated. */
+  generatedAt: string;
+};
+
+/**
  * Built-in tool for interacting with the core Plot data layer.
  *
  * The Plot tool provides twists with the ability to create and manage threads,
@@ -691,6 +731,52 @@ export abstract class Plot extends ITool {
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   abstract archiveGoal(id: Uuid): Promise<void>;
+
+  /**
+   * Reads a focus's agent memory — the facts Plot has been told about that
+   * focus. Entries whose date is long past are excluded; a recently overdue
+   * entry is still returned, since an objective past its date may simply be
+   * unfinished. Undated entries never expire.
+   *
+   * Requires `FocusAccess.Full`.
+   *
+   * @param focusId - The focus whose memory to read
+   * @returns Promise resolving to the focus's current memory entries
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract getMemory(focusId: Uuid): Promise<FocusMemoryEntry[]>;
+
+  /**
+   * Replaces a focus's agent memory with the given entries. This is a
+   * whole-list rewrite rather than an append: read the current memory first,
+   * merge in the new fact, drop anything it supersedes, and write the result.
+   *
+   * Each entry's `text` is expected to be one short fact — keep entries
+   * granular rather than writing paragraphs, as very long entries may be
+   * shortened. Dates must be absolute `YYYY-MM-DD`, so resolve relative
+   * wording ("next Friday") before writing. The platform prunes entries whose
+   * date has passed and caps how many entries a focus keeps.
+   *
+   * Requires `FocusAccess.Full`.
+   *
+   * @param focusId - The focus whose memory to replace
+   * @param entries - The complete new memory list
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  abstract setMemory(
+    focusId: Uuid,
+    entries: { text: string; date?: string | null }[]
+  ): Promise<void>;
+
+  /**
+   * Current status briefs for all of the twist owner's non-archived focuses.
+   * Focuses without a brief yet are omitted.
+   *
+   * Requires `FocusAccess.Full`.
+   *
+   * @returns Promise resolving to the current briefs (may be empty)
+   */
+  abstract getBriefs(): Promise<FocusBrief[]>;
 
   /**
    * Lists the user's current Today snapshot: all non-archived items for the
