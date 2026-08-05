@@ -36,7 +36,10 @@ export type Channel = {
    * The guiding principle is "sync everything the user would reasonably want
    * by default" — for most connectors that's all channels, so only set this
    * where the connector can distinguish the user's own/relevant channels from
-   * low-value ones (e.g. Google Calendar via `accessRole === "owner"`).
+   * low-value ones (e.g. Google Calendar via its `primary` flag). Prefer an
+   * explicit "is this the user's own resource" signal over an ACL/permission
+   * tier — a high permission level (e.g. "owner"-tier sharing) can be granted
+   * on someone else's resource too, so it does not reliably mean "mine".
    */
   enabledByDefault?: boolean;
   /** Optional nested channel resources (e.g., subfolders) */
