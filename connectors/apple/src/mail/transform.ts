@@ -1,5 +1,6 @@
 import type { ImapAddress, ImapMessage } from "@plotday/twister/tools/imap";
 import { ActionType, type Action, type NewContact, type NewLinkWithNotes } from "@plotday/twister";
+import { referencedContentIds } from "@plotday/twister/signals";
 
 import { parse } from "../product-channel";
 import { appleMailSignals } from "./apple-facets";
@@ -163,18 +164,40 @@ function compareCopies(a: MailMessage, b: MailMessage): number {
  * chip on emails that don't even bundle (bare invites). A genuinely named
  * calendar attachment (e.g. a forwarded `invite.ics`) still appears
  * normally — only the synthesized-name case is suppressed.
+ *
+ * Inline images are classified against the message's HTML body: one the body
+ * references is tagged with its Content-ID so Plot renders it in place, while
+ * one nothing references is dropped — it has nowhere to render, and would
+ * otherwise put an attachment chip on the message for an image the reader never
+ * saw. A message with no HTML body carries no `cid:` references to match
+ * against, so there inline parts stay attachments rather than being silently
+ * discarded.
  */
 function attachmentActions(m: MailMessage): Action[] | undefined {
   if (!m.attachments || m.attachments.length === 0) return undefined;
-  const actions = m.attachments
-    .filter((a) => !(isCalendarAttachment(a.mimeType) && a.fileName === "attachment"))
-    .map((a) => ({
+  const body = bodyOf(m);
+  const referenced =
+    body && body.contentType === "html"
+      ? referencedContentIds(body.content)
+      : null;
+  const actions: Action[] = [];
+  for (const a of m.attachments) {
+    if (isCalendarAttachment(a.mimeType) && a.fileName === "attachment") continue;
+    const inlineId = a.inline && a.contentId ? a.contentId : null;
+    const embedded =
+      inlineId !== null &&
+      referenced !== null &&
+      referenced.has(inlineId.toLowerCase());
+    if (inlineId !== null && referenced !== null && !embedded) continue;
+    actions.push({
       type: ActionType.fileRef as ActionType.fileRef,
       ref: buildAttachmentRef(m.mailbox, m.uid, a.partNumber),
       fileName: a.fileName,
       fileSize: a.size,
       mimeType: a.mimeType,
-    }));
+      ...(embedded ? { contentId: inlineId } : {}),
+    });
+  }
   return actions.length > 0 ? actions : undefined;
 }
 

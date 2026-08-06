@@ -6,7 +6,11 @@ import type {
   NewContact,
   NewLinkWithNotes,
 } from "@plotday/twister/plot";
-import { isNoReplySender } from "@plotday/twister/signals";
+import {
+  isNoReplySender,
+  normalizeContentId,
+  referencedContentIds,
+} from "@plotday/twister/signals";
 import type { RsvpReply } from "@plotday/rsvp-fold";
 import { stripQuotedReply } from "./email-parsing";
 
@@ -63,6 +67,12 @@ export type GraphAttachmentMeta = {
   isInline: boolean;
   /** "#microsoft.graph.fileAttachment" | itemAttachment | referenceAttachment */
   odataType: string;
+  /**
+   * Content-ID of an inline part, without angle brackets — what the body's
+   * `cid:` reference names. Null for ordinary attachments, and for inline
+   * parts Graph reports without one.
+   */
+  contentId?: string | null;
 };
 
 /** Well-known folder name → folder id map (only the ones we care about). */
@@ -402,7 +412,7 @@ export class GraphMailApi {
     const data = (await this.call(
       "GET",
       `${GRAPH}/me/messages/${encodeURIComponent(messageId)}/attachments`,
-      { $select: "id,name,contentType,size,isInline" }
+      { $select: "id,name,contentType,size,isInline,contentId" }
     )) as { value?: Array<Record<string, unknown>> } | null;
     return ((data?.value ?? []) as Array<Record<string, unknown>>).map((a) => ({
       id: a.id as string,
@@ -411,6 +421,9 @@ export class GraphMailApi {
       size: (a.size as number | undefined) ?? null,
       isInline: (a.isInline as boolean | undefined) ?? false,
       odataType: (a["@odata.type"] as string | undefined) ?? "",
+      contentId: normalizeContentId(
+        (a.contentId as string | undefined) ?? null
+      ),
     }));
   }
 
@@ -823,20 +836,35 @@ export function transformOutlookConversation(opts: {
     const body = stripQuotedReply(message.body?.content ?? "", contentType);
     const content = body || message.bodyPreview || "";
 
-    const actions: Action[] = (
-      opts.attachmentsByMessageId.get(message.id) ?? []
-    )
-      .filter(
-        (a) =>
-          !a.isInline && a.odataType === "#microsoft.graph.fileAttachment"
-      )
-      .map((a) => ({
+    // Inline parts are classified against the body we KEPT: one the retained
+    // content still references is tagged with its Content-ID so Plot renders it
+    // in place, while one whose only reference was trimmed away with the quoted
+    // history is dropped. Only meaningful for an HTML body we actually kept —
+    // a plain-text body carries no `cid:` references to match against, so there
+    // inline parts stay attachments rather than being silently discarded.
+    const referenced =
+      contentType === "html" && body.trim() ? referencedContentIds(body) : null;
+    const actions: Action[] = [];
+    for (const a of opts.attachmentsByMessageId.get(message.id) ?? []) {
+      if (a.odataType !== "#microsoft.graph.fileAttachment") continue;
+      const inlineId = a.isInline && a.contentId ? a.contentId : null;
+      const embedded =
+        inlineId !== null &&
+        referenced !== null &&
+        referenced.has(inlineId.toLowerCase());
+      // An inline part Graph reports without a contentId can never be matched
+      // to the body, so it is treated as an orphan whenever we have a body to
+      // check — the same conclusion the old blanket `!isInline` filter reached.
+      if (a.isInline && referenced !== null && !embedded) continue;
+      actions.push({
         type: ActionType.fileRef as ActionType.fileRef,
         ref: `${message.id}:${a.id}`,
         fileName: a.name,
         fileSize: a.size,
         mimeType: a.contentType ?? "application/octet-stream",
-      }));
+        ...(embedded ? { contentId: inlineId } : {}),
+      });
+    }
 
     const senderActor: NewActor = {
       email: fromAddress,

@@ -445,6 +445,55 @@ describe("transformMessages attachments", () => {
     expect(note.actions).toBeUndefined();
   });
 
+  /** One inline image part, as BODYSTRUCTURE reports a `multipart/related` image. */
+  const inlinePart = (contentId: string) => ({
+    partNumber: "2",
+    fileName: "image001.jpg",
+    mimeType: "image/jpeg",
+    size: 823,
+    encoding: "base64",
+    contentId,
+    inline: true,
+  });
+
+  it("tags an inline image the body references with its Content-ID", () => {
+    const m = msg({
+      uid: 15,
+      bodyHtml: `<p>Here it is:</p><img src="cid:ii_abc123">`,
+      attachments: [inlinePart("ii_abc123")],
+    });
+    const note = transform([m])[0].notes![0] as unknown as {
+      actions?: Array<ActionLike & { contentId?: string | null }>;
+    };
+    expect(note.actions).toHaveLength(1);
+    expect(note.actions![0].contentId).toBe("ii_abc123");
+  });
+
+  it("drops an inline image the body never references", () => {
+    const m = msg({
+      uid: 16,
+      bodyHtml: `<p>No image here.</p>`,
+      attachments: [inlinePart("ii_orphan")],
+    });
+    const note = transform([m])[0].notes![0] as unknown as { actions?: ActionLike[] };
+    expect(note.actions).toBeUndefined();
+  });
+
+  it("keeps an inline image when only a plain-text body survived", () => {
+    // No HTML to match a `cid:` against, so the part can't be shown to be
+    // orphaned — keep it rather than silently discard an attachment.
+    const m = msg({
+      uid: 17,
+      bodyText: "Can we meet?",
+      attachments: [inlinePart("ii_abc123")],
+    });
+    const note = transform([m])[0].notes![0] as unknown as {
+      actions?: Array<ActionLike & { contentId?: string | null }>;
+    };
+    expect(note.actions).toHaveLength(1);
+    expect(note.actions![0].contentId ?? null).toBeNull();
+  });
+
   it("FIX 6: omits an inline calendar part whose fileName is the synthesized 'attachment' placeholder", () => {
     const m = msg({
       uid: 15,

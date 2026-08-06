@@ -9,7 +9,11 @@ import type {
 } from "@plotday/twister/plot";
 import { markdownToPlainText } from "@plotday/twister/utils/markdown";
 import { markdownToHtml } from "@plotday/twister/utils/markdown-html";
-import { isNoReplySender } from "@plotday/twister/signals";
+import {
+  isNoReplySender,
+  normalizeContentId,
+  referencedContentIds,
+} from "@plotday/twister/signals";
 import { icsProp, parseIcsReply } from "@plotday/rsvp-fold";
 
 
@@ -1161,9 +1165,23 @@ function isForwardedMessage(content: string): boolean {
   return true;
 }
 
+/** A part's header value by name (case-insensitive), or null. */
+function partHeader(part: GmailMessagePart, name: string): string | null {
+  const lower = name.toLowerCase();
+  return (
+    (part.headers ?? []).find((h) => h.name.toLowerCase() === lower)?.value ??
+    null
+  );
+}
+
 /**
  * Recursively collects attachment parts from a Gmail message payload.
  * An attachment part has a non-empty filename and a body.attachmentId.
+ *
+ * `contentId` and `inline` describe how the part was carried, so callers can
+ * tell a real attachment from an image the HTML body embeds via `cid:`. A
+ * `multipart/related` image routinely omits `Content-Disposition` altogether,
+ * so a bare `Content-ID` counts as inline too.
  */
 export function collectAttachments(
   part: GmailMessagePart | undefined
@@ -1172,19 +1190,29 @@ export function collectAttachments(
   fileName: string;
   fileSize: number | null;
   mimeType: string;
+  contentId: string | null;
+  inline: boolean;
 }> {
   if (!part) return [];
-  const here =
-    part.filename && part.body?.attachmentId
-      ? [
-          {
-            partId: part.body.attachmentId,
-            fileName: part.filename,
-            fileSize: part.body?.size ?? null,
-            mimeType: part.mimeType ?? "application/octet-stream",
-          },
-        ]
-      : [];
+  let here: ReturnType<typeof collectAttachments> = [];
+  if (part.filename && part.body?.attachmentId) {
+    // RFC 2392: the `cid:` URL names the Content-ID without its angle
+    // brackets, so strip them here rather than at every comparison site.
+    const contentId = normalizeContentId(partHeader(part, "Content-ID"));
+    const disposition = partHeader(part, "Content-Disposition");
+    here = [
+      {
+        partId: part.body.attachmentId,
+        fileName: part.filename,
+        fileSize: part.body?.size ?? null,
+        mimeType: part.mimeType ?? "application/octet-stream",
+        contentId,
+        inline: disposition
+          ? /^\s*inline\b/i.test(disposition)
+          : contentId !== null,
+      },
+    ];
+  }
   const children = (part.parts ?? []).flatMap(collectAttachments);
   return [...here, ...children];
 }
@@ -1310,14 +1338,32 @@ export function transformGmailThread(thread: GmailThread): NewLinkWithNotes {
 
     const content = body || message.snippet;
 
-    // Build fileRef actions for each attachment part
-    const actions: Action[] = attachmentParts.map((a) => ({
-      type: ActionType.fileRef as ActionType.fileRef,
-      ref: `${message.id}:${a.partId}`,
-      fileName: a.fileName,
-      fileSize: a.fileSize,
-      mimeType: a.mimeType,
-    }));
+    // Build fileRef actions for each attachment part. Inline images are
+    // classified against the body we KEPT: one the retained content still
+    // references is tagged with its Content-ID so Plot renders it in place,
+    // while one whose only reference was trimmed away with the quoted history
+    // is dropped. Only meaningful for an HTML body we actually kept — a
+    // plain-text body carries no `cid:` references to match against, so there
+    // the parts stay attachments rather than being silently discarded.
+    const referenced =
+      contentType === "html" && body.trim() ? referencedContentIds(body) : null;
+    const actions: Action[] = [];
+    for (const a of attachmentParts) {
+      const inlineId = a.inline && a.contentId ? a.contentId : null;
+      const embedded =
+        inlineId !== null &&
+        referenced !== null &&
+        referenced.has(inlineId.toLowerCase());
+      if (inlineId !== null && referenced !== null && !embedded) continue;
+      actions.push({
+        type: ActionType.fileRef as ActionType.fileRef,
+        ref: `${message.id}:${a.partId}`,
+        fileName: a.fileName,
+        fileSize: a.fileSize,
+        mimeType: a.mimeType,
+        ...(embedded ? { contentId: inlineId } : {}),
+      });
+    }
 
     // Note author (sender) and per-message recipients for visibility.
     // source is populated so the DM recipient picker can resolve Gmail contacts.
