@@ -9,4 +9,4 @@ export {
   type RsvpReply,
 } from "./rsvp-note";
 
-export { parseIcsReply, icsProp, type IcsReplyFallback } from "./ics-reply";
+export { parseIcsReply, icsProp, unescapeIcsText, type IcsReplyFallback } from "./ics-reply";

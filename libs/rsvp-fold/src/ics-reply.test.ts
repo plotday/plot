@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseIcsReply } from "./ics-reply";
+import { parseIcsReply, unescapeIcsText } from "./ics-reply";
 
 const FALLBACK = { name: null };
 
@@ -183,5 +183,21 @@ describe("parseIcsReply", () => {
 
     const bareReply = parseIcsReply(BASE, FALLBACK);
     expect(bareReply?.occurrence).toBeNull();
+  });
+});
+
+describe("unescapeIcsText", () => {
+  it("un-escapes newlines, commas, semicolons and backslashes", () => {
+    expect(unescapeIcsText("line one\\nline two")).toBe("line one\nline two");
+    expect(unescapeIcsText("uppercase\\Nform")).toBe("uppercase\nform");
+    expect(unescapeIcsText("a\\, b\\; c")).toBe("a, b; c");
+    expect(unescapeIcsText("back\\\\slash")).toBe("back\\slash");
+  });
+
+  it("does not read an escaped backslash followed by 'n' as a newline", () => {
+    // `\\n` is a literal backslash then the letter n — a two-pass replacement
+    // would consume the second backslash as the start of its own \n escape.
+    expect(unescapeIcsText("path\\\\name")).toBe("path\\name");
+    expect(unescapeIcsText("c:\\\\nope")).toBe("c:\\nope");
   });
 });
