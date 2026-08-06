@@ -110,6 +110,16 @@ function makeFakeHost(overrides?: {
     clear: async (key) => {
       storeMap.delete(key);
     },
+    // Defaults to "no marker" (mirrors hosts that don't wire mail/calendar
+    // together) but is a vi.fn so tests can `.mockImplementation(...)` it
+    // or read the pending invitation straight from `store`.
+    readMailState: vi.fn(async (_key: string) => null) as any,
+    // Deletes from the same store map tests seed `invite-wait:` keys into
+    // (mirrors readMailState above), while still being a vi.fn tests can
+    // assert calls against.
+    clearMailState: vi.fn(async (key: string) => {
+      storeMap.delete(key);
+    }) as any,
 
     tools: {
       integrations: {
@@ -120,6 +130,8 @@ function makeFakeHost(overrides?: {
         channelSyncCompleted: async (channelId) => {
           syncCompletedCalls.push(channelId);
         },
+        // Spy so tests can assert an invitation's email link was retracted.
+        archiveLinks: vi.fn(async (_filter: any) => {}),
       },
       googleContacts: {
         // Minimal stub — enrichLinkContactsFromGoogle is best-effort
@@ -2166,6 +2178,31 @@ describe("calendarHistoryFloor", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Shared fixtures for the event-uid marker / pending-invitation-retract
+// suites below — hoisted to module scope so both describe blocks can build
+// the same "upcoming event with attendees" shape.
+// ---------------------------------------------------------------------------
+
+const isoDaysFromNow = (n: number) =>
+  new Date(Date.now() + n * 24 * 60 * 60 * 1000).toISOString();
+
+function upcomingEventWithAttendees(opts: { iCalUID: string; id: string }) {
+  return {
+    id: opts.id,
+    iCalUID: opts.iCalUID,
+    status: "confirmed" as const,
+    summary: "Upcoming meeting",
+    organizer: { email: "boss@example.test" },
+    attendees: [
+      { email: "boss@example.test", organizer: true },
+      { email: "me@example.test", self: true },
+    ],
+    start: { dateTime: isoDaysFromNow(1) },
+    end: { dateTime: isoDaysFromNow(1) },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // event-uid markers — the calendar sync records `event-uid:<uid>` for every
 // upcoming event with guests it saves, so the mail sync can later tell
 // whether an arriving invitation email already has an event thread to fold
@@ -2178,27 +2215,9 @@ describe("processCalendarEventsFn — event-uid markers", () => {
   });
 
   const calendarId = "cal-1";
-  const isoDaysFromNow = (n: number) =>
-    new Date(Date.now() + n * 24 * 60 * 60 * 1000).toISOString();
 
   const toIcalUntil = (d: Date) =>
     d.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
-
-  function upcomingEventWithAttendees(opts: { iCalUID: string; id: string }) {
-    return {
-      id: opts.id,
-      iCalUID: opts.iCalUID,
-      status: "confirmed" as const,
-      summary: "Upcoming meeting",
-      organizer: { email: "boss@example.test" },
-      attendees: [
-        { email: "boss@example.test", organizer: true },
-        { email: "me@example.test", self: true },
-      ],
-      start: { dateTime: isoDaysFromNow(1) },
-      end: { dateTime: isoDaysFromNow(1) },
-    };
-  }
 
   function pastEventWithAttendees(opts: { iCalUID: string; id: string }) {
     return {
@@ -2314,5 +2333,93 @@ describe("processCalendarEventsFn — event-uid markers", () => {
     );
 
     expect(host.store.get("event-uid:uid-series")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// pending invitation retract — an invitation that arrived before its event
+// had synced was kept as an email thread (Task 4, mail/sync.ts) and left an
+// `invite-wait:<uid>` marker behind. Once the calendar sync saves the event
+// the marker refers to, it must retract that now-redundant email thread and
+// clear the marker either way (acted on, or aged out past the 7-day window).
+// ---------------------------------------------------------------------------
+
+describe("pending invitation retract", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /**
+   * Thin adapter over makeFakeHost() exposing the pieces these tests need —
+   * not a second host factory, just convenient destructuring of the one.
+   */
+  function makeHost() {
+    const host = makeFakeHost({ calendarId: "cal-1" });
+    return {
+      host,
+      store: host.store,
+      archiveLinks: host.tools.integrations.archiveLinks as ReturnType<
+        typeof vi.fn
+      >,
+    };
+  }
+
+  it("archives the invitation's email link once the event syncs", async () => {
+    const { host, archiveLinks } = makeHost();
+    (host.readMailState as ReturnType<typeof vi.fn>).mockImplementation(
+      async (key: string) =>
+        key === "invite-wait:uid-1"
+          ? { gmailThreadId: "gmail-thread-1", at: new Date().toISOString() }
+          : null
+    );
+
+    await processCalendarEventsFn(
+      host,
+      [upcomingEventWithAttendees({ iCalUID: "uid-1", id: "ev-1" })],
+      "cal-1",
+      false
+    );
+
+    expect(archiveLinks).toHaveBeenCalledWith({
+      meta: { threadId: "gmail-thread-1" },
+    });
+    // Cleared on the acted-on path too — a lingering marker would otherwise
+    // re-trigger archiveLinks on every future sync of this event.
+    expect(host.clearMailState).toHaveBeenCalledWith("invite-wait:uid-1");
+  });
+
+  it("archives nothing when no invitation is pending", async () => {
+    const { host, archiveLinks } = makeHost();
+
+    await processCalendarEventsFn(
+      host,
+      [upcomingEventWithAttendees({ iCalUID: "uid-2", id: "ev-2" })],
+      "cal-1",
+      false
+    );
+
+    expect(archiveLinks).not.toHaveBeenCalled();
+  });
+
+  it("ignores and clears a pending key older than the 7-day window", async () => {
+    const { host, store, archiveLinks } = makeHost();
+    const stale = new Date(Date.now() - 8 * 24 * 3600 * 1000).toISOString();
+    store.set("invite-wait:uid-3", { gmailThreadId: "old-thread", at: stale });
+    (host.readMailState as ReturnType<typeof vi.fn>).mockImplementation(
+      async (key: string) => store.get(key) ?? null
+    );
+
+    await processCalendarEventsFn(
+      host,
+      [upcomingEventWithAttendees({ iCalUID: "uid-3", id: "ev-3" })],
+      "cal-1",
+      false
+    );
+
+    expect(archiveLinks).not.toHaveBeenCalled();
+
+    // Cleared even though nothing was archived — the store has no native
+    // expiry, so this is where the 7-day TTL is actually enforced.
+    expect(store.get("invite-wait:uid-3")).toBeUndefined();
   });
 });

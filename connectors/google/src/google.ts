@@ -286,8 +286,11 @@ export class Google extends Connector<Google> {
       get: <T>(key: string) => self._calendarHostGet<T>(key),
       clear: (key) => self._calendarHostClear(key),
       // Read into the MAIL namespace so the calendar sync can check for a
-      // `cancel-email:<uid>` marker recorded by the mail sync (Plan B).
+      // `cancel-email:<uid>` marker recorded by the mail sync (Plan B), or an
+      // `invite-wait:<uid>` marker to retract once the event syncs.
       readMailState: (key) => self._mailHostGet(key),
+      // Clear an `invite-wait:<uid>` marker once retracted or aged out.
+      clearMailState: (key) => self._mailHostClear(key),
       tools: {
         integrations: self.tools.integrations as any,
         googleContacts: self.tools.googleContacts,
