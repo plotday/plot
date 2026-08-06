@@ -649,6 +649,9 @@ export class Google extends Connector<Google> {
       setMany: (entries) => self._mailHostSetMany(entries),
       get: <T>(key: string) => self._mailHostGet<T>(key),
       clear: (key) => self._mailHostClear(key),
+      // Read into the CALENDAR namespace so the mail sync can check for an
+      // `event-uid:<uid>` marker recorded by the calendar sync.
+      readCalendarState: (key) => self._calendarHostGet(key),
       tools: {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         integrations: self.tools.integrations as any,

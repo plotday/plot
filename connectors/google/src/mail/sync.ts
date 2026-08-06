@@ -285,6 +285,15 @@ export interface GmailSyncHost {
   get<T>(key: string): Promise<T | null>;
   /** Delete a persisted value. */
   clear(key: string): Promise<void>;
+  /**
+   * Optional read into the CALENDAR namespace's state, used to check for an
+   * `event-uid:<uid>` marker recorded when the calendar sync saved the event
+   * an arriving invitation refers to. The mirror of `CalendarSyncHost`'s
+   * `readMailState`. Absent on hosts that don't wire mail and calendar
+   * together (a standalone Gmail connector, fake hosts in tests) — treated as
+   * "no event thread known", which keeps the invitation as an email thread.
+   */
+  readCalendarState?<T>(key: string): Promise<T | null>;
 
   tools: {
     integrations: {

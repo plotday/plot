@@ -23,7 +23,11 @@ import {
   ConferencingProvider,
 } from "@plotday/twister";
 import type { ScheduleContactStatus } from "@plotday/twister/schedule";
-import type { NewScheduleContact, NewScheduleOccurrence } from "@plotday/twister/schedule";
+import type {
+  NewSchedule,
+  NewScheduleContact,
+  NewScheduleOccurrence,
+} from "@plotday/twister/schedule";
 import type { Thread } from "@plotday/twister";
 import type { WebhookRequest } from "@plotday/twister/tools/network";
 
@@ -175,6 +179,32 @@ export function buildEventSources(opts: {
   }
   if (eventId) sources.push(`google-event:${eventId}`);
   return sources;
+}
+
+/**
+ * True when a schedule still lies ahead, so an invitation for it could still
+ * arrive and need folding. Bounds the `event-uid:` key space to invitable
+ * events rather than every event ever synced: on a backfill the great majority
+ * are in the past and get no marker.
+ *
+ * A recurring master is judged by its UNTIL rather than its DTSTART — the
+ * series began in the past but occurrences keep coming, so invitations for it
+ * are still live. A series with no UNTIL never ends.
+ *
+ * Typed against `Omit<NewSchedule, "threadId">` rather than the bare
+ * `NewSchedule` — that's the actual shape of `NewLinkWithNotes.schedules`
+ * (link schedules are built before the thread they'll belong to exists).
+ */
+function isUpcomingSchedule(
+  s: Omit<NewSchedule, "threadId">,
+  now: number
+): boolean {
+  if (s.recurrenceRule) {
+    if (!s.recurrenceUntil) return true;
+    return new Date(s.recurrenceUntil).getTime() >= now;
+  }
+  const boundary = s.end ?? s.start;
+  return new Date(boundary).getTime() >= now;
 }
 
 /**
@@ -1250,6 +1280,34 @@ export async function processCalendarEventsFn(
         )
       );
     }
+  }
+
+  // Record the iCalUIDs this page saved so the MAIL sync can tell whether an
+  // arriving invitation already has an event thread and can be folded away.
+  // Derived from the assembled links rather than written per event-processing
+  // branch, so every path that produces a link (master, instance, cancellation
+  // reversal) is covered by one block and one round-trip.
+  //
+  // Narrowed to events that have guests and have not finished: an invitation
+  // only exists for an event with attendees, and one for an event that has
+  // already happened does not need folding. Without the narrowing the key
+  // space would grow with the user's entire calendar history.
+  {
+    const now = Date.now();
+    const markers: [key: string, value: unknown][] = [];
+    for (const link of linksBySource.values()) {
+      const hasGuests = (link.accessContacts?.length ?? 0) > 1;
+      if (!hasGuests) continue;
+      const upcoming = (link.schedules ?? []).some((s) =>
+        isUpcomingSchedule(s, now)
+      );
+      if (!upcoming) continue;
+      for (const source of link.sources ?? []) {
+        if (!source.startsWith("icaluid:")) continue;
+        markers.push([`event-uid:${source.slice("icaluid:".length)}`, true]);
+      }
+    }
+    if (markers.length > 0) await host.setMany(markers);
   }
 
   const batch = Array.from(linksBySource.values());

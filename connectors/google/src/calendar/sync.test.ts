@@ -2164,3 +2164,155 @@ describe("calendarHistoryFloor", () => {
     expect(oneYearAgo >= calendarHistoryFloor(now)).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// event-uid markers — the calendar sync records `event-uid:<uid>` for every
+// upcoming event with guests it saves, so the mail sync can later tell
+// whether an arriving invitation email already has an event thread to fold
+// onto (see readCalendarState on GmailSyncHost).
+// ---------------------------------------------------------------------------
+
+describe("processCalendarEventsFn — event-uid markers", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const calendarId = "cal-1";
+  const isoDaysFromNow = (n: number) =>
+    new Date(Date.now() + n * 24 * 60 * 60 * 1000).toISOString();
+
+  const toIcalUntil = (d: Date) =>
+    d.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+
+  function upcomingEventWithAttendees(opts: { iCalUID: string; id: string }) {
+    return {
+      id: opts.id,
+      iCalUID: opts.iCalUID,
+      status: "confirmed" as const,
+      summary: "Upcoming meeting",
+      organizer: { email: "boss@example.test" },
+      attendees: [
+        { email: "boss@example.test", organizer: true },
+        { email: "me@example.test", self: true },
+      ],
+      start: { dateTime: isoDaysFromNow(1) },
+      end: { dateTime: isoDaysFromNow(1) },
+    };
+  }
+
+  function pastEventWithAttendees(opts: { iCalUID: string; id: string }) {
+    return {
+      id: opts.id,
+      iCalUID: opts.iCalUID,
+      status: "confirmed" as const,
+      summary: "Meeting that already happened",
+      organizer: { email: "boss@example.test" },
+      attendees: [
+        { email: "boss@example.test", organizer: true },
+        { email: "me@example.test", self: true },
+      ],
+      start: { dateTime: isoDaysFromNow(-2) },
+      end: { dateTime: isoDaysFromNow(-2) },
+    };
+  }
+
+  function upcomingSoloEvent(opts: { iCalUID: string; id: string }) {
+    return {
+      id: opts.id,
+      iCalUID: opts.iCalUID,
+      status: "confirmed" as const,
+      summary: "Solo focus block",
+      organizer: { email: "me@example.test", self: true },
+      attendees: [],
+      start: { dateTime: isoDaysFromNow(1) },
+      end: { dateTime: isoDaysFromNow(1) },
+    };
+  }
+
+  function recurringEventWithAttendees(opts: {
+    iCalUID: string;
+    id: string;
+    recurrenceUntil: Date;
+  }) {
+    return {
+      id: opts.id,
+      iCalUID: opts.iCalUID,
+      status: "confirmed" as const,
+      summary: "Recurring standup",
+      organizer: { email: "boss@example.test" },
+      attendees: [
+        { email: "boss@example.test", organizer: true },
+        { email: "me@example.test", self: true },
+      ],
+      // Started in the past, still recurring.
+      start: { dateTime: isoDaysFromNow(-30) },
+      end: { dateTime: isoDaysFromNow(-30) },
+      recurrence: [
+        `RRULE:FREQ=WEEKLY;UNTIL=${toIcalUntil(opts.recurrenceUntil)}`,
+      ],
+    };
+  }
+
+  it("records a marker per icaluid source for an upcoming event with attendees", async () => {
+    const host = makeFakeHost({ calendarId });
+    vi.stubGlobal("fetch", vi.fn(async () => makeEventsResponse([])));
+
+    await processCalendarEventsFn(
+      host,
+      [upcomingEventWithAttendees({ iCalUID: "uid-1", id: "ev-1" })],
+      calendarId,
+      false
+    );
+
+    expect(host.store.get("event-uid:uid-1")).toBe(true);
+    expect(host.store.get("event-uid:uid-1@google.com")).toBe(true);
+  });
+
+  it("records no marker for an event that has already ended", async () => {
+    const host = makeFakeHost({ calendarId });
+    vi.stubGlobal("fetch", vi.fn(async () => makeEventsResponse([])));
+
+    await processCalendarEventsFn(
+      host,
+      [pastEventWithAttendees({ iCalUID: "uid-past", id: "ev-2" })],
+      calendarId,
+      false
+    );
+
+    expect(host.store.get("event-uid:uid-past")).toBeUndefined();
+  });
+
+  it("records no marker for a solo event with no attendees", async () => {
+    const host = makeFakeHost({ calendarId });
+    vi.stubGlobal("fetch", vi.fn(async () => makeEventsResponse([])));
+
+    await processCalendarEventsFn(
+      host,
+      [upcomingSoloEvent({ iCalUID: "uid-solo", id: "ev-3" })],
+      calendarId,
+      false
+    );
+
+    expect(host.store.get("event-uid:uid-solo")).toBeUndefined();
+  });
+
+  it("records a marker for a recurring series whose UNTIL has not passed", async () => {
+    const host = makeFakeHost({ calendarId });
+    vi.stubGlobal("fetch", vi.fn(async () => makeEventsResponse([])));
+
+    await processCalendarEventsFn(
+      host,
+      [
+        recurringEventWithAttendees({
+          iCalUID: "uid-series",
+          id: "ev-4",
+          recurrenceUntil: new Date(Date.now() + 30 * 24 * 3600 * 1000),
+        }),
+      ],
+      calendarId,
+      false
+    );
+
+    expect(host.store.get("event-uid:uid-series")).toBe(true);
+  });
+});
