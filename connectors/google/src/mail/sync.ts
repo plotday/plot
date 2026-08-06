@@ -52,6 +52,7 @@ import {
   classifyCalendarThread,
   collectAttachments,
   extractBody,
+  extractCalendarInvites,
   extractCalendarReplies,
   formatFromHeader,
   getHeader,
@@ -1606,34 +1607,90 @@ async function saveTransformedThread(
         // cost of losing the response outright for calendar-less recipients.
         foldedMessageIds.add(reply.messageId);
       }
+    }
 
-      if (foldedMessageIds.size > 0) {
-        plotThread.notes = plotThread.notes.filter((note) => {
-          const noteKey = "key" in note ? (note as { key: string }).key : null;
-          return !noteKey || !foldedMessageIds.has(noteKey);
+    // A first-time invitation says nothing the event's own thread does not
+    // already render: schedule, guest list and RSVP are all there, and the
+    // notification only describes them in prose. Fold it away when we know the
+    // event has synced, and drop its note so an invitation-only conversation
+    // never becomes an email thread.
+    //
+    // Deliberately a fold and not a bundle. Adding `icaluid:<uid>` to the mail
+    // link's sources would make the mail link the event's thread and rewrite
+    // its title to "Invitation: … @ …".
+    const invites = extractCalendarInvites(thread.messages ?? [], icsByMessage);
+    for (const invite of invites) {
+      const foldedKey = `folded-invite:${invite.uid}:${invite.messageId}`;
+      if (await host.get<boolean>(foldedKey)) {
+        foldedMessageIds.add(invite.messageId);
+        continue;
+      }
+
+      // No bridge, or no marker, means no event thread is known for this UID:
+      // the calendar channel is off, the event lives on another provider, or
+      // the mail simply arrived first. Keep the email thread — an invitation
+      // must never be silently dropped — and leave a key the calendar sync
+      // retracts against if the event turns up later.
+      const known = await host.readCalendarState?.<boolean>(
+        `event-uid:${invite.uid}`
+      );
+      if (!known) {
+        await host.set(`invite-wait:${invite.uid}`, {
+          gmailThreadId: thread.id,
+          at: new Date().toISOString(),
         });
+        continue;
+      }
 
-        // The preview (set from thread.messages[0].snippet in
-        // transformGmailThread) may have come from the message we just
-        // folded away. Recompute it from the first surviving note's own
-        // message so a mixed conversation previews the human reply, not the
-        // RSVP notification that's no longer part of this thread.
-        const previewMessageId = thread.messages?.[0]?.id;
-        if (previewMessageId && foldedMessageIds.has(previewMessageId)) {
-          const firstSurvivingNote = plotThread.notes[0];
-          const firstSurvivingKey =
-            firstSurvivingNote && "key" in firstSurvivingNote
-              ? (firstSurvivingNote as { key: string }).key
-              : null;
-          const firstSurvivingMessage = firstSurvivingKey
-            ? thread.messages?.find((m) => m.id === firstSurvivingKey)
+      if (invite.extraContent) {
+        await host.tools.integrations.saveNote({
+          thread: { source: `icaluid:${invite.uid}` },
+          key: `invite:${invite.messageId}`,
+          content: invite.extraContent,
+          contentType: "markdown",
+          created: invite.sourceCreatedAt,
+          author: {
+            email: invite.organizerEmail,
+            ...(invite.organizerName ? { name: invite.organizerName } : {}),
+          },
+          // Explicit on both paths: attaching a note already surfaces the
+          // thread as unread for everyone but its author, so only an explicit
+          // false overrides that during a backfill.
+          unread: !initialSync,
+          deferUntilThread: true,
+        });
+      }
+
+      foldedMessageIds.add(invite.messageId);
+      await host.set(foldedKey, true);
+    }
+
+    if (foldedMessageIds.size > 0) {
+      plotThread.notes = plotThread.notes.filter((note) => {
+        const noteKey = "key" in note ? (note as { key: string }).key : null;
+        return !noteKey || !foldedMessageIds.has(noteKey);
+      });
+
+      // The preview (set from thread.messages[0].snippet in
+      // transformGmailThread) may have come from the message we just
+      // folded away. Recompute it from the first surviving note's own
+      // message so a mixed conversation previews the human reply, not the
+      // RSVP notification that's no longer part of this thread.
+      const previewMessageId = thread.messages?.[0]?.id;
+      if (previewMessageId && foldedMessageIds.has(previewMessageId)) {
+        const firstSurvivingNote = plotThread.notes[0];
+        const firstSurvivingKey =
+          firstSurvivingNote && "key" in firstSurvivingNote
+            ? (firstSurvivingNote as { key: string }).key
             : null;
-          plotThread.preview =
-            firstSurvivingMessage?.snippet ||
-            (firstSurvivingNote as { content?: string } | undefined)
-              ?.content ||
-            null;
-        }
+        const firstSurvivingMessage = firstSurvivingKey
+          ? thread.messages?.find((m) => m.id === firstSurvivingKey)
+          : null;
+        plotThread.preview =
+          firstSurvivingMessage?.snippet ||
+          (firstSurvivingNote as { content?: string } | undefined)
+            ?.content ||
+          null;
       }
     }
 

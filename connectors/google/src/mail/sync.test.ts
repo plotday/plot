@@ -85,6 +85,7 @@ function makeHost(): { host: GmailSyncHost; store: Map<string, unknown> } {
     clear: vi.fn(async (key: string) => {
       store.delete(key);
     }),
+    readCalendarState: vi.fn(async () => null),
     tools: {
       integrations: {
         get: vi.fn(async () => ({ token: "tok", scopes: [] })),
@@ -1327,6 +1328,207 @@ describe("processEmailThreadsFn — attendee responses fold onto the event", () 
     expect(notes).toHaveLength(1);
     expect(notes[0]).toMatchObject({ deferUntilThread: true });
     expect(links).toHaveLength(0);
+  });
+});
+
+describe("processEmailThreadsFn — bare invitations fold onto the event", () => {
+  function inviteIcs(opts: { uid?: string; comment?: string; sequence?: number } = {}) {
+    const lines = [
+      "BEGIN:VCALENDAR",
+      "METHOD:REQUEST",
+      "BEGIN:VEVENT",
+      `UID:${opts.uid ?? "uid-invite@google.com"}`,
+      "ORGANIZER;CN=Ada Organizer:mailto:ada@example.test",
+      "DTSTART:20260825T130000Z",
+      `SEQUENCE:${opts.sequence ?? 0}`,
+    ];
+    if (opts.comment) lines.push(`COMMENT:${opts.comment}`);
+    lines.push("END:VEVENT", "END:VCALENDAR");
+    return lines.join("\r\n");
+  }
+
+  /** A Gmail conversation carrying one invitation notification. */
+  function inviteThread(
+    threadId: string,
+    ics: string,
+    opts: { withPlainReply?: boolean } = {}
+  ): GmailThread {
+    const invite: GmailMessage = {
+      id: `${threadId}-msg-1`,
+      threadId,
+      labelIds: ["INBOX"],
+      snippet: "You have been invited to Weekly sync",
+      historyId: "1",
+      internalDate: "1700000000000",
+      sizeEstimate: 500,
+      payload: part("multipart/mixed", {
+        headers: [
+          ["From", "Ada Organizer <ada@example.test>"],
+          ["To", "me@example.com"],
+          ["Subject", "Invitation: Weekly sync @ Tue Aug 25, 2026"],
+        ],
+        parts: [
+          part("text/html", { data: "<p>When: Tuesday</p>" }),
+          icsAttachmentPart(ics),
+        ],
+      }),
+    };
+    const messages = [invite];
+    if (opts.withPlainReply) {
+      messages.push({
+        id: `${threadId}-msg-2`,
+        threadId,
+        labelIds: ["INBOX"],
+        snippet: "See you there",
+        historyId: "2",
+        internalDate: "1700000060000",
+        sizeEstimate: 200,
+        payload: part("text/plain", {
+          data: "See you there.",
+          headers: [
+            ["From", "Ada Organizer <ada@example.test>"],
+            ["To", "me@example.com"],
+            ["Subject", "Re: Invitation: Weekly sync"],
+          ],
+        }),
+      });
+    }
+    return { id: threadId, historyId: "1", messages };
+  }
+
+  /** Marks the event as already synced by the calendar product. */
+  function withEventKnown(host: GmailSyncHost, uid = "uid-invite@google.com") {
+    (host.readCalendarState as ReturnType<typeof vi.fn>).mockImplementation(
+      async (key: string) => (key === `event-uid:${uid}` ? true : null)
+    );
+  }
+
+  it("saves no email link and no note when the event is already synced", async () => {
+    const { host } = makeHost();
+    withEventKnown(host);
+    const { notes, links } = captureSaves(host);
+
+    await processEmailThreadsFn(
+      host,
+      [inviteThread("inv-plain", inviteIcs())],
+      false,
+      "INBOX"
+    );
+
+    // The event thread already shows the schedule, guests and RSVP; the
+    // notification only describes them in prose.
+    expect(notes).toHaveLength(0);
+    expect(links).toHaveLength(0);
+  });
+
+  it("writes the organizer's ICS COMMENT as a note on the event thread", async () => {
+    const { host } = makeHost();
+    withEventKnown(host);
+    const { notes, links } = captureSaves(host);
+
+    await processEmailThreadsFn(
+      host,
+      [inviteThread("inv-comment", inviteIcs({ comment: "Bring the deck" }))],
+      false,
+      "INBOX"
+    );
+
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toMatchObject({
+      thread: { source: "icaluid:uid-invite@google.com" },
+      key: "invite:inv-comment-msg-1",
+      content: "Bring the deck",
+      contentType: "markdown",
+      created: new Date(1700000000000),
+      unread: true,
+      author: { email: "ada@example.test", name: "Ada Organizer" },
+      deferUntilThread: true,
+    });
+    expect(links).toHaveLength(0);
+  });
+
+  it("keeps the email thread and records a pending key when no event is known", async () => {
+    const { host, store } = makeHost();
+    const { notes, links } = captureSaves(host);
+
+    await processEmailThreadsFn(
+      host,
+      [inviteThread("inv-orphan", inviteIcs())],
+      false,
+      "INBOX"
+    );
+
+    // No calendar for this event: the invitation must not vanish.
+    expect(links).toHaveLength(1);
+    expect(notes).toHaveLength(0);
+    expect(store.get("invite-wait:uid-invite@google.com")).toMatchObject({
+      gmailThreadId: "inv-orphan",
+    });
+  });
+
+  it("does not re-raise unread when the same invitation is re-processed", async () => {
+    const { host } = makeHost();
+    withEventKnown(host);
+    const { notes } = captureSaves(host);
+    const thread = inviteThread("inv-replay", inviteIcs({ comment: "Bring the deck" }));
+
+    await processEmailThreadsFn(host, [thread], false, "INBOX");
+    await processEmailThreadsFn(host, [thread], false, "INBOX");
+
+    // Second pass is a Gmail history replay: the note upserts by key, but
+    // re-applying `unread` would drag a read event thread back to unread.
+    expect(notes).toHaveLength(1);
+  });
+
+  it("sets unread false during an initial backfill", async () => {
+    const { host } = makeHost();
+    withEventKnown(host);
+    const { notes } = captureSaves(host);
+
+    await processEmailThreadsFn(
+      host,
+      [inviteThread("inv-initial", inviteIcs({ comment: "Bring the deck" }))],
+      true,
+      "INBOX"
+    );
+
+    expect(notes[0]).toMatchObject({ unread: false });
+  });
+
+  it("keeps a mixed conversation's thread with the invitation dropped", async () => {
+    const { host } = makeHost();
+    withEventKnown(host);
+    const { links } = captureSaves(host);
+
+    await processEmailThreadsFn(
+      host,
+      [inviteThread("inv-mixed", inviteIcs(), { withPlainReply: true })],
+      false,
+      "INBOX"
+    );
+
+    expect(links).toHaveLength(1);
+    const noteKeys = (links[0].notes ?? []).map((n) => (n as { key: string }).key);
+    expect(noteKeys).toEqual(["inv-mixed-msg-2"]);
+    // The preview must come from the surviving human message, not the folded
+    // notification.
+    expect(links[0].preview).toContain("See you there");
+  });
+
+  it("leaves an update (SEQUENCE > 0) to the existing bundling path", async () => {
+    const { host } = makeHost();
+    withEventKnown(host);
+    const { links } = captureSaves(host);
+
+    await processEmailThreadsFn(
+      host,
+      [inviteThread("inv-update", inviteIcs({ sequence: 3 }))],
+      false,
+      "INBOX"
+    );
+
+    expect(links).toHaveLength(1);
+    expect(links[0].sources).toContain("icaluid:uid-invite@google.com");
   });
 });
 
