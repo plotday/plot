@@ -7,6 +7,7 @@ import {
   buildReactionMessage,
   buildReplyMessage,
   classifyCalendarThread,
+  extractCalendarInvites,
   extractCalendarReplies,
   formatFromHeader,
   isSendableGmailReaction,
@@ -1304,6 +1305,144 @@ describe("extractCalendarReplies", () => {
     const noAttendee = declined.replace(/^ATTENDEE.*\r\n/m, "");
     expect(extractReplies([replyMessage(noUid)])).toEqual([]);
     expect(extractReplies([replyMessage(noAttendee)])).toEqual([]);
+  });
+});
+
+describe("extractCalendarInvites", () => {
+  function inviteIcs(
+    opts: { sequence?: number; uid?: string; comment?: string; method?: string } = {}
+  ): string {
+    const lines = [
+      "BEGIN:VCALENDAR",
+      `METHOD:${opts.method ?? "REQUEST"}`,
+      "BEGIN:VEVENT",
+      `UID:${opts.uid ?? "uid-invite@google.com"}`,
+      "ORGANIZER;CN=Ada Organizer:mailto:ada@example.test",
+      "DTSTART:20260825T130000Z",
+      `SEQUENCE:${opts.sequence ?? 0}`,
+    ];
+    if (opts.comment) lines.push(`COMMENT:${opts.comment}`);
+    lines.push("END:VEVENT", "END:VCALENDAR");
+    return lines.join("\r\n");
+  }
+
+  function inviteMessage(id = "m1"): GmailMessage {
+    return {
+      id,
+      threadId: "t1",
+      labelIds: ["INBOX"],
+      snippet: "You have been invited",
+      historyId: "1",
+      internalDate: "1700000000000",
+      sizeEstimate: 500,
+      payload: part("multipart/mixed", {
+        headers: [
+          ["From", "Ada Organizer <ada@example.test>"],
+          ["To", "me@example.com"],
+          ["Subject", "Invitation: Weekly sync @ Tue Aug 25, 2026"],
+        ],
+        parts: [
+          part("text/html", { data: "<p>When: Tuesday</p>" }),
+          icsAttachmentPart(),
+        ],
+      }),
+    };
+  }
+
+  it("yields a descriptor for a bare invite (METHOD:REQUEST, SEQUENCE 0)", () => {
+    const message = inviteMessage();
+    const invites = extractCalendarInvites(
+      [message],
+      new Map([["m1", inviteIcs()]])
+    );
+
+    expect(invites).toEqual([
+      {
+        messageId: "m1",
+        uid: "uid-invite@google.com",
+        organizerName: "Ada Organizer",
+        organizerEmail: "ada@example.test",
+        extraContent: null,
+        sourceCreatedAt: new Date(1700000000000),
+      },
+    ]);
+  });
+
+  it("yields nothing for an update (SEQUENCE > 0)", () => {
+    const invites = extractCalendarInvites(
+      [inviteMessage()],
+      new Map([["m1", inviteIcs({ sequence: 2 })]])
+    );
+    expect(invites).toEqual([]);
+  });
+
+  it("yields nothing for a cancellation or a reply", () => {
+    expect(
+      extractCalendarInvites(
+        [inviteMessage()],
+        new Map([["m1", inviteIcs({ method: "CANCEL" })]])
+      )
+    ).toEqual([]);
+    expect(
+      extractCalendarInvites(
+        [inviteMessage()],
+        new Map([["m1", inviteIcs({ method: "REPLY" })]])
+      )
+    ).toEqual([]);
+  });
+
+  it("yields nothing when the ICS carries no UID", () => {
+    const noUid = inviteIcs().replace("UID:uid-invite@google.com\r\n", "");
+    expect(
+      extractCalendarInvites([inviteMessage()], new Map([["m1", noUid]]))
+    ).toEqual([]);
+  });
+
+  it("yields nothing for a message with no calendar part", () => {
+    expect(extractCalendarInvites([inviteMessage()], new Map())).toEqual([]);
+  });
+
+  it("carries the ICS COMMENT as extraContent, RFC 5545 un-escaped", () => {
+    const invites = extractCalendarInvites(
+      [inviteMessage()],
+      new Map([
+        ["m1", inviteIcs({ comment: "Bring the deck\\nand a laptop\\, please" })],
+      ])
+    );
+    expect(invites[0].extraContent).toBe("Bring the deck\nand a laptop, please");
+  });
+
+  it("treats a whitespace-only COMMENT as no extra content", () => {
+    const invites = extractCalendarInvites(
+      [inviteMessage()],
+      new Map([["m1", inviteIcs({ comment: "\\n  " })]])
+    );
+    expect(invites[0].extraContent).toBeNull();
+  });
+
+  it("falls back to the ORGANIZER line when the From header has no display name", () => {
+    const message = inviteMessage();
+    message.payload.headers = [
+      { name: "From", value: "ada@example.test" },
+      { name: "To", value: "me@example.com" },
+    ];
+
+    const invites = extractCalendarInvites(
+      [message],
+      new Map([["m1", inviteIcs()]])
+    );
+    expect(invites[0].organizerName).toBe("Ada Organizer");
+  });
+
+  it("returns one descriptor per invite message in a conversation", () => {
+    const invites = extractCalendarInvites(
+      [inviteMessage("m1"), inviteMessage("m2")],
+      new Map([
+        ["m1", inviteIcs({ uid: "a@google.com" })],
+        ["m2", inviteIcs({ uid: "b@google.com" })],
+      ])
+    );
+    expect(invites.map((i) => i.uid)).toEqual(["a@google.com", "b@google.com"]);
   });
 });
 
