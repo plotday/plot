@@ -1,3 +1,4 @@
+import type { ThreadFacets } from "@plotday/twister/facets";
 import type {
   NewActor,
   NewContact,
@@ -616,6 +617,51 @@ function stripHtml(html: string): string {
     .trim();
 }
 
+// A long Teams post reads as a "message" rather than a quick "chat".
+const CHAT_MAX_LENGTH = 1000;
+
+// A Teams message is bot-shaped when an application sent it, or when it has
+// no human sender at all (system events). Anything with a human sender is
+// human — a muteable `automated` verdict that hides a real person is the one
+// failure classification must never produce.
+function isBotShaped(message: TeamsMessage): boolean {
+  return Boolean(message.from?.application) || !message.from?.user;
+}
+
+/**
+ * Facets for a channel message thread. Channels are broadcast context, so
+ * `reach` is `list`; format and automation are judged from the thread's
+ * parent message, best-effort per the facet design's fail-open principle.
+ */
+export function teamsChannelFacets(parent: TeamsMessage): ThreadFacets {
+  const text = stripHtml(parent.body.content);
+  return {
+    format: text.length > CHAT_MAX_LENGTH ? "message" : "chat",
+    automation: isBotShaped(parent) ? "automated" : "human",
+    reach: "list",
+  };
+}
+
+/**
+ * Facets for a direct or group chat.
+ *
+ * `reach` is `direct` by construction (a chat addresses the user), and the
+ * conversation reads as `chat` regardless of any one message's length. For
+ * `automation` the user-visible messages are judged as a whole, and only an
+ * all-bot batch is `automated`: a single human-shaped message makes the
+ * conversation `human`. System event messages are excluded from the
+ * judgement, mirroring their exclusion from the notes.
+ */
+export function teamsDmFacets(messages: TeamsMessage[]): ThreadFacets {
+  const visible = messages.filter((msg) => msg.messageType === "message");
+  const isBot = visible.length > 0 && visible.every(isBotShaped);
+  return {
+    format: "chat",
+    automation: isBot ? "automated" : "human",
+    reach: "direct",
+  };
+}
+
 /**
  * Transforms a Teams channel message thread (parent + replies) into a
  * NewLinkWithNotes structure for saving via integrations.saveLink().
@@ -640,6 +686,7 @@ export function transformChannelThread(
     title,
     created: new Date(parentMessage.createdDateTime),
     author: userToNewActor(parentMessage.from?.user),
+    facets: teamsChannelFacets(parentMessage),
     preview: stripHtml(parentMessage.body.content) || null,
     meta: {
       teamId,
@@ -689,6 +736,7 @@ export function transformDmThread(
       title: "Empty chat",
       access: "private",
       accessContacts,
+      facets: teamsDmFacets([]),
       notes: [],
     };
   }
@@ -705,6 +753,7 @@ export function transformDmThread(
     accessContacts,
     created: new Date(firstMessage.createdDateTime),
     author: userToNewActor(firstMessage.from?.user),
+    facets: teamsDmFacets(messages),
     preview: stripHtml(firstMessage.body.content) || null,
     meta: {
       chatId,

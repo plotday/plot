@@ -5,6 +5,11 @@ import type {
   NewReactions,
 } from "@plotday/twister/plot";
 
+import {
+  googleChatDmFacets,
+  googleChatThreadFacets,
+} from "./google-chat-facets";
+
 // ---- Google Chat API types ----
 
 export type Space = {
@@ -638,11 +643,16 @@ function formatAttachments(attachments: Attachment[] | undefined): string {
 
 /**
  * Transforms a group of Google Chat messages (one thread) into a NewLinkWithNotes.
+ *
+ * `kind` distinguishes named spaces from DM/group-chat spaces so the link can
+ * carry classifier facets: a named space is broadcast context (`reach: list`),
+ * while a DM addresses the user (`reach: direct`).
  */
 export function transformChatThread(
   messages: Message[],
   spaceId: string,
   initialSync: boolean,
+  kind: "space" | "dm",
   memberInfo?: Map<string, MemberInfo>,
   members?: NewActor[],
   reactions?: EmojiReaction[]
@@ -665,6 +675,10 @@ export function transformChatThread(
     accessContacts: members?.filter((m): m is NewContact => !("id" in m)) ?? [],
     created: new Date(firstMessage.createTime),
     author: senderToNewActor(firstMessage.sender, memberInfo),
+    facets:
+      kind === "dm"
+        ? googleChatDmFacets(messages)
+        : googleChatThreadFacets(firstMessage),
     sourceUrl: `https://chat.google.com/room/${spaceId}/${threadKey}`,
     meta: {
       spaceId,
