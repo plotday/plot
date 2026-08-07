@@ -181,3 +181,19 @@ describe("buildIssueLink", () => {
     });
   });
 });
+
+describe("buildIssueLink taxonomy signals", () => {
+  it("emits the issue's project as a namespaced taxonomy key", () => {
+    const link = buildIssueLink(
+      issue({ project: { id: "proj-7" } }),
+      "team-9",
+      false
+    );
+    expect(link.signals?.taxonomy).toEqual(["linear:project:proj-7"]);
+  });
+
+  it("omits taxonomy when the issue has no project", () => {
+    const link = buildIssueLink(issue(), "team-9", false);
+    expect(link.signals?.taxonomy).toBeUndefined();
+  });
+});
