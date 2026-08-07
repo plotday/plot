@@ -1,5 +1,11 @@
 # @plotday/twister
 
+## 0.94.0
+
+### Added
+
+- `LinkSignals.taxonomy` — namespaced structured-container keys
+
 ## 0.93.0
 
 ### Added
