@@ -81,6 +81,19 @@ export type LinkSignals = {
    * platform classifies from `link.preview` instead.
    */
   noteKey?: string | null;
+  /**
+   * Structured containers the source assigns this item to — the project,
+   * repository, board or folder the item lives in, as namespaced keys:
+   * `"<connector>:<kind>:<id>"` (e.g. `"linear:project:<uuid>"`,
+   * `"github:repo:<owner>/<name>"`).
+   *
+   * Use immutable ids (uuid/number), never mutable display names — the same
+   * rule as `link.source`. Emit every container the item genuinely belongs
+   * to; omit the field when the source has no structured container. The
+   * platform matches these keys exactly against priority bindings to route
+   * items to the user's priorities without a model call.
+   */
+  taxonomy?: string[];
 };
 
 const NOREPLY_LOCALPART =

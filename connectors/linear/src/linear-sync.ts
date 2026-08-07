@@ -57,6 +57,7 @@ export const TEAM_ISSUES_BATCH_QUERY = `
           creator { id name email avatarUrl }
           assignee { id name email avatarUrl }
           state { id type }
+          project { id }
           comments(first: ${COMMENTS_PER_ISSUE}) {
             nodes {
               id
@@ -102,6 +103,9 @@ export type LinearIssueData = {
   creator: LinearUserData | null;
   assignee: LinearUserData | null;
   state: { id: string; type: string } | null;
+  // The Linear project the issue belongs to (a container WITHIN a team —
+  // teams are already the sync channel). Feeds signals.taxonomy.
+  project?: { id: string } | null;
   comments: { nodes: LinearCommentData[] };
   attachments: { nodes: LinearAttachmentData[] };
 };
@@ -227,6 +231,12 @@ export function buildIssueLink(
       linearId: issue.id,
       projectId,
     },
+    // The issue's Linear project (a container within the team) as a
+    // namespaced taxonomy key — the platform matches it against priority
+    // bindings at L1. The team itself is the sync channel and needs no key.
+    ...(issue.project?.id
+      ? { signals: { taxonomy: [`linear:project:${issue.project.id}`] } }
+      : {}),
     actions: threadActions.length > 0 ? threadActions : undefined,
     sourceUrl: issue.url ?? null,
     notes,
