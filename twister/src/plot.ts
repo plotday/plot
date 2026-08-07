@@ -321,6 +321,21 @@ export type Action =
       imageWidth?: number | null;
       /** Intrinsic height of the image in pixels (only for image files) */
       imageHeight?: number | null;
+      /**
+       * Content-ID of an inline body image, without the angle brackets — the
+       * value a `cid:` reference in the note's content resolves against.
+       *
+       * Set this ONLY when the note's content still references the part (an
+       * `<img src="cid:…">` that survived quote-trimming). Plot then renders
+       * the image in the body where the sender placed it, at its own size,
+       * instead of appending an attachment chip.
+       *
+       * Leave it unset for ordinary attachments. An inline part the retained
+       * content no longer references — a signature logo left behind when a
+       * quoted reply was trimmed — should be dropped entirely rather than
+       * emitted with a `contentId`, since nothing in the body points at it.
+       */
+      contentId?: string | null;
     }
   | {
       /** Thread reference action for navigating to a related thread */

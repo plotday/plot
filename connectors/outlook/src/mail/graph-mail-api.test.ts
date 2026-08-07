@@ -102,7 +102,7 @@ describe("transformOutlookConversation", () => {
     expect(team?.name).toBeUndefined();
   });
 
-  it("emits fileRef actions for non-inline file attachments only", () => {
+  it("emits fileRef actions for file attachments, dropping unreferenced inline images", () => {
     const atts = new Map<string, GraphAttachmentMeta[]>([
       [
         "id-1",
@@ -143,6 +143,54 @@ describe("transformOutlookConversation", () => {
       .actions;
     expect(actions).toHaveLength(1);
     expect(actions[0].ref).toBe("id-1:a1");
+  });
+
+  /** One inline image attachment carrying `contentId`, as Graph reports it. */
+  const inlineImage = (contentId: string): GraphAttachmentMeta => ({
+    id: "a-inline",
+    name: "image001.jpg",
+    contentType: "image/jpeg",
+    size: 823,
+    isInline: true,
+    odataType: "#microsoft.graph.fileAttachment",
+    contentId,
+  });
+
+  function inlineActions(html: string, contentId = "ii_abc123") {
+    const link = transformOutlookConversation({
+      ...base,
+      attachmentsByMessageId: new Map([["id-1", [inlineImage(contentId)]]]),
+      messages: [
+        msg({
+          hasAttachments: true,
+          body: { contentType: "html", content: html },
+        }),
+      ],
+    });
+    return (
+      link.notes![0] as {
+        actions: Array<{ ref: string; contentId?: string | null }> | null;
+      }
+    ).actions;
+  }
+
+  it("keeps an inline image the retained body references, tagged with its Content-ID", () => {
+    const actions = inlineActions(
+      `<p>Here it is:</p><img src="cid:ii_abc123" width="600">`
+    );
+    expect(actions).toHaveLength(1);
+    expect(actions![0].ref).toBe("id-1:a-inline");
+    expect(actions![0].contentId).toBe("ii_abc123");
+  });
+
+  it("drops an inline image whose only reference was in the trimmed quote", () => {
+    // `stripQuotedReply` cuts at the reply header block, so the signature logo
+    // below it is gone from the body the reader sees.
+    const actions = inlineActions(
+      `<p>Thanks!</p><div id="appendonsend"></div>` +
+        `<p>Regards, Robin</p><img src="cid:ii_abc123" width="169">`
+    );
+    expect(actions ?? []).toHaveLength(0);
   });
 });
 

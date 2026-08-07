@@ -143,8 +143,22 @@ export type ImapMessage = {
    * `partNumber` is the IMAP part number (e.g. "2" or "2.1") used to fetch that
    * part's content separately, and `encoding` is the part's own
    * Content-Transfer-Encoding.
+   *
+   * `contentId` (angle brackets stripped) and `inline` describe how the part
+   * was carried, so a body image the HTML embeds via `cid:` can be told apart
+   * from a genuine attachment. A part sent without an explicit
+   * `Content-Disposition` but with a `Content-ID` counts as inline — that is
+   * how `multipart/related` images usually arrive.
    */
-  attachments?: { partNumber: string; fileName: string; mimeType: string; size: number; encoding: string }[];
+  attachments?: {
+    partNumber: string;
+    fileName: string;
+    mimeType: string;
+    size: number;
+    encoding: string;
+    contentId?: string | null;
+    inline?: boolean;
+  }[];
 };
 
 /** Options for fetchMessages(). */
