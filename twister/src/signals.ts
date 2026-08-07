@@ -102,3 +102,53 @@ function localPart(address: string | null): string {
 export function isNoReplySender(address: string | null): boolean {
   return NOREPLY_LOCALPART.test(localPart(address));
 }
+
+/**
+ * Content-IDs an HTML mail body still points at, lowercased for comparison.
+ *
+ * Mail connectors use this to classify a message's inline image parts against
+ * the body they actually kept, after quoted history has been trimmed away.
+ * Three outcomes follow:
+ *
+ *  - Referenced → set the fileRef action's `contentId` so Plot renders the
+ *    image in the body where the sender placed it.
+ *  - Not referenced → the part is an orphan. Its only reference lived in the
+ *    quoted history that was trimmed, which is what happens to a sender's
+ *    signature logo on every reply in a chain. Drop it: there is nowhere to
+ *    render it, and surfacing it as an attachment puts a chip on every message
+ *    for an image the reader never saw.
+ *  - No HTML body to test against (a plain-text message) → skip the check
+ *    entirely rather than treat every inline part as an orphan.
+ *
+ * Values are compared lowercased because clients are inconsistent about the
+ * case they echo a Content-ID back in.
+ */
+export function referencedContentIds(html: string): Set<string> {
+  const ids = new Set<string>();
+  // The src of `<img src="cid:…">` in any quoting style, stopping at whatever
+  // terminates the URL.
+  const re = /\bcid:([^"'\s>)]+)/gi;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(html)) !== null) {
+    const raw = match[1];
+    let decoded = raw;
+    try {
+      // RFC 2392 percent-encodes characters that are special in a URL.
+      decoded = decodeURIComponent(raw);
+    } catch {
+      // Malformed escape — compare the raw value instead.
+    }
+    ids.add(decoded.toLowerCase());
+  }
+  return ids;
+}
+
+/**
+ * Strips the angle brackets RFC 2822 wraps a `Content-ID` header in, leaving
+ * the bare value a `cid:` URL names (RFC 2392). Returns null for a missing or
+ * empty header.
+ */
+export function normalizeContentId(header: string | null): string | null {
+  if (!header) return null;
+  return header.trim().replace(/^<|>$/g, "") || null;
+}

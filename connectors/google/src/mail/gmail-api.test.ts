@@ -1446,3 +1446,140 @@ describe("extractCalendarInvites", () => {
   });
 });
 
+describe("transformGmailThread inline images", () => {
+  /**
+   * A `multipart/related` message: the HTML body plus one image part carried
+   * the way a mail client attaches an inline image — `Content-Disposition:
+   * inline` with a `Content-ID` the HTML points at via `src="cid:…"`.
+   */
+  function relatedThread(html: string, contentId = "ii_abc123"): GmailThread {
+    return thread({
+      from: "Robin <robin@example.com>",
+      to: "me@example.com",
+      subject: "Re: Query",
+      payload: part("multipart/related", {
+        parts: [
+          part("multipart/alternative", {
+            parts: [part("text/html", { data: html })],
+          }),
+          {
+            mimeType: "image/jpeg",
+            filename: "image001.jpg",
+            headers: [
+              { name: "Content-Type", value: 'image/jpeg; name="image001.jpg"' },
+              {
+                name: "Content-Disposition",
+                value: 'inline; filename="image001.jpg"',
+              },
+              { name: "Content-ID", value: `<${contentId}>` },
+              { name: "X-Attachment-Id", value: contentId },
+            ],
+            body: { size: 823, attachmentId: "att-inline-1" },
+          },
+        ],
+      }),
+    });
+  }
+
+  function actionsOf(link: ReturnType<typeof transformGmailThread>) {
+    return (link.notes![0].actions ?? []) as Array<{
+      fileName: string;
+      contentId?: string | null;
+    }>;
+  }
+
+  it("drops an inline image whose only reference was in the trimmed quote", () => {
+    // The signature logo lives inside the quoted history, which
+    // `stripQuotedReply` cuts away — nothing in the retained body points at it.
+    const link = transformGmailThread(
+      relatedThread(
+        `<div dir="ltr">Brilliant! Thank you.</div>` +
+          `<div class="gmail_quote gmail_quote_container">` +
+          `<blockquote class="gmail_quote"><p>Robin Fisher</p>` +
+          `<img src="cid:ii_abc123" width="169" height="43" ` +
+          `alt="Image removed by sender."></blockquote></div>`
+      )
+    );
+
+    expect(actionsOf(link)).toEqual([]);
+  });
+
+  it("keeps an inline image the retained body references, tagged with its Content-ID", () => {
+    const link = transformGmailThread(
+      relatedThread(
+        `<div dir="ltr">Here is the chart:<br>` +
+          `<img src="cid:ii_abc123" width="600" height="400"></div>`
+      )
+    );
+
+    expect(actionsOf(link)).toEqual([
+      expect.objectContaining({
+        fileName: "image001.jpg",
+        contentId: "ii_abc123",
+      }),
+    ]);
+  });
+
+  it("leaves an ordinary attachment untagged", () => {
+    const link = transformGmailThread(
+      thread({
+        from: "Robin <robin@example.com>",
+        to: "me@example.com",
+        subject: "Report",
+        payload: part("multipart/mixed", {
+          parts: [
+            part("text/html", { data: "<div>See attached.</div>" }),
+            {
+              mimeType: "application/pdf",
+              filename: "report.pdf",
+              headers: [
+                {
+                  name: "Content-Disposition",
+                  value: 'attachment; filename="report.pdf"',
+                },
+              ],
+              body: { size: 40201, attachmentId: "att-pdf-1" },
+            },
+          ],
+        }),
+      })
+    );
+
+    const actions = actionsOf(link);
+    expect(actions).toHaveLength(1);
+    expect(actions[0].fileName).toBe("report.pdf");
+    expect(actions[0].contentId ?? null).toBeNull();
+  });
+
+  it("keeps an inline image when only a plain-text body survived", () => {
+    // Nothing to match a `cid:` against, so the part can't be shown to be
+    // orphaned — keep it rather than silently discard an attachment.
+    const link = transformGmailThread(
+      thread({
+        from: "Robin <robin@example.com>",
+        to: "me@example.com",
+        subject: "Re: Query",
+        payload: part("multipart/related", {
+          parts: [
+            part("text/plain", { data: "Brilliant! Thank you." }),
+            {
+              mimeType: "image/jpeg",
+              filename: "image001.jpg",
+              headers: [
+                {
+                  name: "Content-Disposition",
+                  value: 'inline; filename="image001.jpg"',
+                },
+                { name: "Content-ID", value: "<ii_abc123>" },
+              ],
+              body: { size: 823, attachmentId: "att-inline-1" },
+            },
+          ],
+        }),
+      })
+    );
+
+    expect(actionsOf(link)).toHaveLength(1);
+  });
+});
+
