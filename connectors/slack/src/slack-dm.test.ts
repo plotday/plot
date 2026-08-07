@@ -236,4 +236,64 @@ describe("assembleSlackDmLink", () => {
       "https://slack.com/app_redirect?channel=D111&message_ts=102.0"
     );
   });
+
+  describe("facets", () => {
+    it("marks a human 1:1 DM chat / human / direct", () => {
+      const link = assembleSlackDmLink({
+        channelId: "D111",
+        counterpartyUserId: "U222",
+        messages: [msg("100.0", "U222", "hi")],
+        initialSync: false,
+      });
+
+      expect(link?.facets).toEqual({
+        format: "chat",
+        automation: "human",
+        reach: "direct",
+      });
+    });
+
+    it("marks a group DM chat / human / direct", () => {
+      const link = assembleSlackDmLink({
+        channelId: "G333",
+        counterpartyUserId: null,
+        messages: [msg("100.0", "U222", "hi all")],
+        initialSync: false,
+      });
+
+      expect(link?.facets).toEqual({
+        format: "chat",
+        automation: "human",
+        reach: "direct",
+      });
+    });
+
+    it("marks a conversation automated only when every message is bot-shaped", () => {
+      const link = assembleSlackDmLink({
+        channelId: "D111",
+        counterpartyUserId: "USLACKBOT",
+        messages: [
+          { type: "message", ts: "100.0", bot_id: "B1", text: "reminder" },
+          { type: "message", ts: "101.0", subtype: "bot_message", text: "digest" },
+        ],
+        initialSync: false,
+      });
+
+      expect(link?.facets?.automation).toBe("automated");
+    });
+
+    it("one human message makes the whole conversation human (fail-open)", () => {
+      const link = assembleSlackDmLink({
+        channelId: "D111",
+        counterpartyUserId: "U222",
+        messages: [
+          { type: "message", ts: "100.0", bot_id: "B1", text: "automated ping" },
+          msg("101.0", "U222", "actually a person here"),
+        ],
+        initialSync: false,
+      });
+
+      expect(link?.facets?.automation).toBe("human");
+    });
+  });
 });

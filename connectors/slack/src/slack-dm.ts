@@ -13,6 +13,7 @@ import {
   type SlackMessage,
   type SlackUserInfoMap,
 } from "./slack-api";
+import { slackDmFacets } from "./slack-facets";
 
 /** A DM link note, checked against the SDK's `NewNote` shape, with a guaranteed `key`. */
 export type SlackDmNote = Omit<NewNote, "thread"> & { key: string };
@@ -185,6 +186,12 @@ export function assembleSlackDmLink(
     sources,
     channelId,
     type: "dm",
+    // Classifier facets: a DM is chat, addressed directly to the user, and
+    // human unless the whole batch is bot-shaped (see slackDmFacets). The
+    // channel-thread path sets facets in buildConversationLink; without this
+    // line direct conversations — the bulk of what this connector syncs —
+    // carry none at all.
+    facets: slackDmFacets(ordered),
     ...(title ? { title } : {}),
     preview: formatSlackText(last.text ?? ""),
     created: new Date(parseFloat(ordered[0]!.ts) * 1000),
