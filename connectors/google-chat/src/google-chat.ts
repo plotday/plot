@@ -432,6 +432,7 @@ export class GoogleChat extends Connector<GoogleChat> {
           filtered,
           spaceId,
           initialSync,
+          "space",
           memberInfo,
           members
         );
@@ -626,6 +627,7 @@ export class GoogleChat extends Connector<GoogleChat> {
               threadMessages,
               spaceId,
               isInitial,
+              "dm",
               memberInfo,
               members
             );
@@ -1017,6 +1019,7 @@ export class GoogleChat extends Connector<GoogleChat> {
         [message],
         spaceId,
         false,
+        "space",
         memberInfo,
         members,
         reactions
