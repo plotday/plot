@@ -1,5 +1,15 @@
 # @plotday/twister
 
+## 0.93.0
+
+### Added
+
+- `contentId` on `ActionType.fileRef` actions.
+
+### Changed
+
+- clarified the `Channel.enabledByDefault` doc comment to recommend an explicit "is this the user's own resource" signal over an ACL/permission-tier check when deciding which channels to sync by default — a high permission tier can be granted on a resource the user doesn't own (e.g. broad internal sharing defaults), so it doesn't reliably mean "mine". ([#377](https://github.com/plotday/plot/pull/377) [`2e00d59`](https://github.com/plotday/plot/commit/2e00d599686a322329e21c4c5a4eaf33eb05603f))
+
 ## 0.92.0
 
 ### Added
