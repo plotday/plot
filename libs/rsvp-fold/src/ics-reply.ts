@@ -84,8 +84,12 @@ function parseIcsDate(value: string): Date | null {
  * followed by a literal `n` (`\\n`) isn't misread as a newline escape — a
  * two-pass `\n`-then-`\\` replacement would consume the second backslash of
  * `\\` as if it started its own `\n` escape.
+ *
+ * Exported because connectors read escaped text out of properties this module
+ * does not parse for them (e.g. an invitation's `COMMENT`), and a second copy
+ * of this rule would undo the deduplication `matchIcsLine` established.
  */
-function unescapeIcsText(value: string): string {
+export function unescapeIcsText(value: string): string {
   return value.replace(/\\([nN,;\\])/g, (_, ch: string) =>
     ch === "n" || ch === "N" ? "\n" : ch
   );

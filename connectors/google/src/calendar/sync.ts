@@ -23,7 +23,11 @@ import {
   ConferencingProvider,
 } from "@plotday/twister";
 import type { ScheduleContactStatus } from "@plotday/twister/schedule";
-import type { NewScheduleContact, NewScheduleOccurrence } from "@plotday/twister/schedule";
+import type {
+  NewSchedule,
+  NewScheduleContact,
+  NewScheduleOccurrence,
+} from "@plotday/twister/schedule";
 import type { Thread } from "@plotday/twister";
 import type { WebhookRequest } from "@plotday/twister/tools/network";
 
@@ -63,6 +67,12 @@ export interface CalendarSyncHost {
    * fake hosts in tests) — treated as "no cancel email seen".
    */
   readMailState?<T>(key: string): Promise<T | null>;
+  /**
+   * Optional clear into the MAIL namespace's state, used to retire an
+   * `invite-wait:<uid>` marker once the event it refers to has synced (acted
+   * on or aged out). Absent on hosts that don't wire mail/calendar together.
+   */
+  clearMailState?(key: string): Promise<void>;
 
   tools: {
     integrations: {
@@ -74,6 +84,16 @@ export interface CalendarSyncHost {
       saveLinks(links: NewLinkWithNotes[]): Promise<void>;
       /** Signal that the initial backfill for a channel has finished. */
       channelSyncCompleted(channelId: string): Promise<void>;
+      /**
+       * Archive this connector's links matching a filter. Used to retract an
+       * invitation's email thread once the event it referred to has synced.
+       */
+      archiveLinks(filter: {
+        channelId?: string;
+        type?: string;
+        status?: string;
+        meta?: Record<string, unknown>;
+      }): Promise<void>;
     };
     googleContacts: GoogleContacts;
     store: {
@@ -175,6 +195,32 @@ export function buildEventSources(opts: {
   }
   if (eventId) sources.push(`google-event:${eventId}`);
   return sources;
+}
+
+/**
+ * True when a schedule still lies ahead, so an invitation for it could still
+ * arrive and need folding. Bounds the `event-uid:` key space to invitable
+ * events rather than every event ever synced: on a backfill the great majority
+ * are in the past and get no marker.
+ *
+ * A recurring master is judged by its UNTIL rather than its DTSTART — the
+ * series began in the past but occurrences keep coming, so invitations for it
+ * are still live. A series with no UNTIL never ends.
+ *
+ * Typed against `Omit<NewSchedule, "threadId">` rather than the bare
+ * `NewSchedule` — that's the actual shape of `NewLinkWithNotes.schedules`
+ * (link schedules are built before the thread they'll belong to exists).
+ */
+function isUpcomingSchedule(
+  s: Omit<NewSchedule, "threadId">,
+  now: number
+): boolean {
+  if (s.recurrenceRule) {
+    if (!s.recurrenceUntil) return true;
+    return new Date(s.recurrenceUntil).getTime() >= now;
+  }
+  const boundary = s.end ?? s.start;
+  return new Date(boundary).getTime() >= now;
 }
 
 /**
@@ -1249,6 +1295,61 @@ export async function processCalendarEventsFn(
           ]
         )
       );
+    }
+  }
+
+  // Record the iCalUIDs this page saved so the MAIL sync can tell whether an
+  // arriving invitation already has an event thread and can be folded away.
+  // Derived from the assembled links rather than written per event-processing
+  // branch, so every path that produces a link (master, instance, cancellation
+  // reversal) is covered by one block and one round-trip.
+  //
+  // Narrowed to events that have guests and have not finished: an invitation
+  // only exists for an event with attendees, and one for an event that has
+  // already happened does not need folding. Without the narrowing the key
+  // space would grow with the user's entire calendar history.
+  {
+    const now = Date.now();
+    const markers: [key: string, value: unknown][] = [];
+    const markedUids = new Set<string>();
+    for (const link of linksBySource.values()) {
+      const hasGuests = (link.accessContacts?.length ?? 0) > 1;
+      if (!hasGuests) continue;
+      const upcoming = (link.schedules ?? []).some((s) =>
+        isUpcomingSchedule(s, now)
+      );
+      if (!upcoming) continue;
+      for (const source of link.sources ?? []) {
+        if (!source.startsWith("icaluid:")) continue;
+        const uid = source.slice("icaluid:".length);
+        markers.push([`event-uid:${uid}`, true]);
+        markedUids.add(uid);
+      }
+    }
+    if (markers.length > 0) await host.setMany(markers);
+
+    // An invitation that arrived before its event had synced was kept as an
+    // email thread (there was no way to know the event was coming). Now that
+    // the event is here, retract it. `meta.threadId` is on every Gmail link;
+    // ArchiveLinkFilter has no `source` field, so meta containment is how a
+    // single link is targeted.
+    for (const uid of markedUids) {
+      const pending = await host.readMailState?.<{
+        gmailThreadId: string;
+        at: string;
+      }>(`invite-wait:${uid}`);
+      if (!pending) continue;
+
+      const ageMs = Date.now() - new Date(pending.at).getTime();
+      const withinWindow = ageMs < 7 * 24 * 60 * 60 * 1000;
+      if (withinWindow && pending.gmailThreadId) {
+        await host.tools.integrations.archiveLinks({
+          meta: { threadId: pending.gmailThreadId },
+        });
+      }
+      // Cleared either way: acted on, or aged out. The store has no native
+      // expiry, so `at` is the TTL and this is where it is enforced.
+      await host.clearMailState?.(`invite-wait:${uid}`);
     }
   }
 

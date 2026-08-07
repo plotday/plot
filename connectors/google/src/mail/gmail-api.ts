@@ -14,7 +14,7 @@ import {
   normalizeContentId,
   referencedContentIds,
 } from "@plotday/twister/signals";
-import { icsProp, parseIcsReply } from "@plotday/rsvp-fold";
+import { icsProp, parseIcsReply, unescapeIcsText } from "@plotday/rsvp-fold";
 
 
 export type GmailLabel = {
@@ -988,6 +988,112 @@ export function extractCalendarReplies(
   }
 
   return replies;
+}
+
+/**
+ * One invitation parsed from a `METHOD:REQUEST` calendar part at `SEQUENCE 0`
+ * — a first-time invite, as opposed to an update (`SEQUENCE > 0`) or a
+ * cancellation. Google emails one per invited calendar; Plot folds it onto the
+ * event's own thread rather than importing it as a standalone email thread,
+ * because the event thread already renders the schedule, the guest list and
+ * the RSVP affordance that the notification only describes in prose.
+ */
+export type CalendarInvite = {
+  /** Gmail message id. The fold's note key and bookkeeping key. */
+  messageId: string;
+  /** ICS UID — the event thread is addressed as `icaluid:<uid>`. */
+  uid: string;
+  /** From-header display name, else the ORGANIZER `CN`, else null. */
+  organizerName: string | null;
+  organizerEmail: string;
+  /**
+   * The organizer's note about this invitation, from the ICS `COMMENT`.
+   *
+   * RFC 5545 scopes `COMMENT` to the iCalendar transmission, which makes it
+   * exactly "what the invitation adds beyond the event" — the event's own body
+   * is `DESCRIPTION`, which the calendar sync has already written as the event
+   * thread's description note and which is deliberately not read here, so it
+   * can never double-post.
+   *
+   * Null for every stock Google invitation; the fold then writes no note at
+   * all.
+   */
+  extraContent: string | null;
+  sourceCreatedAt: Date;
+};
+
+/**
+ * Every first-time invitation carried by a Gmail conversation.
+ *
+ * Deliberately separate from {@link classifyCalendarThread}, which answers a
+ * different question — "should this conversation *bundle* onto the event" —
+ * and for a bare invite must keep answering no. Bundling makes the mail link
+ * the event's thread, which would rewrite the event's title to
+ * `Invitation: … @ …` and re-author it.
+ */
+export function extractCalendarInvites(
+  messages: GmailMessage[],
+  icsByMessage: Map<string, string>
+): CalendarInvite[] {
+  const invites: CalendarInvite[] = [];
+
+  for (const message of messages) {
+    const ics = icsByMessage.get(message.id);
+    if (!ics) continue;
+
+    if ((icsProp(ics, "METHOD") ?? "").toUpperCase() !== "REQUEST") continue;
+    // SEQUENCE absent means 0 — RFC 5545's default for a first transmission.
+    if (parseInt(icsProp(ics, "SEQUENCE") ?? "0", 10) !== 0) continue;
+
+    const uid = icsProp(ics, "UID");
+    if (!uid) continue;
+
+    const from = parseEmailAddress(getHeader(message, "From") ?? "");
+    const organizerLine = icsProp(ics, "ORGANIZER");
+    const organizerEmail = (
+      from?.email ??
+      organizerLine?.replace(/^mailto:/i, "") ??
+      ""
+    ).trim();
+    if (!organizerEmail) continue;
+
+    // The From display name is the organizer as their own mail client named
+    // them; the ORGANIZER CN is the calendar system's copy. Prefer the former,
+    // fall back to the latter.
+    const cn = icsPropCn(ics, "ORGANIZER");
+    const organizerName = from?.name || cn || null;
+
+    const rawComment = icsProp(ics, "COMMENT");
+    const comment = rawComment ? unescapeIcsText(rawComment).trim() : "";
+
+    invites.push({
+      messageId: message.id,
+      uid,
+      organizerName,
+      organizerEmail,
+      extraContent: comment || null,
+      sourceCreatedAt: new Date(Number(message.internalDate)),
+    });
+  }
+
+  return invites;
+}
+
+/**
+ * Read a `CN=` parameter off an ICS property line. `icsProp` returns only the
+ * value, and `@plotday/rsvp-fold` keeps its parameter parser private, so this
+ * reads the one parameter an invite needs rather than widening that module's
+ * surface for a single caller.
+ */
+function icsPropCn(ics: string, name: string): string | null {
+  const unfolded = ics.replace(/\r?\n[ \t]/g, "");
+  const line = unfolded.match(
+    new RegExp(`^${name}((?:;[^:\\r\\n]*)?):`, "im")
+  );
+  if (!line) return null;
+  const cn = line[1].match(/;CN=("([^"]*)"|[^;:]*)/i);
+  const value = cn ? (cn[2] !== undefined ? cn[2] : cn[1]) : "";
+  return value.trim() || null;
 }
 
 /**
