@@ -466,3 +466,60 @@ describe("transformTask — to-do mapping (no link schedules)", () => {
     expect(link.author).toBeNull();
   });
 });
+
+describe("onCreateLinkFn — namespaced compose channel ids", () => {
+  it("resolves the raw list id from a namespaced draft channelId", async () => {
+    const { host } = makeHost();
+    vi.mocked(api.createTask).mockResolvedValue({
+      id: "t9",
+      title: "Buy milk",
+      status: "needsAction",
+    } as never);
+
+    const link = await onCreateLinkFn(host, {
+      type: "task",
+      channelId: `tasks:${LIST_ID}`,
+      title: "Buy milk",
+      status: "open",
+      noteContent: null,
+      contacts: [],
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    expect(api.createTask).toHaveBeenCalledWith(
+      expect.anything(),
+      LIST_ID,
+      expect.anything()
+    );
+    // meta.listId feeds onLinkUpdatedFn's write-back — must be the raw id.
+    expect(link?.meta?.listId).toBe(LIST_ID);
+    // The persisted channel id keeps the platform's (namespaced) form.
+    expect(link?.channelId).toBe(`tasks:${LIST_ID}`);
+  });
+
+  it("keeps working with a raw draft channelId", async () => {
+    const { host } = makeHost();
+    vi.mocked(api.createTask).mockResolvedValue({
+      id: "t9",
+      title: "Buy milk",
+      status: "needsAction",
+    } as never);
+
+    const link = await onCreateLinkFn(host, {
+      type: "task",
+      channelId: LIST_ID,
+      title: "Buy milk",
+      status: "open",
+      noteContent: null,
+      contacts: [],
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    expect(api.createTask).toHaveBeenCalledWith(
+      expect.anything(),
+      LIST_ID,
+      expect.anything()
+    );
+    expect(link?.meta?.listId).toBe(LIST_ID);
+  });
+});

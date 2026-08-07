@@ -27,6 +27,7 @@ import {
 import { Tag } from "@plotday/twister/tag";
 import type { CreateLinkDraft } from "@plotday/twister/connector";
 
+import { parse } from "../product-channel";
 import {
   createTask,
   isTaskListGoneError,
@@ -606,12 +607,17 @@ export async function onCreateLinkFn(
 ): Promise<NewLinkWithNotes | null> {
   if (draft.type !== "task") return null;
 
+  // The compose picker hands over the REGISTERED channel id, which this
+  // connector namespaces ("tasks:<listId>"); the Google API needs the raw
+  // list id. `parse` leaves an already-raw id unchanged.
+  const listId = parse(draft.channelId).rawId;
+
   const token = await getTokenFn(host, draft.channelId);
   const authActorId = await host.get<ActorId>("auth_actor_id");
 
   let task: GoogleTask;
   try {
-    task = await createTask(token, draft.channelId, {
+    task = await createTask(token, listId, {
       title: draft.title,
       ...(draft.noteContent ? { notes: draft.noteContent } : {}),
       status: draft.status === "done" ? "completed" : "needsAction",
@@ -649,7 +655,8 @@ export async function onCreateLinkFn(
     channelId: draft.channelId,
     meta: {
       taskId: task.id,
-      listId: draft.channelId,
+      // Raw list id: onLinkUpdatedFn routes its write-back through this.
+      listId,
       syncProvider: "google-tasks",
       channelId: draft.channelId,
     },

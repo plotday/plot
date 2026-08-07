@@ -84,6 +84,7 @@ import { Files } from "@plotday/twister/tools/files";
 
 import { GOOGLE_SCOPES, PRODUCTS } from "./scopes";
 import { composeChannels } from "./compose";
+import { withNamespacedChannelIds } from "./host-integrations";
 import { parse } from "./product-channel";
 import { PRODUCTS_BY_KEY } from "./products";
 
@@ -292,7 +293,13 @@ export class Google extends Connector<Google> {
       // Clear an `invite-wait:<uid>` marker once retracted or aged out.
       clearMailState: (key) => self._mailHostClear(key),
       tools: {
-        integrations: self.tools.integrations as any,
+        // Persisted links carry `calendar:`-namespaced channel ids so they
+        // match this connector's registered channels (topic seeding joins on
+        // exact equality). The product keeps raw calendar ids internally.
+        integrations: withNamespacedChannelIds(
+          self.tools.integrations as any,
+          "calendar"
+        ) as any,
         googleContacts: self.tools.googleContacts,
         store: {
           acquireLock: (key, ttlMs) =>
@@ -1017,8 +1024,13 @@ export class Google extends Connector<Google> {
       get: <T>(key: string) => self._tasksHostGet<T>(key),
       clear: (key) => self._tasksHostClear(key),
       tools: {
+        // Persisted links carry `tasks:`-namespaced channel ids so they
+        // match this connector's registered channels (see makeCalendarHost).
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        integrations: self.tools.integrations as any,
+        integrations: withNamespacedChannelIds(
+          self.tools.integrations as any,
+          "tasks"
+        ) as any,
       },
       scheduler: {
         queueSyncBatch: (listId) => self.tasksQueueSyncBatch(listId),
