@@ -1,5 +1,12 @@
 # @plotday/twister
 
+## 0.94.0
+
+### Added
+
+- `LinkSignals.taxonomy` — namespaced structured-container keys
+- `Plot.getMemory` / `Plot.setMemory` maintain a per-focus agent memory (short freeform entries with optional absolute `YYYY-MM-DD` dates), and `Plot.getBriefs` reads each focus's current status brief. All three require `FocusAccess.Full`. ([#386](https://github.com/plotday/plot/pull/386) [`c92f06b`](https://github.com/plotday/plot/commit/c92f06b81055466f3ffe3e030e1e58c0231d8227))
+
 ## 0.93.0
 
 ### Added
