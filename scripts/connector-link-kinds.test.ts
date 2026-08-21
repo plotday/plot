@@ -1,16 +1,18 @@
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import * as ts from "typescript";
 
 /**
  * Every published connector must declare `kind` on every link type it
- * exposes. Plot maps kinds to entitlement; a link type with no kind silently
- * falls back to `team-task`, which is wrong for calendars and personal task
- * managers and would gate them behind a paid plan.
+ * exposes. Plot groups connectors by `kind` and uses it to decide which
+ * channels a workspace can enable — a link type with no kind silently falls
+ * back to `team-task`, which is wrong for calendars and personal task
+ * managers.
  *
  * Static check: for each connector source file, find every object literal
- * that pairs `type:` with `label:` (the shape unique to LinkTypeConfig) and
- * assert a `kind:` appears within the same object.
+ * that declares own `type` and `label` properties (the shape unique to
+ * `LinkTypeConfig`) and assert a `kind` property is declared there too.
  */
 const CONNECTORS_DIR = join(import.meta.dirname, "..", "connectors");
 
@@ -29,31 +31,70 @@ function sourceFiles(dir: string): string[] {
 }
 
 /**
- * Link-type object literals: `type:` and `label:` belonging to the same
- * object, tolerating up to one level of brace nesting inside it. A plain
- * "no intervening brace" match would miss most real `LinkTypeConfig`
- * objects in this repo, which almost always carry an inline `statuses:
- * [...]`, `contactRoles: [...]`, or `compose: {...}` — each exactly one
- * level deep — between `type:`/`label:` and the object's own closing `}`.
- *
- * Excludes `OptionDef` entries from the `Options` tool schema (`{ type:
- * "text" | "number" | "boolean" | "select", label: ..., default: ... }`),
- * which share this shape by coincidence — those four strings are reserved
- * for option-field kinds and never appear as a connector's own link `type`.
- * Unlike `LinkTypeConfig.type`, which is contextually typed against the
- * `Connector.linkTypes` declaration, `OptionDef.type` is inferred through a
- * generic and so is written with `as const`, which is how these are told
- * apart here.
+ * `OptionDef` entries from the `Options` tool schema (`{ type: "text" |
+ * "number" | "boolean" | "select", label: ..., default: ... }`, see
+ * `twister/src/options.ts`) share the `type`+`label` shape with
+ * `LinkTypeConfig` by coincidence: those four strings are a real closed
+ * union reserved for option-field kinds and never occur as a connector's
+ * own link `type`.
  */
-function linkTypeBlocks(src: string): string[] {
-  const nestable = String.raw`(?:[^{}]|\{[^{}]*\})*`;
-  const pattern = new RegExp(
-    `\\{${nestable}\\btype:\\s*[^,]+,${nestable}\\blabel:\\s*"[^"]*"${nestable}\\}`,
-    "gs"
-  );
-  return [...src.matchAll(pattern)]
-    .map((m) => m[0])
-    .filter((block) => !/\btype:\s*"(?:text|number|boolean|select)"\s+as\s+const,/.test(block));
+const OPTION_DEF_TYPES = new Set(["text", "number", "boolean", "select"]);
+
+/** The string literal value of an expression, unwrapping a trailing `as const`/`as T`. */
+function stringLiteralValue(node: ts.Expression): string | undefined {
+  const expr = ts.isAsExpression(node) ? node.expression : node;
+  return ts.isStringLiteralLike(expr) ? expr.text : undefined;
+}
+
+function propertyName(prop: ts.ObjectLiteralElementLike): string | undefined {
+  if (!ts.isPropertyAssignment(prop)) return undefined;
+  if (ts.isIdentifier(prop.name) || ts.isStringLiteral(prop.name)) return prop.name.text;
+  return undefined;
+}
+
+/**
+ * Find every `LinkTypeConfig`-shaped object literal in `src` — one with its
+ * own `type` and `label` properties, at any nesting depth inside the file —
+ * and report those missing a sibling `kind` property.
+ *
+ * Uses the TypeScript compiler API (rather than a regex over the source
+ * text) specifically so that nesting inside the object — an inline
+ * `statuses: [...]`, `contactRoles: [...]`, or `compose: {...}` — can never
+ * hide it from the check. Each object literal's own properties are read
+ * from the AST directly, independent of how deeply anything else in the
+ * object nests.
+ */
+function undeclaredLinkTypes(file: string, src: string): string[] {
+  const sourceFile = ts.createSourceFile(file, src, ts.ScriptTarget.Latest, true);
+  const undeclared: string[] = [];
+
+  const visit = (node: ts.Node) => {
+    if (ts.isObjectLiteralExpression(node)) {
+      let hasLabel = false;
+      let hasKind = false;
+      let typeValue: string | undefined;
+      let sawType = false;
+      for (const prop of node.properties) {
+        const name = propertyName(prop);
+        if (name === "type" && ts.isPropertyAssignment(prop)) {
+          sawType = true;
+          typeValue = stringLiteralValue(prop.initializer);
+        } else if (name === "label") {
+          hasLabel = true;
+        } else if (name === "kind") {
+          hasKind = true;
+        }
+      }
+      const isOptionDef = typeValue !== undefined && OPTION_DEF_TYPES.has(typeValue);
+      if (sawType && hasLabel && !isOptionDef && !hasKind) {
+        const text = node.getText(sourceFile).replace(/\s+/g, " ");
+        undeclared.push(`${file}: ${text.slice(0, 80)}`);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return undeclared;
 }
 
 describe("public connectors declare a kind on every link type", () => {
@@ -64,11 +105,7 @@ describe("public connectors declare a kind on every link type", () => {
   it.each(names)("%s", (name) => {
     const undeclared: string[] = [];
     for (const file of sourceFiles(join(CONNECTORS_DIR, name, "src"))) {
-      for (const block of linkTypeBlocks(readFileSync(file, "utf8"))) {
-        if (!/\bkind:\s*"(calendar|task|team-task|message)"/.test(block)) {
-          undeclared.push(`${file}: ${block.slice(0, 80).replace(/\s+/g, " ")}`);
-        }
-      }
+      undeclared.push(...undeclaredLinkTypes(file, readFileSync(file, "utf8")));
     }
     expect(undeclared, `link types missing kind in ${name}`).toEqual([]);
   });
