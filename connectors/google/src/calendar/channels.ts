@@ -48,6 +48,7 @@ export const CALENDAR_LINK_TYPES: LinkTypeConfig[] = [
   {
     type: "event",
     label: "Event",
+    kind: "calendar",
     // Per-product brand for aggregate connectors (the Google connector's
     // display name is "Gmail & Calendar"); standalone Google Calendar falls
     // back to its own display name anyway.

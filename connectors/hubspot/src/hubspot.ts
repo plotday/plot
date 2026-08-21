@@ -287,6 +287,7 @@ export class HubSpot extends Connector<HubSpot> {
           {
             type: "deal",
             label: "Deal",
+            kind: "team-task",
             sharingModel: "channel" as const,
             logo: HUBSPOT_LOGO,
             statuses: dealStatuses,
@@ -295,6 +296,7 @@ export class HubSpot extends Connector<HubSpot> {
           {
             type: "contact",
             label: "Contact",
+            kind: "team-task",
             sharingModel: "channel" as const,
             logo: HUBSPOT_LOGO,
             statuses: [],
@@ -303,6 +305,7 @@ export class HubSpot extends Connector<HubSpot> {
           {
             type: "company",
             label: "Company",
+            kind: "team-task",
             sharingModel: "channel" as const,
             logo: HUBSPOT_LOGO,
             statuses: [],
@@ -314,6 +317,7 @@ export class HubSpot extends Connector<HubSpot> {
           {
             type: "task",
             label: "Task",
+            kind: "team-task",
             sharingModel: "channel" as const,
             logo: HUBSPOT_LOGO,
             statuses: TASK_STATUSES,

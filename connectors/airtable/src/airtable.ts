@@ -111,6 +111,7 @@ export class Airtable extends Connector<Airtable> {
     {
       type: "task",
       label: "Task",
+      kind: "team-task" as const,
       noteLabel: "Comment",
       sharingModel: "channel" as const,
       logo: LOGO,
@@ -178,6 +179,7 @@ export class Airtable extends Connector<Airtable> {
                   {
                     type: "task",
                     label: "Task",
+                    kind: "team-task" as const,
                     noteLabel: "Comment",
                     logo: LOGO,
                     logoDark: LOGO,

@@ -64,6 +64,23 @@ export type StatusIcon =
   | "tentative";
 
 /**
+ * What a link type fundamentally *is*. Plot uses this to group connectors and
+ * to decide which of a connection's channels a given workspace can enable —
+ * a composite connector's calendar channels and its mail channels can differ.
+ *
+ * - `calendar`   — time-anchored events from a calendar.
+ * - `task`       — a personal to-do item (a personal task manager's task).
+ * - `team-task`  — work tracked with other people: issues, tickets, cards,
+ *                  documents, meeting notes, CRM records.
+ * - `message`    — a conversation: email threads, chats, DMs.
+ *
+ * Declare this on every link type. The distinction between `task` and
+ * `team-task` is about the tool, not the payload: a Todoist task is `task`,
+ * an Asana task is `team-task`, even though both are `type: "task"`.
+ */
+export type LinkKind = "calendar" | "task" | "team-task" | "message";
+
+/**
  * Describes a link type that a connector creates.
  * Used for display in the UI (icons, labels).
  */
@@ -165,6 +182,12 @@ export type LinkTypeConfig = {
    * false — non-calendar link types (messages, issues, tasks, docs) omit it.
    */
   includesSchedules?: boolean;
+  /**
+   * What this link type is (see {@link LinkKind}). Declare it on every link
+   * type — Plot groups connectors by it and uses it to decide which channels
+   * a workspace can enable. Omitting it makes Plot assume `team-task`.
+   */
+  kind?: LinkKind;
   /** Default thread creation mode for this link type: 'all' | 'actionable' | 'manual' */
   defaultCreateThreads?: string;
   /**

@@ -104,6 +104,7 @@ export class Linear extends Connector<Linear> {
     {
       type: "issue",
       label: "Issue",
+      kind: "team-task" as const,
       noteLabel: "Comment",
       sharingModel: "channel" as const,
       composePlaceholder: "Create a Linear issue",
@@ -198,6 +199,7 @@ export class Linear extends Connector<Linear> {
             {
               type: "issue",
               label: "Issue",
+              kind: "team-task" as const,
               noteLabel: "Comment",
               // Channel-level configs fully shadow the twist-level linkTypes in
               // getTypeConfig(), so the sharing model must be repeated here —

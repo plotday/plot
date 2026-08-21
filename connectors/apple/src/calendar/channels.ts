@@ -11,6 +11,7 @@ export const CALENDAR_LINK_TYPES: LinkTypeConfig[] = [
   {
     type: "event",
     label: "Event",
+    kind: "calendar",
     sourceName: "iCloud Calendar",
     sharingModel: "thread",
     includesSchedules: true,

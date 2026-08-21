@@ -121,12 +121,14 @@ export class Fellow extends Connector<Fellow> {
           {
             type: "meeting",
             label: "Meeting",
+            kind: "team-task",
             sharingModel: "thread" as const,
             logo: "https://plot.day/assets/logo-fellow.svg",
           },
           {
             type: "task",
             label: "Action Item",
+            kind: "team-task",
             sharingModel: "none" as const,
             logo: "https://plot.day/assets/logo-fellow.svg",
             supportsAssignee: true,

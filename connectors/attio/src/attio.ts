@@ -189,6 +189,7 @@ export class Attio extends Connector<Attio> {
           {
             type: "deal",
             label: "Deal",
+            kind: "team-task",
             sharingModel: "channel" as const,
             logo: "https://plot.day/assets/logo-attio.svg",
             logoDark: "https://plot.day/assets/logo-attio-dark.svg",
@@ -198,6 +199,7 @@ export class Attio extends Connector<Attio> {
           {
             type: "person",
             label: "Person",
+            kind: "team-task",
             sharingModel: "channel" as const,
             logo: "https://plot.day/assets/logo-attio.svg",
             logoDark: "https://plot.day/assets/logo-attio-dark.svg",
@@ -207,6 +209,7 @@ export class Attio extends Connector<Attio> {
           {
             type: "company",
             label: "Company",
+            kind: "team-task",
             sharingModel: "channel" as const,
             logo: "https://plot.day/assets/logo-attio.svg",
             logoDark: "https://plot.day/assets/logo-attio-dark.svg",

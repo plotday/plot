@@ -126,6 +126,7 @@ export class Granola extends Connector<Granola> {
           {
             type: "meeting",
             label: "Notes",
+            kind: "team-task",
             sharingModel: "thread" as const,
             logo: "https://plot.day/assets/logo-granola.png",
           },

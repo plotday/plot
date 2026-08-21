@@ -20,6 +20,7 @@ export const OUTLOOK_MAIL_LINK_TYPES: LinkTypeConfig[] = [
   {
     type: "email",
     label: "Thread",
+    kind: "message",
     // Per-product brand for the aggregate Outlook connector (display name
     // "Outlook"); standalone Outlook Mail falls back to its own display name.
     sourceName: "Outlook Mail",

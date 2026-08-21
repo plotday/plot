@@ -303,6 +303,7 @@ export class Slack extends Connector<Slack> {
     {
       type: "thread",
       label: "Thread",
+      kind: "message" as const,
       noteLabel: "Message",
       sharingModel: "channel" as const,
       supportsFileAttachments: true,
@@ -315,6 +316,7 @@ export class Slack extends Connector<Slack> {
     {
       type: "dm",
       label: "Direct messages",
+      kind: "message" as const,
       noteLabel: "Message",
       sharingModel: "thread" as const,
       supportsFileAttachments: true,
