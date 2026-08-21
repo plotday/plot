@@ -97,6 +97,7 @@ export class Jira extends Connector<Jira> {
     {
       type: "issue",
       label: "Issue",
+      kind: "team-task" as const,
       noteLabel: "Comment",
       sharingModel: "channel" as const,
       logo: "https://api.iconify.design/logos/jira.svg",
@@ -178,6 +179,7 @@ export class Jira extends Connector<Jira> {
             {
               type: "issue",
               label: "Issue",
+              kind: "team-task" as const,
               noteLabel: "Comment",
               // Channel-level configs fully shadow the twist-level linkTypes,
               // so sharingModel + logos must be repeated here (matches Linear).

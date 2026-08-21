@@ -124,6 +124,7 @@ export class Todoist extends Connector<Todoist> {
     {
       type: "task",
       label: "Task",
+      kind: "task" as const,
       noteLabel: "Comment",
       sharingModel: "thread" as const,
       composePlaceholder: "Create a Todoist task",
@@ -202,6 +203,7 @@ export class Todoist extends Connector<Todoist> {
             {
               type: "task",
               label: "Task",
+              kind: "task" as const,
               noteLabel: "Comment",
               // Channel-level configs fully shadow the twist-level linkTypes
               // in getTypeConfig(), so the sharing model and capability flags

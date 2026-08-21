@@ -17,6 +17,7 @@ export const TASKS_LINK_TYPES: LinkTypeConfig[] = [
   {
     type: "task",
     label: "Task",
+    kind: "task",
     // Per-product brand for aggregate connectors (the Google connector's
     // display name is "Gmail & Calendar"); standalone Google Tasks falls back
     // to its own display name anyway.

@@ -139,11 +139,11 @@ export class GoogleDrive extends Connector<GoogleDrive> {
     "Reads your contacts to show who shared or commented",
   ];
   readonly linkTypes = [
-    { type: "doc", label: "Document", noteLabel: "Comment", sharingModel: "thread" as const, logo: "https://api.iconify.design/simple-icons/googledocs.svg?color=%234285F4", logoMono: "https://api.iconify.design/simple-icons/googledocs.svg" },
-    { type: "sheet", label: "Spreadsheet", noteLabel: "Comment", sharingModel: "thread" as const, logo: "https://api.iconify.design/simple-icons/googlesheets.svg?color=%2334A853", logoMono: "https://api.iconify.design/simple-icons/googlesheets.svg" },
-    { type: "slide", label: "Presentation", noteLabel: "Comment", sharingModel: "thread" as const, logo: "https://api.iconify.design/simple-icons/googleslides.svg?color=%23FBBC04", logoMono: "https://api.iconify.design/simple-icons/googleslides.svg" },
-    { type: "form", label: "Form", noteLabel: "Comment", sharingModel: "thread" as const, logo: "https://api.iconify.design/simple-icons/googleforms.svg?color=%23673AB7", logoMono: "https://api.iconify.design/simple-icons/googleforms.svg" },
-    { type: "document", label: "File", noteLabel: "Comment", sharingModel: "thread" as const, logo: "https://api.iconify.design/logos/google-drive.svg", logoMono: "https://api.iconify.design/simple-icons/googledrive.svg" },
+    { type: "doc", label: "Document", kind: "team-task" as const, noteLabel: "Comment", sharingModel: "thread" as const, logo: "https://api.iconify.design/simple-icons/googledocs.svg?color=%234285F4", logoMono: "https://api.iconify.design/simple-icons/googledocs.svg" },
+    { type: "sheet", label: "Spreadsheet", kind: "team-task" as const, noteLabel: "Comment", sharingModel: "thread" as const, logo: "https://api.iconify.design/simple-icons/googlesheets.svg?color=%2334A853", logoMono: "https://api.iconify.design/simple-icons/googlesheets.svg" },
+    { type: "slide", label: "Presentation", kind: "team-task" as const, noteLabel: "Comment", sharingModel: "thread" as const, logo: "https://api.iconify.design/simple-icons/googleslides.svg?color=%23FBBC04", logoMono: "https://api.iconify.design/simple-icons/googleslides.svg" },
+    { type: "form", label: "Form", kind: "team-task" as const, noteLabel: "Comment", sharingModel: "thread" as const, logo: "https://api.iconify.design/simple-icons/googleforms.svg?color=%23673AB7", logoMono: "https://api.iconify.design/simple-icons/googleforms.svg" },
+    { type: "document", label: "File", kind: "team-task" as const, noteLabel: "Comment", sharingModel: "thread" as const, logo: "https://api.iconify.design/logos/google-drive.svg", logoMono: "https://api.iconify.design/simple-icons/googledrive.svg" },
   ];
 
   build(build: ToolBuilder) {

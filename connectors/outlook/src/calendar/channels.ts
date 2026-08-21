@@ -29,6 +29,7 @@ export const OUTLOOK_CALENDAR_LINK_TYPES: LinkTypeConfig[] = [
   {
     type: "event",
     label: "Event",
+    kind: "calendar",
     // Per-product brand for the aggregate Outlook connector (display name
     // "Outlook"); standalone Outlook Calendar falls back to its own display name.
     sourceName: "Outlook Calendar",

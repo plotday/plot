@@ -91,6 +91,7 @@ export class MsTeams extends Connector<MsTeams> {
     {
       type: "thread",
       label: "Thread",
+      kind: "message" as const,
       noteLabel: "Message",
       sharingModel: "channel" as const,
       logo: "https://api.iconify.design/logos/microsoft-teams.svg",
@@ -103,6 +104,7 @@ export class MsTeams extends Connector<MsTeams> {
     {
       type: "dm",
       label: "Direct messages",
+      kind: "message" as const,
       noteLabel: "Message",
       sharingModel: "thread" as const,
       logo: "https://api.iconify.design/logos/microsoft-teams.svg",

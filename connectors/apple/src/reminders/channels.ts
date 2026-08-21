@@ -11,6 +11,7 @@ export const REMINDERS_LINK_TYPES: LinkTypeConfig[] = [
   {
     type: "reminder",
     label: "Reminder",
+    kind: "task",
     sourceName: "iCloud Reminders",
     // Personal to-do list, no recipient roster — mirrors Google Tasks.
     sharingModel: "none" as const,

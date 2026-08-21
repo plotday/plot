@@ -32,6 +32,7 @@ export class Trello extends Connector<Trello> {
     {
       type: "card",
       label: "Card",
+      kind: "team-task" as const,
       noteLabel: "Comment",
       sharingModel: "channel" as const,
       composePlaceholder: "Create a Trello card",

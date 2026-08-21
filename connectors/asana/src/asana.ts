@@ -204,6 +204,7 @@ export class Asana extends Connector<Asana> {
     {
       type: "task",
       label: "Task",
+      kind: "team-task" as const,
       noteLabel: "Comment",
       sharingModel: "channel" as const,
       supportsFileAttachments: true,
@@ -357,6 +358,7 @@ export class Asana extends Connector<Asana> {
             {
               type: "task",
               label: "Task",
+              kind: "team-task" as const,
               noteLabel: "Comment",
               // Channel-level configs fully shadow the twist-level linkTypes,
               // so the sharing model must be repeated here.

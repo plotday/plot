@@ -15,6 +15,7 @@ export const MAIL_LINK_TYPES: LinkTypeConfig[] = [
     // "… email". `sourceName` brands the type per-product, so it reads
     // "iCloud email thread" rather than the full connector name.
     label: "Thread",
+    kind: "message",
     sourceName: "iCloud email",
     // The connector's word for a note on this thread, so in-thread composer
     // copy reads "Add a reply" (matching Gmail) rather than "Add a note".

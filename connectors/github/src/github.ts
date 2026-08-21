@@ -215,6 +215,7 @@ export class GitHub extends Connector<GitHub> {
     {
       type: "pull_request",
       label: "Pull Request",
+      kind: "team-task" as const,
       noteLabel: "Comment",
       sharingModel: "channel" as const,
       logo: "https://api.iconify.design/logos/github-icon.svg",
@@ -230,6 +231,7 @@ export class GitHub extends Connector<GitHub> {
     {
       type: "issue",
       label: "Issue",
+      kind: "team-task" as const,
       noteLabel: "Comment",
       sharingModel: "channel" as const,
       logo: "https://api.iconify.design/logos/github-icon.svg",

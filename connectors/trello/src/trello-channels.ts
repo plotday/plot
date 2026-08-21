@@ -19,6 +19,7 @@ export function buildCardLinkType(lists: TrelloList[]): LinkTypeConfig {
   return {
     type: "card",
     label: "Card",
+    kind: "team-task",
     noteLabel: "Comment",
     sharingModel: "channel",
     composePlaceholder: "Create a Trello card",
