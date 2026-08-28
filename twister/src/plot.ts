@@ -772,15 +772,6 @@ export type Note = ThreadCommon & {
   /** The note this is a reply to, or null if not a reply */
   reNote: { id: Uuid } | null;
   /**
-   * The Today-item context this note was composed against, via the Today
-   * thread's pin affordance (pin an item to discuss it), or null. Mutually
-   * exclusive with `reNote` and a forward snapshot — a note is at most one
-   * of a reply, a forward, or a Today-item reference. Read-only from a
-   * twist's perspective: only the Plot app sets it, when the user pins a
-   * Today item and sends a message in the Today thread.
-   */
-  todayItem: { id: Uuid } | null;
-  /**
    * Contacts who can see this note, or null if the note inherits thread visibility.
    * When set (even to []), the note is private to the listed contacts plus the creator.
    */
@@ -837,7 +828,7 @@ export type Note = ThreadCommon & {
 export type NewNote = Partial<
   Omit<
     Note,
-    "author" | "thread" | "tags" | "reactions" | "mentions" | "accessContacts" | "recipients" | "id" | "key" | "reNote" | "todayItem" | "tagActors"
+    "author" | "thread" | "tags" | "reactions" | "mentions" | "accessContacts" | "recipients" | "id" | "key" | "reNote" | "tagActors"
   >
 > &
   ({ id: Uuid } | { key: string } | {}) & {
@@ -1662,49 +1653,3 @@ export type PlanOperation =
       focusTitle: string;
       changes: Partial<Pick<Focus, "title" | "archived">>;
     };
-
-/**
- * Section of the user's Today snapshot an item belongs to.
- * - "priorities": the day's top items (to-dos, events, urgent threads, goals)
- * - "updates": important information pulled from unread threads
- */
-export type TodayItemSection = "priorities" | "updates";
-
-/**
- * The kind of a Today snapshot item. Determines check-off affordances and
- * how the item links back to threads/goals.
- */
-export type TodayItemKind = "todo" | "event" | "urgent" | "goal" | "update";
-
-/**
- * One item in the user's Today snapshot — the pre-generated, per-day list
- * of priorities and updates. Items are server-composed; twists read them
- * via {@link Plot.getTodayItems} and adjust them (rank / checked /
- * dismissed) via {@link Plot.updateTodayItem}. All other fields are
- * server-authored and read-only from the SDK.
- */
-export type TodayItem = {
-  id: Uuid;
-  /** The user-local day this item belongs to, as an ISO date ("YYYY-MM-DD"). */
-  day: string;
-  section: TodayItemSection;
-  kind: TodayItemKind;
-  /** Order within the section, ascending (lower rank renders higher). */
-  rank: number;
-  /** The item line, consolidated where appropriate. */
-  title: string;
-  /** 1–2 sentence support text, mainly for "updates" items. */
-  detail: string | null;
-  /** Linked threads; the first is the primary open target. May be empty (e.g. goal items). */
-  threadIds: Uuid[];
-  /** The focus this item is labeled with, if any. */
-  focusId: Uuid | null;
-  /** The goal this item derives from, if any. */
-  goalId: Uuid | null;
-  /** Event start (events only). */
-  startsAt: Date | string | null;
-  /** Event end (events only). */
-  endsAt: Date | string | null;
-  /** When the user checked this item off, or null if unchecked. */
-  checkedAt: Date | string | null;
-};
