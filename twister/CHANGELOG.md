@@ -1,5 +1,15 @@
 # @plotday/twister
 
+## 1.0.0
+
+### Added
+
+- `kind` to `LinkTypeConfig` so connectors can declare what each link type is: `calendar`, `task`, `team-task`, or `message`. Plot uses this to group connectors and to decide which channels of a connection a workspace can enable, so a composite connector's calendar and mail channels can be treated differently. The field is optional and defaults to `team-task`; declare it on every link type you publish. ([#387](https://github.com/plotday/plot/pull/387) [`1175bf5`](https://github.com/plotday/plot/commit/1175bf5398d3543594c257a3371097916355fc19))
+
+### Removed
+
+- the Today and goal surfaces from the Plot tool. The `TodayAccess` and `GoalAccess` permission enums are gone, along with the `today` and `goals` entries in `Plot.Options`, the `getTodayItems()`, `updateTodayItem()`, and `getTodayThreadId()` methods, the `createGoal()`, `getGoals()`, `updateGoal()`, and `archiveGoal()` methods, the `TodayItem`, `TodayItemSection`, and `TodayItemKind` types, the `Note.todayItem` field, and the `@plotday/twister/goal` entry point with its `Goal`, `NewGoal`, `GoalUpdate`, `GoalStatus`, and `GoalCadence` types. To upgrade, drop `today` and `goals` from your `build(Plot, { ... })` options and remove any calls to those methods; a twist that stored per-user intentions through goals can keep them in its own state with `this.set` / `this.get`. Note that the thread `type` value `"goal"` is unaffected — it is a display sub-type and remains available. ([#389](https://github.com/plotday/plot/pull/389) [`79042f1`](https://github.com/plotday/plot/commit/79042f1936f28bde97d62fe83c5637ac837366d0))
+
 ## 0.94.0
 
 ### Added
