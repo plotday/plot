@@ -2,7 +2,6 @@ export * from "./twist";
 export * from "./connector";
 export * from "./plot";
 export * from "./schedule";
-export * from "./goal";
 export * from "./tag";
 export * from "./tool";
 export {
